@@ -22,6 +22,19 @@ map's and 36–46% of a tier 5 map's weapons and armour beat the tier under's be
 map's: 19–40%). Tier 4's armour stays lowest, as many of its pieces are weaker than tier
 3's best. Prizes and their chances unchanged.
 
+Version 149 (deployed 8 November 2026 as Version 2026.11.08.4, `GAME_BUILD` "2026.11.08.4"): ranged and magic can't clear a map untouched, as the user asked.
+Every regular enemy moved 1.8–3.6 tiles a second against the player's 4.9, and most maps had
+few or no shooters. Now a melee enemy (not a boss or a shooter) hit from more than 3 tiles
+past its edge is `riled`: 4 seconds at 1.6 times its pace, capped at BOSS_CHASE_SPEED
+(`RILE_FROM`, `RILE_SPEED`, `RILE_SECONDS`; `toldRiled` says so once a run). Poison doesn't
+rile. A co-op guest's hits rile on the host from the guest's spot. And SHOOTERS in worlds.ts
+gains fifteen of the maps' own enemies (ghost, skeleton, afflicted, ugthanki, mountain troll,
+dagannoth, tribesman, snake, lizard, sulphur lizard, reanimated demon spawn, pyre fox, fiyr
+shade, snakeling, Jal-MejRah) with the strike and bolt spells' looks, spit and rocks as a
+ranged earth strike: shooters are now 11% of Lumbridge's enemies and 18–57% of every other
+map's (were 0% on five maps). Tested: a zombie hit from 6 tiles went 1.8 → 2.88 for 4s, from
+1 tile not at all; a Lumbridge skeleton shot every 2.2s for 4–7.
+
 Version 146 (deployed 8 November 2026 as Version 2026.11.08, `GAME_BUILD` "2026.11.08"): ammunition, as the user asked, for thrown weapons
 that never ran out and enough shots for a whole run with a bow or staff, and speeds. Thrown
 weapons stack (`thrown` on ItemDef): one held, each throw takes another of the same from the

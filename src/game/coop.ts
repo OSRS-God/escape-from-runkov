@@ -14,7 +14,7 @@ import { Character, Equipment } from "./save";
 // the user asked, after build 144) it's the release's date, year.month.day,
 // with .2, .3 for a second or third release the same day; PENDING.md's
 // version numbers go on counting from 145 for the notes.
-export const GAME_BUILD = "2026.11.08.3";
+export const GAME_BUILD = "2026.11.08.4";
 
 // Where the relay is: the build's VITE_COOP_URL, a saved override (for
 // trying one), the local relay beside a dev server, or the one on Fly.io

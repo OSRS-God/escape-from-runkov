@@ -284,6 +284,8 @@ type Enemy = {
     floorIn: number;
     // Seconds of crawling, from Ahrim's set
     slow: number;
+    // Seconds of charging, after a hit from out of its reach (RILE_SPEED)
+    riled: number;
     // Ancient Magicks (version 107): seconds frozen in place (ice); a share
     // off its hits and for how long (shadow); poison (smoke): what each
     // hit of it does, how many are left, seconds to the next, and whose
@@ -475,6 +477,12 @@ const BOSS_GIVE_UP = 20;
 // walk backwards costs ground, as a swing up close costs hitpoints
 export const AIM_SLOW = 0.6;
 const AIM_SECONDS = 0.45;
+// A melee enemy hit from further than RILE_FROM tiles (past its edge: out of
+// any swing's reach) charges at RILE_SPEED times its pace, up to just under
+// yours, for RILE_SECONDS (version 147)
+const RILE_FROM = 3;
+const RILE_SPEED = 1.6;
+const RILE_SECONDS = 4;
 // A melee boss gives up much sooner, and only notices you from a little
 // nearer than that (so it doesn't rouse and give up by turns at the edge)
 const BOSS_GIVE_UP_MELEE = 8;
@@ -900,6 +908,8 @@ export class Run {
     // close; and whether one has dropped from this run's kills or chests
     private clueSpots: { x: number; z: number; near: boolean }[] = [];
     private clueDropped = false;
+    // Whether the first charge (RILE_SPEED) has been called out
+    private toldRiled = false;
     private pet?: Pet;
     // What the pet that came along does for you (pets.ts)
     private readonly petBuff?: PetBuff;
@@ -1863,6 +1873,7 @@ export class Run {
             slamIn: SLAM_SECONDS,
             floorIn: FLOOR_SECONDS,
             slow: 0,
+            riled: 0,
             frozen: 0,
             weak: 0,
             weakLeft: 0,
@@ -3956,6 +3967,15 @@ export class Run {
         if (effects.stall) {
             e.cooldown += 0.5;
         }
+        // Hit from out of any swing's reach, a melee enemy charges (version
+        // 147): a bow or a spell can't keep it off for ever
+        if (!e.def.boss && !e.def.shoots && !effects.poisoned && Math.hypot(by.x - e.x, by.z - e.z) - e.def.radius > RILE_FROM) {
+            e.riled = RILE_SECONDS;
+            if (!this.toldRiled && by.me) {
+                this.toldRiled = true;
+                this.hooks.onMessage(`Shot from afar, the ${e.def.name.toLowerCase()} charges at you!`);
+            }
+        }
         if (effects.slow) {
             e.slow = 4;
         }
@@ -4151,6 +4171,9 @@ export class Run {
             if (e.slow > 0) {
                 e.slow -= dt;
             }
+            if (e.riled > 0) {
+                e.riled -= dt;
+            }
             // Ancient Magicks' holds (version 107): a freeze and a weakening
             // wear off, and a poison hits every few seconds until it's done
             if (e.frozen > 0) {
@@ -4328,8 +4351,12 @@ export class Run {
             return 0;
         }
         // A fast elite never quite catches you unburdened (version 146: with
-        // enemies a fifth quicker it could have)
-        const fast = e.trait === "fast" ? Math.max(base, Math.min(base * 1.5, BOSS_CHASE_SPEED)) : base;
+        // enemies a fifth quicker it could have); nor does one charging a
+        // shooter, though it gains on one who stops to shoot (version 147)
+        const fast =
+            e.trait === "fast" || e.riled > 0
+                ? Math.max(base, Math.min(base * (e.riled > 0 ? RILE_SPEED : 1.5), BOSS_CHASE_SPEED))
+                : base;
         return fast * (e.slow > 0 ? 0.5 : 1);
     }
 

@@ -154,7 +154,13 @@ browsers.
   0.45 seconds from its start, or half the weapon's attack time if that's less (`AIM_SLOW`,
   `AIM_SECONDS` in `run.ts`), so shooting from a walk backwards costs ground: a bow's
   backwards walk is about 4.1 tiles a second, not 4.9. The war room's speed is the pace
-  without it, and says so for a ranged weapon.
+  without it, and says so for a ranged weapon. A melee enemy (not a boss, nor one that shoots)
+  hit from more than 3 tiles past its edge charges for 4 seconds at 1.6 times its pace, up to
+  just under yours unburdened (`RILE_FROM`, `RILE_SPEED`, `RILE_SECONDS` in `run.ts`; the
+  first one a run says so), so it gains on you while you stop to shoot. And more of each map's
+  enemies shoot back (`SHOOTERS` in `worlds.ts`): 18% to 57% of what's met on every map but
+  Lumbridge, which has its ghosts and skeletons (11%). Spit and thrown rocks fly as an earth
+  strike and count as ranged; the rest cast strikes and bolts.
 - **Armour has a kind**, the combat triangle's way (`style` on each piece in `items.ts`, from its
   name): plate, mail and metal helms are melee armour, leather, hides, coifs and Karil's ranged,
   robes, hoods, Ahrim's and the books magic; jewellery, capes and void are neutral. A piece's

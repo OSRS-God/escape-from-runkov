@@ -99,7 +99,33 @@ type Shooter = { style: "magic" | "ranged"; cast?: number; projectile: number; i
 const STRIKE: Shooter = { style: "magic", cast: 99, projectile: 100, impact: 101, range: 6, interval: 2.2 };
 const WAVE: Shooter = { style: "magic", cast: 155, projectile: 156, impact: 157, range: 7, interval: 2 };
 const ARROW: Shooter = { style: "ranged", projectile: 10, range: 7, interval: 2.2 };
+// Version 147, as the user asked, so a map can't be shot clear from a
+// distance without a scratch: more of each map's own enemies shoot back,
+// about a fifth to a third of what's met on every map but the first (a
+// tenth there), with the strike and bolt spells' looks (spells.ts's LOOKS).
+// Spit and thrown rocks fly as an earth strike and are ranged.
+const WIND_STRIKE: Shooter = { ...STRIKE, cast: 90, projectile: 91, impact: 92 };
+const WATER_STRIKE: Shooter = { ...STRIKE, cast: 93, projectile: 94, impact: 95 };
+const WIND_BOLT: Shooter = { ...STRIKE, cast: 117, projectile: 118, impact: 119 };
+const WATER_BOLT: Shooter = { ...STRIKE, cast: 120, projectile: 121, impact: 122 };
+const FIRE_BOLT: Shooter = { ...STRIKE, cast: 126, projectile: 127, impact: 128 };
+const SPIT: Shooter = { style: "ranged", projectile: 97, impact: 98, range: 6, interval: 2.2 };
 const SHOOTERS: Record<string, Shooter> = {
+    ghost: WIND_STRIKE,
+    skeleton: ARROW,
+    afflicted: WIND_STRIKE,
+    ugthanki: SPIT,
+    mountain_troll: SPIT,
+    dagannoth: WATER_STRIKE,
+    tribesman: ARROW,
+    snake: SPIT,
+    lizard: SPIT,
+    sulphur_lizard: SPIT,
+    reanimated_demon: FIRE_BOLT,
+    pyre_fox: STRIKE,
+    fiyr_shade: WIND_BOLT,
+    snakeling: WATER_BOLT,
+    jal_mejrah: SPIT,
     wise_old_man: WAVE,
     chaos_fanatic: WAVE,
     dagannoth_prime: WAVE,
