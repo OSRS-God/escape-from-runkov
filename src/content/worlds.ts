@@ -213,12 +213,17 @@ function convertEnemy(
     };
 }
 
+// The tier under's weight against the map's own 60, where it isn't 25
+const UNDER_TIER_WEIGHT: Record<number, number> = { 4: 12, 5: 7 };
+
 function lootTiersFor(tier: number): { tier: number; weight: number }[] {
-    // The map's own tier, or about one piece in three the one under it:
-    // nothing from a map's chests, champions or kills is better than the map.
-    // Better comes from the boss's golden chest, the vault and clue caskets.
+    // The map's own tier, or about one piece in three the one under it (one
+    // in six on a tier 4 map, one in ten on a tier 5, since version 147: the
+    // tier under is seldom an upgrade there): nothing from a map's chests,
+    // champions or kills is better than the map. Better comes from the
+    // boss's golden chest, the vault and clue caskets.
     const tiers = [
-        { tier: tier - 1, weight: 25 },
+        { tier: tier - 1, weight: UNDER_TIER_WEIGHT[tier] ?? 25 },
         { tier, weight: 60 },
     ].filter((t) => t.tier >= 1 && t.tier <= 5);
     return tiers;

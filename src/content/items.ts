@@ -144,6 +144,17 @@ export function weaponStyle(weapon: ItemDef | undefined): AttackStyle {
     return weapon.uses === "runes" ? "magic" : weapon.ranged ? "ranged" : "melee";
 }
 
+// What each style's hits come to, of the weapon's listed max hit (version
+// 147): a bow, a thrown weapon or a spell hits from where nothing can hit
+// back, so it hits less than a swing does
+export const STYLE_DAMAGE: Record<AttackStyle, number> = { melee: 1, ranged: 0.85, magic: 0.9 };
+
+// A weapon's max hit with its style's share, as the tooltips show it
+// (gearStats takes the share off the hit with the armour's bonuses)
+export function weaponHit(weapon: ItemDef): number {
+    return Math.max(1, Math.round((weapon.damage ?? 0) * STYLE_DAMAGE[weaponStyle(weapon)]));
+}
+
 // The style each kind of armour is weak to
 export const WEAK_TO: Record<AttackStyle, AttackStyle> = { melee: "magic", ranged: "melee", magic: "ranged" };
 
@@ -247,8 +258,11 @@ function bow(
     });
 }
 
+// A staff casts every CAST_TIME seconds (version 147: 1.8 until then)
+const CAST_TIME = 2;
+
 function staff(id: number, name: string, tier: number, damage: number, value: number): ItemDef {
-    return weapon(id, name, tier, damage, 1.8, value, {
+    return weapon(id, name, tier, damage, CAST_TIME, value, {
         ranged: true,
         range: 6,
         sound: SPELL,
@@ -1971,10 +1985,11 @@ export const BOSS_KEY = 991;
 // Version 146 (as the user asked, for enough shots to last a whole run):
 // arrows 150 to 300, runes 250 to 1000 of each kind (a surge takes ten of
 // its element a cast), and thrown weapons THROWN_LIMIT of every kind
-// together; scripts/ammo.ts has what a run takes.
+// together; scripts/ammo.ts has what a run takes. (Thrown went 300 to 350
+// in version 147, when a throw hit less and a rune knife's map took more.)
 export const FOOD_LIMIT = 15;
 export const AMMO_LIMITS: Record<"arrows" | "runes", number> = { arrows: 300, runes: 1000 };
-export const THROWN_LIMIT = 300;
+export const THROWN_LIMIT = 350;
 // Whether a kind's limit is for each item of it (runes) or all together
 export const AMMO_PER_ITEM: Record<"arrows" | "runes", boolean> = { arrows: false, runes: true };
 export const EAT_DELAY = 1.8;
@@ -2085,9 +2100,14 @@ export function gearPower(item: ItemDef): number {
 // tier's prize: it never comes from an ordinary chest, an ordinary kill or
 // the shop, only from the boss's chest, the vault, a champion or a clue
 // casket. The rest drop more the weaker they are: the weakest third of a
-// tier and slot four times as often as the strongest third.
+// tier and slot four times as often as the strongest third, and on the later
+// maps (version 147, as the user asked: a tier 4 or 5 map's gear was mostly
+// no better than the tier under's best) much less so (RARITY_BY_TIER).
 export const PRIZES = new Set<number>();
 const GEAR_WEIGHT = new Map<number, number>();
+// The weakest, middle and strongest third's weights, by tier
+const RARITY_BY_TIER: Record<number, [number, number, number]> = { 4: [1, 1, 1], 5: [1.25, 1.1, 1] };
+const RARITY: [number, number, number] = [4, 2, 1];
 {
     const groups = new Map<string, ItemDef[]>();
     for (const item of ITEMS) {
@@ -2098,9 +2118,10 @@ const GEAR_WEIGHT = new Map<number, number>();
     }
     for (const group of groups.values()) {
         group.sort((a, b) => gearPower(a) - gearPower(b));
+        const [weak, middle, strong] = RARITY_BY_TIER[group[0].tier] ?? RARITY;
         group.forEach((item, i) => {
             const p = group.length > 1 ? i / (group.length - 1) : 0.5;
-            GEAR_WEIGHT.set(item.id, p < 1 / 3 ? 4 : p < 2 / 3 ? 2 : 1);
+            GEAR_WEIGHT.set(item.id, p < 1 / 3 ? weak : p < 2 / 3 ? middle : strong);
         });
         if (group.length >= 2) {
             PRIZES.add(group[group.length - 1].id);

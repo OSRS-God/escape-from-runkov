@@ -1,5 +1,5 @@
 // Item lists (the stash, a run's inventory) and what worn gear adds up to.
-import { AMMO_LIMITS, AMMO_PER_ITEM, ATTACK_STYLES, AttackStyle, FOOD_LIMIT, ItemDef, SLOTS, Slot, THROWN_LIMIT, WEAK_TO, getItem, price, weaponStyle } from "../content/items";
+import { AMMO_LIMITS, AMMO_PER_ITEM, ATTACK_STYLES, AttackStyle, FOOD_LIMIT, ItemDef, SLOTS, STYLE_DAMAGE, Slot, THROWN_LIMIT, WEAK_TO, getItem, price, weaponStyle } from "../content/items";
 import { Equipment, ItemStack } from "./save";
 
 export const INVENTORY_SIZE = 28;
@@ -239,7 +239,8 @@ export function gearStats(equipment: Equipment, wear: Wear = {}): GearStats {
     stats.styleBonus = Math.min(STYLE_BONUS_MAX, Math.max(STYLE_BONUS_MIN, bonus));
     stats.strength = Math.round(stats.strength * 1000) / 1000;
     stats.perkDamage = Math.round(stats.perkDamage * 1000) / 1000;
-    stats.damage = Math.max(1, Math.round(stats.damage * (1 + stats.styleBonus + stats.strength + stats.perkDamage)));
+    // A bow, a thrown weapon or a spell hits for its style's share (STYLE_DAMAGE)
+    stats.damage = Math.max(1, Math.round(stats.damage * STYLE_DAMAGE[hitsWith] * (1 + stats.styleBonus + stats.strength + stats.perkDamage)));
     const worn = Object.values(equipment);
     for (const [set, def] of Object.entries(BARROWS_SETS) as [BarrowsSet, { items: number[] }][]) {
         if (def.items.every((id) => worn.includes(id))) {

@@ -127,8 +127,8 @@ browsers.
   in `items.ts`; the stash's Pack button, pickups and the trader all stop there; a stack on the
   ground gives what fits and leaves the rest, since version 100), and a bite takes
   1.8 seconds before the next (`EAT_DELAY`): "You're still chewing." Ammunition is 300 arrows
-  at most, every kind together, 1,000 of each kind of rune and 300 thrown weapons, every kind
-  together (`AMMO_LIMITS`, `AMMO_PER_ITEM`, `THROWN_LIMIT`; runes were 100 before the
+  at most, every kind together, 1,000 of each kind of rune and 350 thrown weapons, every kind
+  together (`AMMO_LIMITS`, `AMMO_PER_ITEM`, `THROWN_LIMIT`, 300 thrown until version 147; runes were 100 before the
   spellbook, version 106, then 2,000 all together, 250 per kind since version 130, from the
   playtest, as a spell takes three or four kinds, and arrows 150 and runes 250 until version
   146), at 3 to 150 coins each in the shop by the kind. Since version 146, as the user asked
@@ -146,6 +146,15 @@ browsers.
   elite never quite catches you unburdened. A roused melee boss moves nearly as fast as you do
   unburdened (`BOSS_CHASE_SPEED`), so it can't be shot from a walk backwards for ever; a boss
   that shoots keeps its own pace.
+- **Ranged and magic hit less than a swing** (version 147, so they aren't the easy choice):
+  a bow or thrown weapon hits 85% of its listed max and a spell 90% (`STYLE_DAMAGE` in
+  `items.ts`, taken off in `gearStats`; the tooltips show the hit after it, `weaponHit`), and
+  a staff casts every 2 seconds, not 1.8 (`CAST_TIME`). Which piece is a tier's prize still
+  goes by the listed numbers. And every shot, throw or cast slows you to 60% of your pace for
+  0.45 seconds from its start, or half the weapon's attack time if that's less (`AIM_SLOW`,
+  `AIM_SECONDS` in `run.ts`), so shooting from a walk backwards costs ground: a bow's
+  backwards walk is about 4.1 tiles a second, not 4.9. The war room's speed is the pace
+  without it, and says so for a ranged weapon.
 - **Armour has a kind**, the combat triangle's way (`style` on each piece in `items.ts`, from its
   name): plate, mail and metal helms are melee armour, leather, hides, coifs and Karil's ranged,
   robes, hoods, Ahrim's and the books magic; jewellery, capes and void are neutral. A piece's
@@ -417,7 +426,8 @@ browsers.
   was carrying a piece of gear rolled the way a chest's is. Otherwise **weapons and armour only
   come out of chests.** A map has thirteen to fifty-odd
   chests by its size, spread apart: about half hold a piece of gear (two on four and five star maps), the map's own
-  star tier or, about one piece in three, the one under it; the rest hold a piece or two of food
+  star tier or, about one piece in three, the one under it (one in six on a four star map and
+  one in ten on a five star since version 147, `UNDER_TIER_WEIGHT` in `worlds.ts`); the rest hold a piece or two of food
   for the map, a potion, or a purse. **Nothing on a map drops gear better than the map's tier**:
   not a chest, a champion, a kill, the golden chest, the vault or a clue casket. Better gear is
   the next map's, or the shop's, which stocks up to the hardest tier you've been to. An opened
@@ -436,7 +446,10 @@ browsers.
   a prize, from the golden chest one in fifteen, from the vault or a clue casket one in thirty-two
   (`PRIZE_FULL`, `PRIZE_BOSS_CHEST` and `PRIZE_CASKET` in `run.ts`), the prize picked evenly among
   the tier's. The rest of a tier drops by weight,
-  the weakest third of a tier and slot four times as often as the strongest third (`rollGear`).
+  the weakest third of a tier and slot four times as often as the strongest third (`rollGear`),
+  but evenly in tier 4 and only a quarter more often in tier 5 (`RARITY_BY_TIER`, version 147:
+  a later map's gear was mostly no better than the tier under's best; now about 25–45% of a
+  four or five star map's weapons and armour beat it, as on a three star map).
   A piece's tooltip says when it's a prize. There is no cosmetic gear: nothing that's worn for
   looks alone, and no trimmed, gilded or ornamented versions of pieces the game has.
 - Extract, and what you're wearing and carrying comes home as it is, the pack still packed for the

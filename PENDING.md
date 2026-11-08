@@ -1,5 +1,27 @@
 # Pending for the next push
 
+Version 147 (deployed 8 November 2026 as Version 2026.11.08.2, `GAME_BUILD` "2026.11.08.2"): ranged and magic hit less, as the user asked, so they aren't the
+easy choice. `STYLE_DAMAGE` in items.ts: a bow or thrown weapon hits 85% of its listed max, a
+spell 90%, melee unchanged, taken off in `gearStats` with the armour's bonuses; the tooltips,
+the item card and the shop's compare show the hit after it (`weaponHit`). A staff casts every
+2 seconds, not 1.8 (`CAST_TIME`). gearPower still goes by the listed numbers, so every tier's
+prize is unchanged (no staff is near the top). THROWN_LIMIT 300 → 350, as the rune knife's
+tier-3 maps cleared to the last enemy took 334 (scripts/ammo.ts: every map fits again).
+Then, as the user agreed to the suggestion, kiting costs ground: each ranged shot, throw or
+cast slows you to 60% (`AIM_SLOW`) for 0.45s from its start, or half the weapon's attack time
+if less (`AIM_SECONDS`, `aiming` in run.ts; tested: 2.95 tiles/s aiming against 4.91). The war
+room's Speed shows the pace without it (`speed(false)`) and notes it for a ranged weapon.
+
+Version 148 (deployed 8 November 2026 as Version 2026.11.08.3, `GAME_BUILD` "2026.11.08.3"): later maps' gear drops, as the user asked. On tier 4 and 5 maps
+only 9–23% of the weapons and armour dropped beat the tier under's best (the 4:2:1 weighting
+toward a tier's weakest third, and a third of drops from the tier under). Now
+`RARITY_BY_TIER` in items.ts weights tier 4 evenly and tier 5 at 1.25:1.1:1 (the shop's
+shelves too), and `UNDER_TIER_WEIGHT` in worlds.ts makes the tier under 12 (tier 4) and 7
+(tier 5) against the map's 60, not 25: 17% and 11% of drops. Measured: 24–40% of a tier 4
+map's and 36–46% of a tier 5 map's weapons and armour beat the tier under's best (a tier 3
+map's: 19–40%). Tier 4's armour stays lowest, as many of its pieces are weaker than tier
+3's best. Prizes and their chances unchanged.
+
 Version 146 (deployed 8 November 2026 as Version 2026.11.08, `GAME_BUILD` "2026.11.08"): ammunition, as the user asked, for thrown weapons
 that never ran out and enough shots for a whole run with a bow or staff, and speeds. Thrown
 weapons stack (`thrown` on ItemDef): one held, each throw takes another of the same from the

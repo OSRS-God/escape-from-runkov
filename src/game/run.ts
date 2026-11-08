@@ -469,6 +469,12 @@ const PLAYER_SPEED = 4.2 * 1.3 * 0.9;
 // walks back to where it stood
 const BOSS_CHASE_SPEED = PLAYER_SPEED * 0.95;
 const BOSS_GIVE_UP = 20;
+// Drawing a bow, throwing or casting slows you to this share of your pace
+// for AIM_SECONDS from the shot's start (half the weapon's attack time at
+// most, so a quick one isn't slowed for good), version 147: shooting from a
+// walk backwards costs ground, as a swing up close costs hitpoints
+export const AIM_SLOW = 0.6;
+const AIM_SECONDS = 0.45;
 // A melee boss gives up much sooner, and only notices you from a little
 // nearer than that (so it doesn't rouse and give up by turns at the edge)
 const BOSS_GIVE_UP_MELEE = 8;
@@ -788,6 +794,8 @@ export class Run {
     private pz: number;
     private facing = 0;
     private attackCooldown = 0;
+    // Seconds left of a shot's slow (AIM_SLOW)
+    private aiming = 0;
     private swingIn = -1;
     private swingTarget?: Enemy;
     private hurtFlash = 0;
@@ -2251,9 +2259,12 @@ export class Run {
         return Math.min(WEIGHT_MAX, pieces * WEIGHT_PER_PIECE);
     }
 
-    // Tiles a second, with the pack's weight (and a pet's long strides)
-    speed(): number {
-        return PLAYER_SPEED * (1 - this.weight()) * (1 + (this.petBuff?.speed ?? 0));
+    // Tiles a second, with the pack's weight (and a pet's long strides), and
+    // slower while a shot's drawn or a spell's cast (aimed false: the pace
+    // without that, as the war room says it)
+    speed(aimed = true): number {
+        const aim = aimed && this.aiming > 0 ? AIM_SLOW : 1;
+        return PLAYER_SPEED * (1 - this.weight()) * (1 + (this.petBuff?.speed ?? 0)) * aim;
     }
 
     // How many of a thing the pack holds
@@ -3346,7 +3357,8 @@ export class Run {
             return;
         }
         this.attackCooldown -= dt;
-        this.spec = Math.min(100, this.spec + SPEC_REGEN * this.specRate * dt);
+        this.aiming -= dt;
+        this.spec =Math.min(100, this.spec + SPEC_REGEN * this.specRate * dt);
         if (this.hurtFlash > 0) {
             this.hurtFlash -= dt;
             if (this.hurtFlash <= 0) {
@@ -3550,6 +3562,9 @@ export class Run {
         this.swingIn = Math.min(0.3, length * 0.5);
         this.swingTarget = target;
         this.attackCooldown = stats.speed;
+        if (stats.ranged) {
+            this.aiming = Math.min(AIM_SECONDS, stats.speed * 0.5);
+        }
         this.attacks++;
         // A god spell sounds only where it lands
         const sound = spell ? spell.castSound : stats.sound;

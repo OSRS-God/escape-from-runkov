@@ -29,6 +29,7 @@ import {
     isPrize,
     price,
     specialOf,
+    weaponHit,
     weaponStyle,
     PRAYER_BONUS_SCALE,
 } from "../content/items";
@@ -92,7 +93,7 @@ import { MenuScene } from "../game/menu";
 import { applyMusicVolume } from "../game/music";
 import { PET_ONE_IN, isBossPet, petBuff, petFrom, petName } from "../game/pets";
 import { BODY_PART_NAMES, COLOR_GROUP_NAMES, loadColorTables, loadKits } from "../game/player";
-import { Run, RunResult, TRADER_MARKUP } from "../game/run";
+import { AIM_SLOW, Run, RunResult, TRADER_MARKUP } from "../game/run";
 import {
     CHARACTER_SLOTS,
     Equipment,
@@ -207,7 +208,7 @@ function percent(share: number): string {
 function describe(item: ItemDef): string {
     const parts: string[] = [];
     if (item.damage !== undefined) {
-        parts.push(`hit ${item.damage}`, `${item.speed}s`, item.ranged ? `range ${item.range}` : `reach ${item.range}`);
+        parts.push(`hit ${weaponHit(item)}`, `${item.speed}s`, item.ranged ? `range ${item.range}` : `reach ${item.range}`);
         if (item.twoHanded) {
             parts.push("two handed");
         }
@@ -240,7 +241,7 @@ function describe(item: ItemDef): string {
         parts.push(POTION_EFFECT[item.potion]);
     }
     if (item.uses) {
-        parts.push(`shoots the best ${item.uses} in the pack (hit ${item.damage} with its own ${"★".repeat(item.tier)} kind, more with better, less with worse)`);
+        parts.push(`shoots the best ${item.uses} in the pack (hit ${weaponHit(item)} with its own ${"★".repeat(item.tier)} kind, more with better, less with worse)`);
     } else if (item.thrown) {
         const each = "thrown: hold one, and each throw takes another from the pack";
         parts.push(item.splash ? `${each}; what's beside the target takes half` : each);
@@ -360,7 +361,7 @@ function statRows(item: ItemDef): [string, string][] {
         rows.push(["Slot", capitalize(item.slot) + (item.twoHanded ? " (two handed)" : "")]);
     }
     if (item.damage !== undefined) {
-        rows.push(["Max hit", String(item.damage)]);
+        rows.push(["Max hit", String(weaponHit(item))]);
         rows.push(["Attack speed", `${item.speed}s`]);
         rows.push([item.ranged ? "Range" : "Reach", `${item.range} tiles`]);
         if (item.slot === "weapon") {
@@ -2798,10 +2799,11 @@ export class UI {
                 ),
                 line(
                     "Speed",
-                    `${run.speed().toFixed(1)} tiles/s`,
-                    run.weight() > 0
+                    `${run.speed(false).toFixed(1)} tiles/s`,
+                    (run.weight() > 0
                         ? `the gear in your pack slows you ${Math.round(run.weight() * 100)}%`
-                        : "nothing in the pack weighs you down; gear there would",
+                        : "nothing in the pack weighs you down; gear there would") +
+                        (run.stats.ranged ? `; each shot or cast slows you to ${Math.round(AIM_SLOW * 100)}% for a moment` : ""),
                 ),
                 line(
                     "Protection",
@@ -2920,7 +2922,7 @@ export class UI {
             n === 0 ? null : h("span", { class: (n > 0) !== lowerIsBetter ? "green" : "red" }, `${n > 0 ? "+" : ""}${Math.round(n * 10) / 10} ${word}`);
         const parts: Child[] = [];
         if (slot === "weapon") {
-            const hit = (item.damage ?? 0) - (worn?.damage ?? 3);
+            const hit = weaponHit(item) - (worn ? weaponHit(worn) : 3);
             const speed = Math.round(((item.speed ?? 0) - (worn?.speed ?? 0.7)) * 10) / 10;
             parts.push(
                 diff(hit, "max hit") ?? "same max hit",
