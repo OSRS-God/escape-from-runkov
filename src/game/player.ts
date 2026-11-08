@@ -14,8 +14,9 @@ import { addShadow } from "./shadows";
 const SHADOW_RADIUS = 0.45;
 
 // The run clip plays this much faster than the cache's (version 137): the
-// walk went 30% faster, and the feet keep up with it
-export const RUN_CLIP_SPEED = 1.3;
+// walk went 30% faster, and the feet keep up with it (and a tenth slower
+// with the walk since version 146)
+export const RUN_CLIP_SPEED = 1.3 * 0.9;
 
 // The client's equipment slot for each of the game's slots (rings have no model)
 export const EQUIP_SLOT: Record<Slot, number> = {

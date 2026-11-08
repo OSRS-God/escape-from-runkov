@@ -14,11 +14,14 @@ import {
     SHOP_AMMO,
     SHOP_FOOD,
     SHOP_POTIONS,
+    SHOP_THROWN,
     SLOTS,
     Slot,
     ITEM_BY_ID,
     STRENGTH_NAME,
+    THROWN_LIMIT,
     TIER_COLOURS,
+    pluralName,
     WEAK_TO,
     formatCoins,
     tierGlows,
@@ -238,8 +241,9 @@ function describe(item: ItemDef): string {
     }
     if (item.uses) {
         parts.push(`shoots the best ${item.uses} in the pack (hit ${item.damage} with its own ${"★".repeat(item.tier)} kind, more with better, less with worse)`);
-    } else if (item.ranged && item.slot === "weapon") {
-        parts.push(item.splash ? "thrown, needs no ammunition; what's beside the target takes half" : "thrown, needs no ammunition");
+    } else if (item.thrown) {
+        const each = "thrown: hold one, and each throw takes another from the pack";
+        parts.push(item.splash ? `${each}; what's beside the target takes half` : each);
     }
     if (item.ammo) {
         const made = `made for ${"★".repeat(item.tier)} ${item.ammo === "arrows" ? "bows" : "staves"}`;
@@ -393,6 +397,9 @@ function statRows(item: ItemDef): [string, string][] {
     if (item.uses) {
         rows.push(["Shoots", `the best ${item.uses} packed`]);
     }
+    if (item.thrown) {
+        rows.push(["Throws", `one held, each throw another from the pack (${THROWN_LIMIT} thrown weapons packed at most)`]);
+    }
     if (item.ammo) {
         rows.push(["For", item.ammo === "arrows" ? "bows, one a shot" : "staves, one a cast"]);
     }
@@ -401,7 +408,7 @@ function statRows(item: ItemDef): [string, string][] {
         rows.push(["Special", special.name]);
     }
     if (item.slot) {
-        rows.push(["Worth", `${formatCoins(price(item))} coins`]);
+        rows.push(["Worth", `${formatCoins(price(item))} coins${item.thrown ? " each" : ""}`]);
     }
     return rows;
 }
@@ -1713,6 +1720,13 @@ export class UI {
         const save = this.save;
         const weapon = save.equipment.weapon !== undefined ? getItem(save.equipment.weapon) : undefined;
         const uses = weapon?.uses;
+        // A thrown weapon's: the rest of it packed (version 146)
+        if (weapon?.thrown) {
+            const count = countOf(save.backpack, weapon.id);
+            return count > 0
+                ? h("div", { class: cls, title: `${count} more ${pluralName(weapon.name)} packed` }, iconElement(weapon.id), h("span", { class: "count" }, String(count)))
+                : h("div", { class: `${cls} empty`, title: `No more ${pluralName(weapon.name)} packed to throw` });
+        }
         if (!uses) {
             return h("div", { class: `${cls} empty`, title: "ammunition" });
         }
@@ -1800,7 +1814,11 @@ export class UI {
         const summary = packSummary(save.equipment, save.backpack, save.insured);
         const weapon = save.equipment.weapon !== undefined ? getItem(save.equipment.weapon) : undefined;
         const uses = weapon?.uses;
-        const ammo = uses ? save.backpack.reduce((n, s) => n + (getItem(s.id).ammo === uses ? s.count : 0), 0) : undefined;
+        const ammo = weapon?.thrown
+            ? countOf(save.backpack, weapon.id)
+            : uses
+              ? save.backpack.reduce((n, s) => n + (getItem(s.id).ammo === uses ? s.count : 0), 0)
+              : undefined;
         return {
             character: save.character,
             equipment: { ...save.equipment },
@@ -3931,7 +3949,7 @@ export class UI {
                         h(
                             "div",
                             { class: "muted small-text" },
-                            `Food ${FOOD_LIMIT} pieces at most, arrows ${AMMO_LIMITS.arrows} of every kind together and ${AMMO_LIMITS.runes} of each kind of rune. A click puts ${this.quantityWord() === "all" ? "a stack" : this.quantityWord()} back in the vault.`,
+                            `Food ${FOOD_LIMIT} pieces at most, arrows ${AMMO_LIMITS.arrows} of every kind together, ${AMMO_LIMITS.runes} of each kind of rune and ${THROWN_LIMIT} thrown weapons of every kind together. A click puts ${this.quantityWord() === "all" ? "a stack" : this.quantityWord()} back in the vault.`,
                         ),
                         packNote,
                         h("button", { class: "wide", disabled: save.backpack.length === 0, onclick: () => depositPack.click() }, "Empty pack into vault"),
@@ -3990,6 +4008,17 @@ export class UI {
                 1,
                 h("button", { disabled: save.coins < cost * small, onclick: () => buy(id, small, false) }, `Buy ${small} for ${formatCoins(cost * small)}`),
                 h("button", { disabled: save.coins < cost * big, onclick: () => buy(id, big, false) }, `x${big}`),
+            );
+        });
+        // Thrown weapons the same way (version 146): each throw takes one
+        const thrown = SHOP_THROWN.filter((id) => getItem(id).tier <= ammoTier).map((id) => {
+            const item = getItem(id);
+            const cost = price(item);
+            return itemRow(
+                item,
+                1,
+                h("button", { disabled: save.coins < cost * 25, onclick: () => buy(id, 25, false) }, `Buy 25 for ${formatCoins(cost * 25)}`),
+                h("button", { disabled: save.coins < cost * 100, onclick: () => buy(id, 100, false) }, "x100"),
             );
         });
         const gear = save.shop.map((id) => {
@@ -4077,7 +4106,7 @@ export class UI {
                                     : ""),
                         ),
                         h("h2", {}, "Food, potions and ammunition"),
-                        h("div", { class: "item-list" }, ...food, ...ammo),
+                        h("div", { class: "item-list" }, ...food, ...ammo, ...thrown),
                     ),
                     h(
                         "div",
@@ -4445,6 +4474,9 @@ export class UI {
         } else if (uses) {
             const ammo = run.ammo();
             ammoText = ` · ${ammo ? `${ammo.count} ${getItem(ammo.id).name.toLowerCase()}` : `no ${uses}`}`;
+        } else if (run.stats.weapon?.thrown) {
+            // A thrown weapon: how many more to throw (version 146)
+            ammoText = ` · ${run.count(run.stats.weapon.id)} ${pluralName(run.stats.weapon.name)} to throw`;
         }
         hud.coins.textContent = `${formatCoins(run.coins)} coins · pack ${run.inventory.length}/${run.slots}` + ammoText;
         const left = run.timeLeft;

@@ -1,6 +1,6 @@
 // What persists between runs, in localStorage: the stash, coins, what's worn
 // and who the character is.
-import { ITEM_BY_ID, Slot, rollShopStock } from "../content/items";
+import { ITEM_BY_ID, Slot, getItem, rollShopStock } from "../content/items";
 import { Book, SPELL_BY_ID } from "../content/spells";
 import { DEFAULT_COLORS, DEFAULT_KITS } from "./player";
 
@@ -79,6 +79,9 @@ export type SaveData = {
     // A new character still to pick its starter kit (starter.ts, version
     // 127); a save from before it never had the choice, and keeps its gear
     pickStarter?: boolean;
+    // Whether the save has had version 146's thrown weapons sorted out
+    // (parseSave): true for any save made since
+    thrownBundles?: boolean;
 };
 
 export type Friend = { code: string; name: string };
@@ -220,6 +223,7 @@ export function newSave(): SaveData {
         bankOrder: [],
         bankTabs: [],
         pickStarter: true,
+        thrownBundles: true,
     };
 }
 
@@ -229,6 +233,22 @@ function newFriendKey(): string {
     const bytes = new Uint8Array(18);
     crypto.getRandomValues(bytes);
     return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+const THROWN_GRANT = 100;
+
+// A list with each stackable thing in one stack
+function mergeStacks(list: ItemStack[]): ItemStack[] {
+    const out: ItemStack[] = [];
+    for (const s of list) {
+        const same = getItem(s.id).stackable ? out.find((o) => o.id === s.id) : undefined;
+        if (same) {
+            same.count += s.count;
+        } else {
+            out.push({ ...s });
+        }
+    }
+    return out;
 }
 
 // A save from its JSON, brought up to date; undefined if it isn't one
@@ -285,7 +305,9 @@ export function parseSave(raw: string): SaveData | undefined {
             save.insured = undefined;
         }
         if (Array.isArray(save.shop)) {
-            save.shop = save.shop.filter((id) => ITEM_BY_ID.has(id));
+            // (a thrown weapon is sold by the bundle since version 146, never
+            // off the gear shelves)
+            save.shop = save.shop.filter((id) => ITEM_BY_ID.has(id) && !getItem(id).thrown);
         }
         // Saves from before looks were built from body kits
         if (!Array.isArray(save.character.kits) || !Array.isArray(save.character.colors)) {
@@ -335,6 +357,21 @@ export function parseSave(raw: string): SaveData | undefined {
         // true isn't an older save's), and only before its first run
         if (data.pickStarter !== true || save.stats.runs > 0) {
             delete save.pickStarter;
+        }
+        // Thrown weapons stack since version 146, and each throw takes one:
+        // a save's separate ones are made one stack, and a save from before
+        // it gets THROWN_GRANT more of each kind it has, once, so what it
+        // bought as a weapon still throws (data's, as fresh's is true)
+        save.stash = mergeStacks(save.stash);
+        save.backpack = mergeStacks(save.backpack);
+        if (data.thrownBundles !== true) {
+            const owned = new Set([...save.stash, ...save.backpack].map((s) => s.id).concat(Object.values(save.equipment)));
+            for (const id of owned) {
+                if (getItem(id).thrown) {
+                    save.stash = mergeStacks([...save.stash, { id, count: THROWN_GRANT }]);
+                }
+            }
+            save.thrownBundles = true;
         }
         save.friendKey ??= newFriendKey();
         return save;

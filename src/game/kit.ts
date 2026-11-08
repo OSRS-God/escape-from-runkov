@@ -8,7 +8,7 @@
 // opening, a run ending), unworn, so a death, a drop or a meal costs nothing
 // of it; it can't be sold, and it stays out of gravestones so coming back
 // doesn't make two.
-import { AMMO_LIMITS, ANKOU, COINS, FOOD_LIMIT, GILDED, GUTHIX_SUNFIRE, ITEMS, ItemDef, RED_GHOSTLY, SANGUINE_TORVA } from "../content/items";
+import { AMMO_LIMITS, ANKOU, COINS, FOOD_LIMIT, GILDED, GUTHIX_SUNFIRE, ITEMS, ItemDef, RED_GHOSTLY, SANGUINE_TORVA, THROWN_LIMIT } from "../content/items";
 import { CROWN_PETS } from "../content/crownpets";
 import { crownKey, crownKnown, crownVerified } from "./crown";
 import { addItem, countOf } from "./inventory";
@@ -18,7 +18,7 @@ const TEST_SLOT = 1;
 const POTIONS_KEPT = 10;
 
 // How many of a thing the kit keeps: a pack's worth of food and of each
-// arrow and rune, ten of each potion, one of everything else. Nothing of
+// arrow, rune and thrown weapon, ten of each potion, one of everything else. Nothing of
 // what's no use off a map (coins, clue scrolls, keys).
 function keptCount(item: ItemDef): number {
     if (item.id === COINS || item.clue || item.key || item.bossKey) {
@@ -29,6 +29,9 @@ function keptCount(item: ItemDef): number {
     }
     if (item.ammo) {
         return AMMO_LIMITS[item.ammo];
+    }
+    if (item.thrown) {
+        return THROWN_LIMIT;
     }
     if (item.potion) {
         return POTIONS_KEPT;

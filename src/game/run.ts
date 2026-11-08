@@ -25,6 +25,7 @@ import {
     ammoOfTier,
     getItem,
     iconUrl,
+    pluralName,
     rollGear,
     specialOf,
     tierGlows,
@@ -460,8 +461,9 @@ const PLAYER_RADIUS = 0.35;
 // trees, or a doorway, can be walked through without lining up on it
 const COLLISION_RADIUS = 0.25;
 // Tiles a second unburdened: 4.2 until version 137, 30% faster since, as
-// the user asked (a melee boss's chase below keeps pace with it)
-const PLAYER_SPEED = 4.2 * 1.3;
+// the user asked, and a tenth slower than that since version 146, as they
+// asked too (a melee boss's chase below keeps pace with it)
+const PLAYER_SPEED = 4.2 * 1.3 * 0.9;
 // A melee boss after you moves at least this fast (just under you
 // unburdened); any boss gives up the chase this many tiles from you and
 // walks back to where it stood
@@ -622,8 +624,20 @@ const PURSE_CHANCE = 0.05;
 // a side; a bigger map gets longer by the square root of its area, to the
 // half minute (closeSeconds)
 const CLOSE_SECONDS_SIDE = 128;
-// A kill drops a few arrows or runes this often (one in four)
+// A kill drops a few arrows or runes this often (one in four). Since version
+// 145 (as the user asked, for enough to last a whole run) a kill of this
+// player's drops what their weapon takes, as far as the map's tier allows:
+// this many shots of it (the arrows being shot, the runes of the spell last
+// cast for this many casts, more of the thrown weapon held); a melee kill,
+// or a mate's, drops arrows or runes as before.
 const AMMO_DROP_CHANCE = 0.25;
+const AMMO_DROP_SHOTS: [number, number] = [4, 8];
+const AMMO_DROP_CASTS: [number, number] = [3, 5];
+// A shot keeps its arrow, runes or thrown weapon this often (version 146,
+// Ava's way), a pet's share on top
+const AMMO_SAVE = 0.4;
+// A thrown weapon found as gear (a chest's, a kill's) is this many of it
+const THROWN_FOUND: [number, number] = [20, 40];
 // How far a chinchompa's burst reaches past what it hit, in tiles
 const SPLASH_TILES = 1.5;
 
@@ -807,6 +821,8 @@ export class Run {
     private chased = false;
     private champions = new Map<EnemyDef, EnemyDef>();
     private ammoMessageAt = -10;
+    // The spell last cast, whose runes a kill drops (dropOwnAmmo)
+    private lastSpell?: SpellDef;
     // The spell picked to autocast (the spellbook sets it), or none for the
     // strongest the staff can cast with the runes packed; and the book open
     autocast?: string;
@@ -2243,6 +2259,43 @@ export class Run {
     // How many of a thing the pack holds
     readonly count = (id: number): number => countOf(this.inventory, id);
 
+    // Whether a shot keeps what it'd take: AMMO_SAVE, and a pet's share of
+    // what's left (version 146)
+    private ammoSaved(): boolean {
+        return this.rng() < 1 - (1 - AMMO_SAVE) * (1 - (this.petBuff?.ammoSave ?? 0));
+    }
+
+    // What a kill of this player's drops for their weapon (version 146): a
+    // few shots' worth of what it takes, of no tier above the map's (so a
+    // weak map isn't farmed for dear ammunition); false when there's nothing
+    // to drop, and arrows or runes come as they always have
+    private dropOwnAmmo(x: number, z: number): boolean {
+        const weapon = this.stats.weapon;
+        const tier = this.world.tier;
+        const shots = () => randInt(this.rng, AMMO_DROP_SHOTS[0], AMMO_DROP_SHOTS[1]);
+        if (weapon?.thrown) {
+            if (weapon.tier > tier) {
+                return false;
+            }
+            this.dropPickup(weapon.id, shots(), x, z);
+            return true;
+        }
+        if (weapon?.uses === "arrows") {
+            const shooting = this.ammo();
+            this.dropPickup(shooting && getItem(shooting.id).tier <= tier ? shooting.id : ammoOfTier("arrows", tier, this.rng()), shots(), x, z);
+            return true;
+        }
+        if (weapon?.uses === "runes" && this.lastSpell) {
+            const casts = randInt(this.rng, AMMO_DROP_CASTS[0], AMMO_DROP_CASTS[1]);
+            const runes = spellCost(this.lastSpell, this.runesGiven()).filter((r) => getItem(r.id).tier <= tier);
+            for (const r of runes) {
+                this.dropPickup(r.id, r.n * casts, x, z);
+            }
+            return runes.length > 0;
+        }
+        return false;
+    }
+
     // The runes the staff and shield in hand give for nothing (spells.ts)
     runesGiven(): Set<number> {
         return runesGiven(this.equipment.weapon, this.equipment.shield);
@@ -3465,9 +3518,17 @@ export class Run {
     private beginSwing(asked = false): void {
         const stats = this.stats;
         // A bow shoots nothing without arrows in the pack, and a staff casts
-        // nothing it can't (its tier) or hasn't the runes for
+        // nothing it can't (its tier) or hasn't the runes for, and a thrown
+        // weapon needs another of it packed to throw (version 146)
         const casting = stats.weapon?.uses === "runes" ? this.castingSpell() : undefined;
-        const why = stats.weapon?.uses === "arrows" && !this.ammo() ? "You're out of arrows." : casting && !casting.spell ? casting.why : undefined;
+        const why =
+            stats.weapon?.uses === "arrows" && !this.ammo()
+                ? "You're out of arrows."
+                : stats.weapon?.thrown && this.count(stats.weapon.id) === 0
+                  ? `You're out of ${pluralName(stats.weapon.name)}: the one in your hand is your last.`
+                  : casting && !casting.spell
+                    ? casting.why
+                    : undefined;
         if (why) {
             if (this.time - this.ammoMessageAt > 3) {
                 this.ammoMessageAt = this.time;
@@ -3538,10 +3599,20 @@ export class Run {
                     }
                     scale = spellScale(stats.weapon, spell);
                     look = { projectile: spell.projectile, impact: spell.impact, spell, maxHit: Math.max(1, Math.round(stats.damage * scale)) };
-                    if (!(this.petBuff?.ammoSave && this.rng() < this.petBuff.ammoSave)) {
+                    this.lastSpell = spell;
+                    if (!this.ammoSaved()) {
                         for (const rune of spellCost(spell, this.runesGiven())) {
                             removeItem(this.inventory, rune.id, rune.n);
                         }
+                        this.hooks.onChanged();
+                    }
+                } else if (stats.weapon?.thrown) {
+                    // A throw: another of the same from the pack (version 146)
+                    if (this.count(stats.weapon.id) === 0) {
+                        return;
+                    }
+                    if (!this.ammoSaved()) {
+                        removeItem(this.inventory, stats.weapon.id, 1);
                         this.hooks.onChanged();
                     }
                 } else if (stats.weapon?.uses) {
@@ -3554,8 +3625,7 @@ export class Run {
                     if (stats.weapon.projectile !== BOLT) {
                         look = { projectile: kind.projectile ?? look.projectile, impact: kind.impact ?? look.impact };
                     }
-                    // A pet may spare the shot its ammunition now and then
-                    if (!(this.petBuff?.ammoSave && this.rng() < this.petBuff.ammoSave)) {
+                    if (!this.ammoSaved()) {
                         removeItem(this.inventory, ammo.id, 1);
                         this.hooks.onChanged();
                     }
@@ -3968,10 +4038,11 @@ export class Run {
             }
             return;
         }
-        // Arrows or runes, for whoever shoots: one kill in four, a few
+        // Arrows or runes, for whoever shoots: one kill in four, what this
+        // player's weapon takes if it was theirs (dropOwnAmmo), else a few
         // arrows of the map's tier, or a handful of elemental runes or a few
         // of the tier's catalyst (version 106: spells take OSRS's costs)
-        if (this.rng() < AMMO_DROP_CHANCE) {
+        if (this.rng() < AMMO_DROP_CHANCE && !(by.me && this.dropOwnAmmo(e.x + 0.3, e.z - 0.3))) {
             if (this.rng() < 0.5) {
                 const kind = ammoOfTier("arrows", this.world.tier, this.rng());
                 this.dropPickup(kind, randInt(this.rng, 3, 6), e.x + 0.3, e.z - 0.3);
@@ -4024,7 +4095,8 @@ export class Run {
         }
         const item = rollGear(this.rng, pick, prizes);
         if (item) {
-            this.dropPickup(item.id, 1, x, z, scatter);
+            // A thrown weapon comes as a bundle (version 146)
+            this.dropPickup(item.id, item.thrown ? randInt(this.rng, THROWN_FOUND[0], THROWN_FOUND[1]) : 1, x, z, scatter);
         }
     }
 
@@ -4240,7 +4312,10 @@ export class Run {
         if (e.frozen > 0) {
             return 0;
         }
-        return base * (e.trait === "fast" ? 1.5 : 1) * (e.slow > 0 ? 0.5 : 1);
+        // A fast elite never quite catches you unburdened (version 146: with
+        // enemies a fifth quicker it could have)
+        const fast = e.trait === "fast" ? Math.max(base, Math.min(base * 1.5, BOSS_CHASE_SPEED)) : base;
+        return fast * (e.slow > 0 ? 0.5 : 1);
     }
 
     // A mage or archer backing away from a hero who's closed in, facing

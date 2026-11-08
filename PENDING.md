@@ -1,5 +1,22 @@
 # Pending for the next push
 
+Version 146 (deployed 8 November 2026 as Version 2026.11.08, `GAME_BUILD` "2026.11.08"): ammunition, as the user asked, for thrown weapons
+that never ran out and enough shots for a whole run with a bow or staff, and speeds. Thrown
+weapons stack (`thrown` on ItemDef): one held, each throw takes another of the same from the
+pack, THROWN_LIMIT 300 packed, sold by 25/100 in the shop at `THROWN_PRICE` per point of max hit
+by tier (bronze dart 5, dragon dart 121), out of the gear shelves (`rollShopStock`, and parseSave
+clears an old shelf of them), 20–40 when found as gear; a save from before gets 100 more of each
+kind it has, once (`thrownBundles`), and separate stacks are merged. Packs hold 300 arrows (was
+150) and 1,000 of each rune (was 250); two shots in five keep their ammunition (`AMMO_SAVE`, with
+the Fremennik pet's share on top); a kill of your own drops what your weapon takes one time in
+four (`dropOwnAmmo`: 4–8 shots, or 3–5 casts of the last spell's runes, nothing above the map's
+tier). New `scripts/ammo.ts`: every map's run fits a pack with its tier's best bow, staff and
+thrown weapon, even a full clear (tightest the rune knife, 275 of 300). Player speed ×0.9
+(`PLAYER_SPEED`, `RUN_CLIP_SPEED`), enemies ×1.2 (`ENEMY_SPEED_SCALE` in worlds.ts); a fast
+elite is capped at the melee boss's chase (just under the player). Tested in the seed tab: 27
+rune dart throws took 16, "You're out of rune darts" at none left, the drops by weapon, the save
+grant once only, the shop's bundles.
+
 Version 145 (7 November 2026): the game's version is the release's date, as the user asked:
 `GAME_BUILD` "2026.11.07" (year.month.day, .2 and on for more releases the same day), the title
 screen's "Version 2026.11.07" where it said "Build 144". The relay only compares the strings, so

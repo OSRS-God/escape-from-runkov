@@ -126,14 +126,26 @@ browsers.
 - **Food can't be spammed**: the pack holds fifteen pieces of food at most, in all (`FOOD_LIMIT`
   in `items.ts`; the stash's Pack button, pickups and the trader all stop there; a stack on the
   ground gives what fits and leaves the rest, since version 100), and a bite takes
-  1.8 seconds before the next (`EAT_DELAY`): "You're still chewing." Ammunition is 150 arrows
-  at most, every kind together, and 250 of each kind of rune (`AMMO_LIMITS`, `AMMO_PER_ITEM`;
-  runes were 100 before the spellbook, version 106, then 2,000 all together, and per kind
-  since version 130, from the playtest, as a spell takes three or four kinds), at 3 to 150 coins each in the shop by the kind, and a kill drops
-  ammunition one time in four: three to six arrows of its map's tier, or 15 to 30 of one
-  elemental rune, or four to eight of the map tier's catalyst (`runeDrop` in `spells.ts`). A roused melee boss moves nearly as fast as you do unburdened
-  (`BOSS_CHASE_SPEED`), so it can't be shot from a walk backwards for ever; a boss that shoots
-  keeps its own pace.
+  1.8 seconds before the next (`EAT_DELAY`): "You're still chewing." Ammunition is 300 arrows
+  at most, every kind together, 1,000 of each kind of rune and 300 thrown weapons, every kind
+  together (`AMMO_LIMITS`, `AMMO_PER_ITEM`, `THROWN_LIMIT`; runes were 100 before the
+  spellbook, version 106, then 2,000 all together, 250 per kind since version 130, from the
+  playtest, as a spell takes three or four kinds, and arrows 150 and runes 250 until version
+  146), at 3 to 150 coins each in the shop by the kind. Since version 146, as the user asked
+  for enough to last a whole run, two shots in five keep their arrow, runes or thrown weapon
+  (`AMMO_SAVE` in `run.ts`, Ava's way, with a pet's share on top), and a kill drops ammunition
+  one time in four: for a kill of your own with a bow, staff or thrown weapon, four to eight
+  shots of what it takes (the arrows being shot, three to five casts of the last spell's runes,
+  more of the thrown weapon held, nothing of a tier above the map's: `dropOwnAmmo`); otherwise
+  three to six arrows of its map's tier, or 15 to 30 of one elemental rune, or four to eight of
+  the map tier's catalyst (`runeDrop` in `spells.ts`). `npx tsx scripts/ammo.ts` works out what a
+  run takes with each tier's best bow, staff and thrown weapon against what a pack holds: every
+  map fits, even cleared to the last enemy. You walk at 4.2 × 1.3 × 0.9 tiles a second
+  unburdened (`PLAYER_SPEED`: 30% faster in version 137, a tenth slower in 146) and enemies a
+  fifth faster than their own pace (`ENEMY_SPEED_SCALE` in `worlds.ts`, version 146); a fast
+  elite never quite catches you unburdened. A roused melee boss moves nearly as fast as you do
+  unburdened (`BOSS_CHASE_SPEED`), so it can't be shot from a walk backwards for ever; a boss
+  that shoots keeps its own pace.
 - **Armour has a kind**, the combat triangle's way (`style` on each piece in `items.ts`, from its
   name): plate, mail and metal helms are melee armour, leather, hides, coifs and Karil's ranged,
   robes, hoods, Ahrim's and the books magic; jewellery, capes and void are neutral. A piece's
@@ -1050,6 +1062,12 @@ Thrown weapons are thrown as OSRS throws them (version 144, `thrown()` in `items
 throwing axes and javelins hurled overarm (`attack_throw`, seq 929), darts flicked
 (`attack_dart`, 6600), chinchompas lobbed (`attack_chinchompa`, 2779) and salamanders' flame
 (`attack_salamander`, 5247), each flying as its own cache spot animation since version 143.
+Since version 146 they're used up, as the user asked: a thrown weapon stacks, one is held, and
+each throw takes another of the same from the pack ("You're out of rune darts" when none are
+left). The shop sells them by 25 and 100 beside the arrows and runes, priced one at a time by
+max hit and tier (`THROWN_PRICE`: a bronze dart 5 coins, a dragon dart 121), never as gear on
+the shelves; found as gear they come 20 to 40 at a time. A save from before got 100 more of
+every kind it had, once (`thrownBundles` in `save.ts`).
 Two handers are held as OSRS holds them (version 81; `Stance` and `HOLDS` in `items.ts`): two
 handed swords, the colossal blade and the scythe the two handed sword's way (seqs 2561 and 2563);
 the godswords and the Saradomin swords upright in one hand (7053, 7043); the mauls, the

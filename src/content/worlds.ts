@@ -170,6 +170,10 @@ export const AMBIENT: Record<string, number[]> = {
 // Enemies that only fight back (EnemyDef's passive), by name
 const PASSIVE_NAMES = /^(chicken|imp)$/i;
 
+// Every enemy walks a fifth faster than its own pace since version 146, as
+// the user asked (the bosses' chase is run.ts's, just under the player's)
+const ENEMY_SPEED_SCALE = 1.2;
+
 function convertEnemy(
     e: WorldEnemyJson,
     world: WorldJson,
@@ -188,7 +192,7 @@ function convertEnemy(
         name: e.name,
         hp,
         damage,
-        speed: Math.min(3.2, Math.max(1.4, e.speed)),
+        speed: Math.min(3.2, Math.max(1.4, e.speed)) * ENEMY_SPEED_SCALE,
         radius: Math.min(0.9, Math.max(0.3, e.radius)),
         attackInterval: shooter ? shooter.interval : boss ? 1.5 : 1.6,
         attackRange: shooter ? shooter.range : 1.1 + Math.max(0, e.size - 1) * 0.5,

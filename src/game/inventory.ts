@@ -1,18 +1,22 @@
 // Item lists (the stash, a run's inventory) and what worn gear adds up to.
-import { AMMO_LIMITS, AMMO_PER_ITEM, ATTACK_STYLES, AttackStyle, FOOD_LIMIT, ItemDef, SLOTS, Slot, WEAK_TO, getItem, price, weaponStyle } from "../content/items";
+import { AMMO_LIMITS, AMMO_PER_ITEM, ATTACK_STYLES, AttackStyle, FOOD_LIMIT, ItemDef, SLOTS, Slot, THROWN_LIMIT, WEAK_TO, getItem, price, weaponStyle } from "../content/items";
 import { Equipment, ItemStack } from "./save";
 
 export const INVENTORY_SIZE = 28;
 
 // Whether a pack can take this many more of something, by what it's
 // carrying already: food is FOOD_LIMIT pieces in all, ammunition
-// AMMO_LIMITS arrows in all and runes of each kind (AMMO_PER_ITEM);
-// everything else is only the slots
+// AMMO_LIMITS arrows in all and runes of each kind (AMMO_PER_ITEM), thrown
+// weapons THROWN_LIMIT in all; everything else is only the slots
 export function canCarry(list: ItemStack[], id: number, count = 1): boolean {
     const item = getItem(id);
     if (item.heal) {
         const food = list.reduce((n, s) => n + (getItem(s.id).heal ? s.count : 0), 0);
         return food + count <= FOOD_LIMIT;
+    }
+    if (item.thrown) {
+        const thrown = list.reduce((n, s) => n + (getItem(s.id).thrown ? s.count : 0), 0);
+        return thrown + count <= THROWN_LIMIT;
     }
     if (item.ammo) {
         const kind = item.ammo;
@@ -37,6 +41,9 @@ export function carryLimitText(id: number): string {
     const item = getItem(id);
     if (item.heal) {
         return `You can't carry more than ${FOOD_LIMIT} pieces of food.`;
+    }
+    if (item.thrown) {
+        return `You can't carry more than ${THROWN_LIMIT} thrown weapons of every kind together.`;
     }
     const kind = item.ammo ?? "arrows";
     return AMMO_PER_ITEM[kind]
@@ -260,8 +267,13 @@ export function equip(equipment: Equipment, list: ItemStack[], id: number, limit
     if (slot === "shield" && equipment.weapon !== undefined && getItem(equipment.weapon).twoHanded) {
         displaced.push(equipment.weapon);
     }
-    // Room check: one goes out, the displaced come in
-    if (list.length - 1 + displaced.length > limit) {
+    // Room check: one goes out, the displaced come in (a thrown weapon's
+    // stack keeps its slot while any are left, and one put back joins its
+    // stack)
+    const freed = item.stackable && countOf(list, id) > 1 ? 0 : 1;
+    const left = (d: number) => countOf(list, d) - (d === id ? 1 : 0);
+    const taken = displaced.filter((d) => !(getItem(d).stackable && left(d) > 0)).length;
+    if (list.length - freed + taken > limit) {
         return false;
     }
     removeItem(list, id, 1);

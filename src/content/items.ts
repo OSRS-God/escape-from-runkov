@@ -88,8 +88,13 @@ export type ItemDef = {
     potion?: Potion;
     stackable?: boolean;
     // A bow or staff: the ammunition each shot takes from the pack. A thrown
-    // weapon (a dart, a knife, a chinchompa) takes none: it's its own.
+    // weapon (a dart, a knife, a chinchompa) is its own: see thrown.
     uses?: "arrows" | "runes";
+    // A thrown weapon (version 146, as the user asked: they were never used
+    // up): it stacks, one is held, and each throw takes another of the same
+    // from the pack (THROWN_LIMIT of them all together), so it runs out the
+    // way arrows do
+    thrown?: boolean;
     // Ammunition of that kind
     ammo?: "arrows" | "runes";
     // Ammunition's: a shot's share of the weapon's max hit, against what
@@ -269,8 +274,9 @@ const ARROW_DRAGON = 1120;
 export const BOLT = 27;
 
 // A thrown weapon: a dart, a knife, an axe, a chinchompa, a salamander's
-// flame. Ranged, one in the hand, and nothing taken from the pack: it's its
-// own ammunition, which is why it hits less than a bow of its tier.
+// flame. Ranged, one in the hand, and its own ammunition: each throw takes
+// another of the same from the pack (version 146; until then nothing was
+// taken), and it hits less than a bow of its tier, as no bow need be bought.
 // It's thrown the way OSRS throws its kind (version 144): a dart flicked, a
 // chinchompa lobbed, a salamander's flame, a knife, an axe or a javelin
 // hurled overarm.
@@ -282,7 +288,7 @@ function thrown(id: number, name: string, tier: number, damage: number, speed: n
           : /salamander|lizard/i.test(name)
             ? "attack_salamander"
             : "attack_throw";
-    return weapon(id, name, tier, damage, speed, value, { ranged: true, range: 4, sound: ARROW, projectile, attackClip, ...extra });
+    return weapon(id, name, tier, damage, speed, value, { ranged: true, range: 4, sound: ARROW, projectile, attackClip, thrown: true, stackable: true, ...extra });
 }
 
 // Ammunition: a kind of arrow or rune. Its tier is the maps whose enemies
@@ -1937,6 +1943,12 @@ export function getItem(id: number): ItemDef {
 // purple, legendary gold
 export const TIER_COLOURS = ["#ffffff", "#c8c8c8", "#3ec44a", "#3d8bff", "#a35cff", "#ffb020"];
 
+// A thing's name for many of it, lower case: "bronze knives", "chinchompas"
+export function pluralName(name: string): string {
+    const lower = name.toLowerCase();
+    return lower.endsWith("knife") ? `${lower.slice(0, -4)}knives` : lower.endsWith("s") ? lower : `${lower}s`;
+}
+
 // Whether an item glows its tier's colour: gear, which is what tiers rank
 export function tierGlows(item: ItemDef | undefined): item is ItemDef {
     return !!item?.slot && item.tier >= 1;
@@ -1956,8 +1968,13 @@ export const BOSS_KEY = 991;
 // limits, run.ts the delay). Runes went from 100 to 2000 with the spellbook
 // (version 106), and to 250 of each kind with version 130, from the
 // playtest (a spell takes three or four kinds, which shared the 2000).
+// Version 146 (as the user asked, for enough shots to last a whole run):
+// arrows 150 to 300, runes 250 to 1000 of each kind (a surge takes ten of
+// its element a cast), and thrown weapons THROWN_LIMIT of every kind
+// together; scripts/ammo.ts has what a run takes.
 export const FOOD_LIMIT = 15;
-export const AMMO_LIMITS: Record<"arrows" | "runes", number> = { arrows: 150, runes: 250 };
+export const AMMO_LIMITS: Record<"arrows" | "runes", number> = { arrows: 300, runes: 1000 };
+export const THROWN_LIMIT = 300;
 // Whether a kind's limit is for each item of it (runes) or all together
 export const AMMO_PER_ITEM: Record<"arrows" | "runes", boolean> = { arrows: false, runes: true };
 export const EAT_DELAY = 1.8;
@@ -1968,6 +1985,10 @@ export const AMMO_RUNES = 558;
 // a map of its tier is open), and what enemies drop by their map's tier
 export const AMMO: ItemDef[] = ITEMS.filter((i) => i.ammo !== undefined);
 export const SHOP_AMMO: number[] = AMMO.map((i) => i.id);
+// The thrown weapons (version 146), sold by the bundle beside them the same
+// way, not as gear on the shelves
+export const THROWN: ItemDef[] = ITEMS.filter((i) => i.thrown && !i.exclusive);
+export const SHOP_THROWN: number[] = THROWN.map((i) => i.id);
 
 // A kind of ammunition a map of this tier drops: one of its tier's, at
 // random (the lower tiers have two kinds each)
@@ -1997,9 +2018,17 @@ const SLOT_PRICE: Record<Slot, number> = {
     hands: 0.6,
 };
 
+// A thrown weapon is priced one at a time, like an arrow (version 146): this
+// many coins a point of its max hit, by tier, so a throw costs about what a
+// bow's arrow does for the damage
+const THROWN_PRICE = [0, 1.2, 1.8, 2.8, 4, 5.5];
+
 export function price(item: ItemDef): number {
     if (!item.slot) {
         return item.value;
+    }
+    if (item.thrown) {
+        return Math.max(1, Math.round((item.damage ?? 1) * (THROWN_PRICE[item.tier] ?? 1)));
     }
     return Math.round((TIER_PRICE[item.tier] ?? 1000) * SLOT_PRICE[item.slot]);
 }
@@ -2023,9 +2052,10 @@ export function rollShopStock(random: () => number, maxTier = 5, size = STOCK_SI
                 break;
             }
         }
-        // Never a tier's prize: those are found, not bought
+        // Never a tier's prize: those are found, not bought; nor a thrown
+        // weapon, which is sold by the bundle (SHOP_THROWN)
         const item = rollGear(random, tier, 0);
-        if (item && !stock.includes(item.id)) {
+        if (item && !item.thrown && !stock.includes(item.id)) {
             stock.push(item.id);
         }
     }
