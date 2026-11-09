@@ -71,6 +71,12 @@ const ui = new UI(document.getElementById("ui")!, save, menu, session, { startRu
 if (wiped) {
     ui.notice = "This version starts everyone fresh: the save from before it has been cleared.";
 }
+// A piece taken out of the game, paid for as the save loaded (version 154)
+if (save.refunded) {
+    ui.notice = `The Demonic sceptre is gone from the game (in OSRS it's a cosmetic with no stats): ${save.refunded.toLocaleString()} coins were paid for yours.`;
+    save.refunded = undefined;
+    writeSave(save);
+}
 // A run left by closing or reloading the page counts as a death (version
 // 153), and the page playing a run says so every few seconds
 {

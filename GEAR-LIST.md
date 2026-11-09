@@ -1144,7 +1144,6 @@
 | Nightmare staff | Magic | 66 | 1.8 | 36.7 | One | Shoots runes |  |
 | 3rd Age wand | Magic | 64 | 1.8 | 35.6 | One | Shoots runes |  |
 | 3rd Age druidic staff | Magic | 60 | 1.8 | 33.3 | One | Shoots runes | +5 |
-| Demonic sceptre | Magic | 60 | 1.8 | 33.3 | One | Shoots runes |  |
 | Dragon hunter wand | Magic | 58 | 1.8 | 32.2 | One | Shoots runes |  |
 | Staff of Balance | Magic | 55 | 1.8 | 30.6 | One | Shoots runes |  |
 | Twinflame staff | Magic | 53 | 1.8 | 29.4 | One | Shoots runes |  |

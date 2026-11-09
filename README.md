@@ -1072,7 +1072,8 @@ twins: every plateskirt, the lower Shayzien tiers, the Proselyte tasset and Fanc
 seventh, version 59, fills ranged and magic out with everything real the export had left: every
 dart, knife and throwing axe from bronze to dragon, Morrigan's javelin and axe, the three
 chinchompas, the five salamanders, the phoenix crossbow, the three wands, the plain and Dramen
-staves, the mist staff, Pharaoh's, Lithic and Demonic sceptres, the Merfolk trident, the black
+staves, the mist staff, Pharaoh's and Lithic sceptres (and the Demonic sceptre, gone in version
+154 as OSRS's is a cosmetic for the shield slot), the Merfolk trident, the black
 wizard's, Shade, Druid's, ghostly, Moonclan and dark squall robes and the Book of the Dead);
 the eighth, version 139, as the user asked, the real combat gear the cache still had, picked by
 its OSRS bonuses (the cosmetic leftovers have none): the dark dagger, the rapier and katana, the

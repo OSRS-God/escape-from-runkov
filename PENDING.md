@@ -171,8 +171,14 @@ Version 154 (not yet deployed): the code check's gameplay bugs, as the user aske
   end), and a body's health bar goes with it, its animation no longer worked out once it's
   gone (`fadeDead`). A full run (12 kills, the boss, the golden chest, the escape) threw no
   errors.
-- Left for the user: the Demonic sceptre (33296) is a staff here, but in OSRS a cosmetic
-  shield-slot item with no stats, from a League.
+- The Demonic sceptre (33296) is gone, as the user chose: a tier 5 staff here, but in OSRS a
+  League's cosmetic for the shield slot with no stats. Out of items.ts, assets.json, GEAR-LIST
+  and public/assets (its model and icon; the index entries left are harmless). A save holding
+  one (stash, pack, worn or a gravestone) is paid its sell price, 12,500,000 coins each, as it
+  loads (`REMOVED_ITEMS` in save.ts), and the title screen says so once (`refunded`). Tested:
+  two put in a save came back as 25,000,000 coins with the notice. The owner's test character,
+  whose every-item kit had one, was paid for it once already. check-gear: 1041 items, 0
+  problems.
 
 Version 146 (deployed 8 November 2026 as Version 2026.11.08, `GAME_BUILD` "2026.11.08"): ammunition, as the user asked, for thrown weapons
 that never ran out and enough shots for a whole run with a bow or staff, and speeds. Thrown
