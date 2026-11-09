@@ -1313,8 +1313,14 @@ export class Run {
             1,
             200,
         );
+        // The picture's top edge is the map's north edge and its left edge the
+        // west, as everything that reads it (the minimap, the fog, the full
+        // map, the summary's map) reckons from baseX and baseY + sizeY. On a
+        // map that isn't square (the Depths, 384 by 320) it was centred
+        // instead, and every one of those was a room's height off, as the
+        // user found: the map showed ways through beside you that weren't
         const cx = g.baseX + tiles / 2;
-        const cz = -(g.baseY + tiles / 2);
+        const cz = -(g.baseY + g.sizeY - tiles / 2);
         camera.position.set(cx, 100, cz);
         camera.up.set(0, 0, -1);
         camera.lookAt(cx, 0, cz);
@@ -1358,7 +1364,7 @@ export class Run {
             for (let y = 0; y < g.sizeY; y++) {
                 for (let x = 0; x < g.sizeX; x++) {
                     if (!g.isOpenTile(g.baseX + x, g.baseY + y)) {
-                        imageCtx.fillRect(x * ppt, (tiles - 1 - y) * ppt, ppt + 0.5, ppt + 0.5);
+                        imageCtx.fillRect(x * ppt, (g.sizeY - 1 - y) * ppt, ppt + 0.5, ppt + 0.5);
                     }
                 }
             }
