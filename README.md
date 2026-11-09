@@ -58,8 +58,8 @@ browsers.
   within eight tiles.
 - You heal half a hitpoint a second only standing still, with nothing after you, eight seconds
   after the last hit, and only before the map wakes. After that, food is the plan.
-- Enemies act on what you do: a mage or archer backs away while you're within half its range
-  and shoots from further out (cornered, it shoots from where it is); a melee enemy within four
+- Enemies act on what you do: a mage or archer stands its ground and keeps shooting however
+  close you come (it used to back away until version 157); a melee enemy within four
   tiles goes for your side instead of queueing up in front, where your swings land (each one
   picks a side); and an ordinary enemy below a third of its health runs for help for four
   seconds, rousing everything idle within six tiles as it goes, then comes back and won't give

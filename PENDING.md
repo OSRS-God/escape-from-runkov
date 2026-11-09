@@ -189,6 +189,24 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 157 (not yet deployed), as the user asked: mages and archers everywhere stand their
+ground and keep shooting however close you come (run.ts's retreat is gone). The Depths get
+fourteen of OSRS's cave slayer monsters (depths-mobs.json: cave bug, crawling hand, cave
+crawler, banshee, cave slime, rockslug, giant bat, cockatrice, pyrefiend, cave horror,
+aberrant spectre, dust devil, basilisk, bloodveld; pyrefiends and spectres cast), mixed in
+weakest first with the other maps' underground ones and Fremennik's jelly, and thirteen mini
+bosses, OSRS's superiors (Crushing hand, Chasm Crawler, Screaming banshee, Giant rockslug,
+Cockathrice, Flaming pyrelord, Monstrous basilisk, Insatiable Bloodveld, Vitreous Jelly, Cave
+abomination, Abhorrent spectre, Choke devil, King kurask): one kill in SUPERIOR_ONE_IN (30)
+of its lesser kind brings one up where it fell, at most SUPERIOR_MAX (4) a run, six times its
+lesser kind's hitpoints and 1.6 times its hits, going for whoever's nearest, dropping a purse
+eight times the kind's and two pieces of gear at a champion's prize odds; an orange dot on the
+maps. Animations found with classify-npc-seqs.ts, sounds by the OSRS Wiki's list (each kind's
+own: cave_crawler_*, bloodveld_*, banshee_* and the rest; a superior its lesser kind's, the
+Monstrous basilisk giant_basilisk_*). Tested: a Depths run with 205 enemies of about 25 kinds;
+a forced superior rose where a crawling hand fell (66 hp against its 11) and attacked; a
+pyrefiend set beside the player stayed there and cast four times in eight seconds.
+
 Version 156 (not yet deployed; on the playtest since 9 November 2026): the Depths, a new mode,
 as the user asked (first called Endless, renamed the same day; `endless` is still its id in the
 code and the save, so a profile made under the old name carries on). It's open from the

@@ -3,6 +3,7 @@
 // (made by Run-Escape/scripts/cache/make-game-worlds.ts). Chests and the
 // boss are scattered about; the way out is where you came in.
 import { EnemyDef, SECOND_FORM_SHARE } from "./enemies";
+import depthsMobsJson from "./depths-mobs.json";
 import endlessBossesJson from "./endless-bosses.json";
 import worldsJson from "./worlds.json";
 
@@ -50,6 +51,9 @@ export type WorldDef = {
     // The Depths: the bosses a run picks from (ENDLESS_BOSSES of them), each
     // made at this map's tier
     bosses?: EnemyDef[];
+    // The Depths' mini bosses, by the id of the lesser kind whose kills
+    // bring each (SUPERIOR_ONE_IN)
+    superiors?: Record<string, EnemyDef>;
 };
 
 // worlds.json carries Run Escape's blurbs, about its waves and bosses, so
@@ -68,7 +72,7 @@ const DESCRIPTIONS: Record<string, string> = {
     god_wars: "The God Wars Dungeon, where four armies have fought for an age. All of them want you dead.",
     prifddinas: "The crystal city's gauntlet and its corrupted beasts. The Hunllef hunts the deepest halls.",
     inferno: "Inside the volcano under Mor Ul Rek: TzHaar and Jal creatures on the rock, and a Jad among them.",
-    endless: "Caves that are never the same twice: thirty chambers dug anew every run, the biggest map there is. Five of fourteen lair bosses lurk far apart, and the loot comes from every tier. A fresh start: its own stash, its own class.",
+    endless: "Caves that are never the same twice: thirty chambers dug anew every run, the biggest map there is. Five of fourteen lair bosses lurk far apart, slayer monsters crawl everywhere, and now and then a superior one rises where its kind falls. The loot comes from every tier. A fresh start: its own stash, its own class.",
 };
 
 // What a map tier asks of you (see scripts/balance.ts): the average enemy
@@ -158,6 +162,12 @@ const SHOOTERS: Record<string, Shooter> = {
     // Ice Queen throws ice
     dagannoth_supreme: ARROW,
     ice_queen: WATER_BOLT,
+    // And its cave slayer monsters (depths-mobs.json) that cast in OSRS,
+    // with their superiors a bolt where they throw a strike
+    pyrefiend: STRIKE,
+    flaming_pyrelord: FIRE_BOLT,
+    aberrant_spectre: WIND_STRIKE,
+    abhorrent_spectre: WIND_BOLT,
 };
 
 // Bosses' own moves (enemies.ts says what each is; run.ts does them)
@@ -321,9 +331,19 @@ const ENDLESS_ENEMIES = [
     "barrows:ghoul",
     "lumbridge:ghost",
     "karamja:jogre",
+    "fremennik:jelly",
     "fremennik:kurask",
     "kourend:reanimated_demon",
 ];
+// A superior (depths-mobs.json's superiors, OSRS's superior slayer
+// monsters): one in SUPERIOR_ONE_IN kills of its lesser kind brings one,
+// at most SUPERIOR_MAX a run, with its lesser kind's hitpoints and hits
+// times these, and its coins times SUPERIOR_COINS
+export const SUPERIOR_ONE_IN = 30;
+export const SUPERIOR_MAX = 4;
+const SUPERIOR_HP = 6;
+const SUPERIOR_DAMAGE = 1.6;
+const SUPERIOR_COINS = 8;
 export const ENDLESS_ID = "endless";
 // How many bosses a run of the Depths has, of endless-bosses.json's
 export const ENDLESS_BOSSES = 5;
@@ -354,10 +374,36 @@ function endlessJson(worlds: WorldJson[]): WorldJson {
         // (each depth has its own: ENDLESS_WORLDS)
         tier: 1,
         difficulty: { hp: 1, damage: 1 },
-        enemies: ENDLESS_ENEMIES.map(find),
+        // The other maps' underground ones and its own cave slayer
+        // monsters (depths-mobs.json, version 157), weakest first
+        enemies: [...ENDLESS_ENEMIES.map(find), ...(depthsMobsJson.mobs as WorldEnemyJson[])].sort((a, b) => a.hp - b.hp),
         // The maps screen names them all; a run picks its own (run.ts)
         boss: (endlessBossesJson as WorldEnemyJson[])[0],
     };
+}
+
+// The Depths' superiors, by the id of the lesser kind each comes from: made
+// at the depth's tier as that kind is, then far tougher
+function superiorsOf(w: WorldJson, scale: { hp: number; damage: number }): Record<string, EnemyDef> {
+    const out: Record<string, EnemyDef> = {};
+    for (const s of depthsMobsJson.superiors as (WorldEnemyJson & { of: string })[]) {
+        const lesser = w.enemies.find((e) => e.id === s.of);
+        if (!lesser) {
+            continue;
+        }
+        const base = convertEnemy(lesser, w, scale);
+        const own = convertEnemy(s, w, scale);
+        out[base.id] = {
+            ...own,
+            hp: Math.round(base.hp * SUPERIOR_HP),
+            damage: Math.max(own.damage, Math.round(base.damage * SUPERIOR_DAMAGE)),
+            coins: [base.coins[0] * SUPERIOR_COINS, base.coins[1] * SUPERIOR_COINS],
+            aggro: 12,
+            foodChance: 0,
+            superior: true,
+        };
+    }
+    return out;
 }
 
 function makeWorld(w: WorldJson): WorldDef {
@@ -365,6 +411,7 @@ function makeWorld(w: WorldJson): WorldDef {
     const endless = w.id === ENDLESS_ID;
     return {
         caves: endless || undefined,
+        superiors: endless ? superiorsOf(w, scale) : undefined,
         // Its own cave bosses, at its depth's tier
         bosses: endless ? (endlessBossesJson as WorldEnemyJson[]).map((b) => convertEnemy(b, w, scale)) : undefined,
         id: w.id,

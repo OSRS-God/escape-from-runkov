@@ -51,7 +51,7 @@ import {
     staffCasts,
 } from "../content/spells";
 import { Threat, threatName, threatOf, threatText } from "../content/threat";
-import { ENDLESS_BOSSES, WorldDef } from "../content/worlds";
+import { ENDLESS_BOSSES, SUPERIOR_MAX, SUPERIOR_ONE_IN, WorldDef } from "../content/worlds";
 import { GameStart, LootRule } from "./coop";
 import { Hero, Mate } from "./mates";
 import {
@@ -580,9 +580,7 @@ const WAKE_SECONDS = 240;
 const CLOSE_SECONDS = 720;
 // A roused enemy rouses everything idle this close
 const ROUSE_SPREAD = 8;
-// A mage or archer backs off while you're closer than this share of its
-// range; a melee enemy within this many tiles goes for your side
-const RETREAT_SHARE = 0.45;
+// A melee enemy within this many tiles goes for your side
 const FLANK_RANGE = 4;
 // Within this an enemy with a clear straight walk to its player takes it
 // rather than the flow field's tile by tile steps
@@ -596,6 +594,8 @@ const FLEE_HP = 1 / 3;
 const FLEE_SECONDS = 4;
 const FLEE_ROUSE = 6;
 const FLEE_PERSIST = 12;
+// A superior just risen keeps after its hero this long before it can lose interest
+const SUPERIOR_PERSIST = 20;
 // One enemy in this many is an elite (TRAITS); a venomous one's hits poison
 // you for this many ticks, this far apart, each for this share of max hp
 const ELITE_ONE_IN = 12;
@@ -976,6 +976,8 @@ export class Run {
     kills = 0;
     bossKills = 0;
     championKills = 0;
+    // The Depths' superiors risen this run (SUPERIOR_MAX)
+    private superiorsRisen = 0;
     rangedKills = 0;
     ate = 0;
     clues = 0;
@@ -1512,7 +1514,7 @@ export class Run {
         }
         for (const e of this.enemies) {
             if (e.state !== "dead" && this.isExplored(e.x, e.z)) {
-                dot(e.x, e.z, e.def.boss ? "#ff0000" : "#ffff00", e.def.boss ? 4 : 2);
+                dot(e.x, e.z, e.def.boss ? "#ff0000" : e.def.superior ? "#ff8c00" : "#ffff00", e.def.boss ? 4 : e.def.superior ? 3 : 2);
             }
         }
         // The party, wherever they are
@@ -1612,7 +1614,7 @@ export class Run {
         }
         for (const e of this.enemies) {
             if (e.state !== "dead" && this.isExplored(e.x, e.z)) {
-                dot(e.x, e.z, e.def.boss ? "#ff0000" : "#ffff00", e.def.boss ? 1.4 : 0.6);
+                dot(e.x, e.z, e.def.boss ? "#ff0000" : e.def.superior ? "#ff8c00" : "#ffff00", e.def.boss ? 1.4 : e.def.superior ? 1 : 0.6);
             }
         }
         for (const m of this.mates.values()) {
@@ -4243,7 +4245,7 @@ export class Run {
         }
         this.hear(npcSound(e.def.npcId, "hit"), e.x, e.z, 0.4);
         // Low, an ordinary enemy runs for help, once
-        if (!e.def.boss && !e.def.champion && !e.fled && e.hp < e.def.hp * FLEE_HP) {
+        if (!e.def.boss && !e.def.champion && !e.def.superior && !e.fled && e.hp < e.def.hp * FLEE_HP) {
             e.fled = true;
             e.state = "flee";
             e.fleeLeft = FLEE_SECONDS;
@@ -4298,8 +4300,21 @@ export class Run {
         const coins = Math.round(
             randInt(this.rng, e.def.coins[0], e.def.coins[1]) * (e.trait ? 2 : 1) * (1 + (this.petBuff?.coins ?? 0)) * this.threat.coins,
         );
-        if (e.def.boss || e.def.champion || this.rng() < COIN_DROP_CHANCE) {
+        if (e.def.boss || e.def.champion || e.def.superior || this.rng() < COIN_DROP_CHANCE) {
             this.dropPickup(COINS, coins, e.x, e.z);
+        }
+        // The Depths' mini bosses (version 157, as the user asked): now and
+        // then where one of its lesser kind falls, a superior rises and goes
+        // for whoever's nearest, as in OSRS
+        const superior = this.world.superiors?.[e.def.id.replace(/:champion$/, "")];
+        if (superior && this.superiorsRisen < SUPERIOR_MAX && this.rng() < 1 / SUPERIOR_ONE_IN) {
+            this.superiorsRisen++;
+            const at = { x: e.x, z: e.z };
+            void this.spawnEnemy(superior, at).then((s) => {
+                s.state = "chase";
+                s.noIdleUntil = this.time + SUPERIOR_PERSIST;
+            });
+            this.announce(`A superior foe has appeared: ${superior.name}!`);
         }
         if (this.rng() < e.def.foodChance) {
             const food = [315, 2309, 333, 329, 379][Math.min(4, Math.floor(this.rng() * (this.world.tier + 1)))];
@@ -4338,6 +4353,13 @@ export class Run {
         if (!this.clueDropped && this.rng() < CLUE_CHANCE) {
             this.clueDropped = true;
             this.dropPickup(CLUE_SCROLL, 1, e.x - 0.3, e.z + 0.3);
+        }
+        // A superior carries two pieces of gear, a champion's prize each
+        if (e.def.superior) {
+            this.dropGear(this.world.lootTiers, e.x - 0.3, e.z - 0.3, PRIZE_FULL);
+            this.dropGear(this.world.lootTiers, e.x + 0.3, e.z - 0.3, PRIZE_FULL);
+            this.announce(`The ${e.def.name.toLowerCase()} falls, and leaves its hoard.`);
+            return;
         }
         // A champion always carried a piece of gear, the way a chest gives it
         if (e.def.champion) {
@@ -4517,14 +4539,9 @@ export class Run {
                 }
                 if (!t || giveUp) {
                     e.state = "idle";
-                } else if (
-                    e.def.shoots &&
-                    !e.def.boss &&
-                    dist < e.def.attackRange * RETREAT_SHARE &&
-                    this.region.lineOfSight(e.x, e.z, t.x, t.z) &&
-                    this.retreat(e, t, dt)
-                ) {
-                    // Backed off a step; it shoots from further out
+                    // A mage or archer stands its ground and keeps shooting
+                    // however close you come (the user asked: they used to
+                    // back away while you were in melee range)
                 } else if (dist <= e.def.attackRange + PLAYER_RADIUS && this.region.lineOfSight(e.x, e.z, t.x, t.z)) {
                     if (e.cooldown <= 0) {
                         e.state = "attack";
@@ -4606,27 +4623,6 @@ export class Run {
                 ? Math.max(base, Math.min(base * (e.riled > 0 ? RILE_SPEED : 1.5), BOSS_CHASE_SPEED))
                 : base;
         return fast * (e.slow > 0 ? 0.5 : 1);
-    }
-
-    // A mage or archer backing away from a hero who's closed in, facing
-    // them; whether it got anywhere (cornered, it shoots from where it is)
-    private retreat(e: Enemy, t: Hero, dt: number): boolean {
-        const dx = e.x - t.x;
-        const dz = e.z - t.z;
-        const len = Math.hypot(dx, dz);
-        if (len < 0.01) {
-            return false;
-        }
-        const step = this.speedOf(e) * 0.8 * dt;
-        const [nx, nz] = this.moveCircle(e.x, e.z, (dx / len) * step, (dz / len) * step, COLLISION_RADIUS);
-        if (Math.hypot(nx - e.x, nz - e.z) < step * 0.3) {
-            return false;
-        }
-        e.x = nx;
-        e.z = nz;
-        e.facing = Math.atan2(t.x - e.x, t.z - e.z);
-        play(e.actor, "walk");
-        return true;
     }
 
     // Running for help: away from whoever it's after at full tilt, rousing

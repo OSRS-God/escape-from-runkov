@@ -52,6 +52,16 @@ for (const boss of fs.existsSync(endlessBossesFile) ? JSON.parse(fs.readFileSync
         manifest.npcs.push(boss.npcId);
     }
 }
+// And its cave slayer monsters and their superiors (version 157)
+const depthsMobsFile = path.join(root, "src", "content", "depths-mobs.json");
+if (fs.existsSync(depthsMobsFile)) {
+    const depths = JSON.parse(fs.readFileSync(depthsMobsFile, "utf8"));
+    for (const mob of [...depths.mobs, ...depths.superiors]) {
+        if (!manifest.npcs.includes(mob.npcId)) {
+            manifest.npcs.push(mob.npcId);
+        }
+    }
+}
 
 function findFolder(kind, id) {
     const dir = path.join(source, kind);

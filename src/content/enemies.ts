@@ -34,12 +34,17 @@ export type EnemyDef = {
     // Render scale on top of the model's own
     scale?: number;
     boss?: boolean;
-    // A mage or an archer: it stands off at attackRange and shoots instead
-    // of hitting, the spell or arrow a spot animation flying at the player,
-    // bursting as it lands, and a spell with another on the caster
+    // A mage or an archer: it shoots from up to attackRange instead of
+    // hitting (and keeps shooting however close you come), the spell or
+    // arrow a spot animation flying at the player, bursting as it lands, and
+    // a spell with another on the caster
     shoots?: { style: "magic" | "ranged"; projectile: number; impact?: number; cast?: number };
     // One in twenty spawns as a champion: bigger, far tougher, carrying gear
     champion?: boolean;
+    // A superior (the Depths' mini bosses, version 157): turns up now and
+    // then where one of its lesser kind falls, as OSRS's superior slayer
+    // monsters do, far tougher, carrying gear and a purse
+    superior?: boolean;
     // A boss's own move (worlds.ts's MOVES; run.ts does them): shots that
     // swap between magic and arrows each cast, with a tell; hits that go
     // through armour and protection; a second form on falling; and burning
