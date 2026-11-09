@@ -132,6 +132,48 @@ findings of a code check the user asked for.
   Braille cell and tag characters, and stacked marks past two. Run-Escape's 65 relay tests:
   64 pass before and after (the one failure is the two relays having grown apart).
 
+Version 154 (not yet deployed): the code check's gameplay bugs, as the user asked.
+- Combat (run.ts): a held key's repeats no longer drink, eat, spend specials or flick prayers
+  (`e.repeat`); a special with nothing to hit waits for the next swing, its bar kept
+  (`inSwing`, `takeSpecial(stats)`); a swing lands with the weapon it began with
+  (`swingStats`: a maul swapped in mid-swing hit with its own numbers on the first weapon's
+  quicker swing); what a heal counts is what came off (an armoured elite's six tenths), and no
+  heal lands on a fallen player. Tested: holding 4 drank 1 of 6 prayer potions; a special at
+  nothing kept 100 of the bar; 40 scimitar swings with a granite maul swapped in never hit
+  above the scimitar's 32.
+- Bosses: a slam, strike or burning floor whose boss dies under it does nothing; a second
+  form heals only as high as it rose with, and is quicker than the enraged first form (0.55
+  of its interval enraged, not 0.7 after 0.65). Tested: a boss killed under its ring did no
+  damage; a second form's heal stopped at 360 of the first form's 600.
+- Co-op: a guest asks for one pickup at a time, and one it hasn't room for after all goes back
+  down for everyone (a pile was granted against the same free room, and what didn't fit was
+  lost); a guest's breath and its boss prayer drain go by what's roused near it (its copies of
+  the enemies have no target); an enemy's fall heard while its model loads is kept
+  (`ghostsLoading`, `ghostsKilled`). Not tried in a live party. A guest whose connection drops
+  still keeps its pack, as the comment there means it to (a host leaving ends every guest's
+  run, which isn't the guest's doing).
+- Saves (main.ts, ui.ts, save.ts): an account's newer save from another device that comes
+  during a run, or while its map loads, is taken at the run's end and the run's result set
+  aside (it was dropped, the 409 had taken the server's rev, and the run's end wrote over the
+  other device; one taken while a map loaded let the run start with the old pack); insuring a
+  second piece moves the cover with the first fee back (`insuredPaid`; it was lost); a
+  gravestone running out on the map died on again goes into the new one (it was dropped
+  first); Load code and Start over replace every field (`replaceSave`; an old insurance, pet,
+  contract or threat levels carried over), and a save code into a browser without a crown
+  drops owner-only pieces (`dropExclusive`); a grave's things come back only as far as the
+  pack's limits (`roomFor`); a pack past the limits (one from before brews counted as food) has
+  the rest put back in the bank as a run's packed. Tested: switching cover refunded 1,200 and
+  charged 1,120; 15 sharks and 5 brews packed went in as 15 with the 5 brews banked; a grave's
+  10 sharks gave 3 to a pack of 12 and kept 7.
+- Smaller: selling to the trader no longer counts as coins found for the genie; a party
+  guest's best threat level rises no higher than it had open itself; shots with no look of
+  their own share one ball, a drop's shaft of light is freed when it's taken (and at the run's
+  end), and a body's health bar goes with it, its animation no longer worked out once it's
+  gone (`fadeDead`). A full run (12 kills, the boss, the golden chest, the escape) threw no
+  errors.
+- Left for the user: the Demonic sceptre (33296) is a staff here, but in OSRS a cosmetic
+  shield-slot item with no stats, from a League.
+
 Version 146 (deployed 8 November 2026 as Version 2026.11.08, `GAME_BUILD` "2026.11.08"): ammunition, as the user asked, for thrown weapons
 that never ran out and enough shots for a whole run with a bow or staff, and speeds. Thrown
 weapons stack (`thrown` on ItemDef): one held, each throw takes another of the same from the

@@ -8,7 +8,7 @@ import { Account } from "./game/account";
 import { recordAttempt } from "./game/contract";
 import { GameStart, Session } from "./game/coop";
 import { crownKey, crownVerified, takeCrownFromUrl } from "./game/crown";
-import { addItem, countOf } from "./game/inventory";
+import { addItem, countOf, roomFor } from "./game/inventory";
 import { loadIconSheet } from "./game/icons";
 import { restoreCrownPets, restoreKit } from "./game/kit";
 import { MenuScene } from "./game/menu";
@@ -24,6 +24,7 @@ import {
     packSize,
     runAlive,
     runHeartbeatAge,
+    SaveData,
     setActiveSlot,
     setOnWrite,
     writeSave,
@@ -56,6 +57,10 @@ let run: Run | undefined;
 const ABANDONED_AFTER_MS = 30_000;
 const HEARTBEAT_MS = 3_000;
 const RUN_HERE = "dungeon-extraction-run-here";
+// A run's map loading, and the account's newer save from another device
+// that came meanwhile or mid-run (account.onNewer): taken at the run's end
+let starting = false;
+let newerWaiting: SaveData | undefined;
 
 // Co-op: the connection to the relay (coop.ts), there or not
 const session = new Session();
@@ -112,6 +117,25 @@ function packUp(worldId: string): RunCarry {
     if (save.equipment.weapon === undefined) {
         save.equipment.weapon = 1205;
         ui.message("The guild lends you a bronze dagger.");
+    }
+    // Nothing past the pack's limits goes in (version 154: a pack made
+    // before brews counted as food could hold 15 food and the brews besides):
+    // what's over goes back to the bank
+    const within: ItemStack[] = [];
+    let returned = 0;
+    for (const stack of save.backpack) {
+        const n = stack.id === COINS ? stack.count : roomFor(within, stack.id, stack.count);
+        if (n > 0) {
+            within.push({ id: stack.id, count: n });
+        }
+        if (n < stack.count) {
+            addItem(save.stash, stack.id, stack.count - n);
+            returned += stack.count - n;
+        }
+    }
+    if (returned > 0) {
+        save.backpack = within;
+        ui.message(`${returned} thing${returned === 1 ? "" : "s"} over the pack's limits went back to the bank.`);
     }
     save.stats.runs++;
     // The title screen offers the last three maps played
@@ -257,6 +281,7 @@ void session.available().then((available) => {
 
 async function launchWorld(world: WorldDef, carry: RunCarry, seed: number, coop?: CoopSetup): Promise<void> {
     ui.showLoading(world.name);
+    starting = true;
     try {
         run = await Run.create(
             renderer,
@@ -275,13 +300,17 @@ async function launchWorld(world: WorldDef, carry: RunCarry, seed: number, coop?
         );
     } catch (e) {
         console.error(e);
+        starting = false;
         // Nothing went out: the pack's still at home
         save.activeRun = undefined;
         writeSave(save);
         ui.message("The map failed to load. Check the browser console.");
-        ui.showMenu();
+        if (!takeNewerWaiting()) {
+            ui.showMenu();
+        }
         return;
     }
+    starting = false;
     ui.showHud(run);
     run.start();
 }
@@ -367,9 +396,10 @@ function settleAbandonedRun(): string | undefined {
     for (const grave of save.graves) {
         grave.runsLeft--;
     }
-    save.graves = save.graves.filter((g) => g.runsLeft > 0 && g.items.length > 0);
+    save.graves = save.graves.filter((g) => (g.runsLeft > 0 || g.map === left.map) && g.items.length > 0);
     const { insured, graveMade } = leaveCarried({ inventory: save.backpack, equipment: save.equipment }, left.map, NaN, NaN, true);
     save.insured = undefined;
+    save.insuredPaid = undefined;
     save.activeRun = undefined;
     save.lastRun = { at: Date.now(), map: left.map, kind: "died" };
     restoreKit(save);
@@ -383,6 +413,21 @@ function settleAbandonedRun(): string | undefined {
     );
 }
 
+// The account's newer save from another device, if one came during a run:
+// it's the save now, and the run's result is set aside, as it was played
+// from the older one (nothing of either is lost twice or kept twice)
+function takeNewerWaiting(): boolean {
+    const newer = newerWaiting;
+    if (!newer) {
+        return false;
+    }
+    newerWaiting = undefined;
+    ui.adoptAccountSave(newer, account.name ?? save.character.name);
+    ui.notice = "This account was played on another device during that run: its newer progress is loaded, and the run's haul couldn't be added to it.";
+    ui.showMenu();
+    return true;
+}
+
 async function onRunEnd(result: RunResult): Promise<void> {
     run?.stop();
     run = undefined;
@@ -390,6 +435,9 @@ async function onRunEnd(result: RunResult): Promise<void> {
     // The host's back: the party's room is a lobby again
     if (session.isHost && session.room?.started) {
         session.end();
+    }
+    if (takeNewerWaiting()) {
+        return;
     }
     const report = result.report;
     const stats = save.stats;
@@ -415,7 +463,10 @@ async function onRunEnd(result: RunResult): Promise<void> {
     for (const grave of save.graves) {
         grave.runsLeft--;
     }
-    save.graves = save.graves.filter((g) => g.runsLeft > 0 && g.items.length > 0);
+    // A stone running out on the map just died on again goes into the new
+    // one (leaveCarried; version 154: it was dropped first, and lost)
+    const diedHere = (g: Grave) => result.kind === "died" && g.map === result.world.id;
+    save.graves = save.graves.filter((g) => (g.runsLeft > 0 || diedHere(g)) && g.items.length > 0);
     // A pet: kept whatever happened, and it follows from now if none does
     let pet: string | undefined;
     if (report.petFound && !save.pets.includes(report.petFound)) {
@@ -442,12 +493,16 @@ async function onRunEnd(result: RunResult): Promise<void> {
             stats.mapsEscaped.push(result.world.id);
         }
         // Out with the boss slain: the map is beaten, and the next opens
+        // (the threat levels this player had open before this win)
+        const openBefore = threatOpen(stats.bestThreat, stats.mapsBeaten, result.world.id);
         if (report.bossKills > 0 && !stats.mapsBeaten.includes(result.world.id)) {
             stats.mapsBeaten.push(result.world.id);
         }
-        // And beaten at its threat level: the next level opens (version 150)
+        // And beaten at its threat level: the next level opens (version
+        // 150). A party's guest, playing at the host's level, counts no
+        // higher than it had open itself (version 154: it skipped levels)
         if (report.bossKills > 0) {
-            const level = result.carry.threat ?? 0;
+            const level = Math.min(result.carry.threat ?? 0, openBefore);
             stats.bestThreat = { ...stats.bestThreat, [result.world.id]: Math.max(stats.bestThreat?.[result.world.id] ?? 0, level) };
         }
         stats.bestHaul = Math.max(stats.bestHaul, result.carry.coins - broughtCoins);
@@ -462,6 +517,7 @@ async function onRunEnd(result: RunResult): Promise<void> {
     }
     // Insurance is for one run, whichever way it went, and the run's over
     save.insured = undefined;
+    save.insuredPaid = undefined;
     save.activeRun = undefined;
     // The owner's kept kit comes home whatever happened (kit.ts), and a
     // crown's pet stays its own
@@ -513,9 +569,12 @@ const account = new Account();
 ui.account = account;
 setOnWrite((written) => account.push(written));
 account.onNewer = (newer) => {
-    // Never mid-run: the run's end is written, turned down, and comes here
-    // again with the run over
-    if (run) {
+    // Never mid-run, nor while a run's map loads: kept for the run's end
+    // (version 154: it was dropped, the 409 had taken the server's rev, and
+    // the run's end then wrote over the other device's progress; and one
+    // taken while a map loaded let that run start with the old pack)
+    if (run || starting) {
+        newerWaiting = newer;
         return;
     }
     ui.adoptAccountSave(newer, account.name ?? save.character.name);

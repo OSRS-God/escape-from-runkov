@@ -524,6 +524,12 @@ const GUEST_SHOT_REACH = 14 + GUEST_LAG;
 const GUEST_HIT_SCALE = 5;
 const GUEST_HIT_MIN = 20;
 const HELD_BY_HOST = new Set([VAULT_KEY, BOSS_KEY, CLUE_SCROLL]);
+// A guest's copies of the enemies don't know who they're after: one roused
+// this near counts as after it, for its breath and (a boss) its prayer
+const GUEST_CHASED_NEAR = 6;
+const GUEST_BOSS_NEAR = 12;
+// How long a body lies before it goes (fadeDead)
+const DEAD_BODY_SECONDS = 4;
 
 function finite(n: unknown): n is number {
     return typeof n === "number" && Number.isFinite(n);
@@ -937,6 +943,8 @@ export class Run {
     // The special attack bar, 0 to 100, and whether the next swing spends it
     spec = 100;
     private specPending = false;
+    // The numbers the swing under way began with (beginSwing)
+    private swingStats?: GearStats;
     // What's been seen of the map: the minimap's fog clears round you
     private explored?: Uint8Array;
     private fog?: HTMLCanvasElement;
@@ -1086,6 +1094,9 @@ export class Run {
     private hostLeft: number;
     private readonly requested = new Map<number, number>();
     private readonly ghosts = new Map<number, Enemy>();
+    // Ghosts whose models are loading, and those heard to fall meanwhile
+    private readonly ghostsLoading = new Set<number>();
+    private readonly ghostsKilled = new Set<number>();
 
     private constructor(
         private readonly renderer: THREE.WebGLRenderer,
@@ -2617,6 +2628,11 @@ export class Run {
         for (const d of this.disposables) {
             d.dispose();
         }
+        // The shafts of light over what's still lying about
+        for (const p of this.pickups) {
+            p.beam?.geometry.dispose();
+            (p.beam?.material as THREE.Material | undefined)?.dispose();
+        }
     }
 
     private onResize = (): void => {
@@ -2635,6 +2651,12 @@ export class Run {
         if (e.code === "Space") {
             this.wantAttack = true;
             e.preventDefault();
+        }
+        // A held key's repeats move and swing, but don't drink, eat, spend
+        // or flick prayers over and over (version 154: holding 4 drank
+        // every prayer potion in the pack)
+        if (e.repeat) {
+            return;
         }
         // Hotkeys: F eats, 1 to 4 drink, Q spends the special, Z X C protect
         if (e.code === "KeyF") {
@@ -2962,8 +2984,16 @@ export class Run {
     private updatePrayer(dt: number): void {
         const scale = this.prayerScale();
         if (this.protect !== "none") {
-            // Twice as fast with the boss after you
-            const bossOnMe = this.enemies.some((e) => e.def.boss && e.state !== "idle" && e.state !== "dead" && e.target === this.self);
+            // Twice as fast with the boss after you (a guest's copies of the
+            // enemies know no target: a roused boss near it, version 154)
+            const guest = this.coop?.role === "guest";
+            const bossOnMe = this.enemies.some(
+                (e) =>
+                    e.def.boss &&
+                    e.state !== "idle" &&
+                    e.state !== "dead" &&
+                    (guest ? Math.hypot(e.x - this.px, e.z - this.pz) < GUEST_BOSS_NEAR : e.target === this.self),
+            );
             this.prayer = Math.max(0, this.prayer - (PRAYER_DRAIN * (bossOnMe ? BOSS_PRAYER_DRAIN : 1) * dt) / scale);
             if (this.prayer <= 0) {
                 this.protect = "none";
@@ -3208,12 +3238,12 @@ export class Run {
     }
 
     // The special the swing landing now spends, if it's spending one
-    private takeSpecial(): Special | undefined {
+    private takeSpecial(stats: GearStats = this.stats): Special | undefined {
         if (!this.specPending) {
             return undefined;
         }
         this.specPending = false;
-        const special = specialOf(this.stats.weapon);
+        const special = specialOf(stats.weapon);
         if (!special || this.spec < SPEC_COST) {
             return undefined;
         }
@@ -3282,7 +3312,9 @@ export class Run {
             exit.actor?.mixer.update(dt);
         }
         for (const e of this.enemies) {
-            e.actor.mixer.update(dt);
+            if (e.state !== "dead" || e.deadFor <= DEAD_BODY_SECONDS) {
+                e.actor.mixer.update(dt);
+            }
         }
         this.updateBoosts(dt);
         this.updateFloors(dt);
@@ -3327,7 +3359,9 @@ export class Run {
             exit.actor?.mixer.update(dt);
         }
         for (const e of this.enemies) {
-            e.actor.mixer.update(dt);
+            if (e.state !== "dead" || e.deadFor <= DEAD_BODY_SECONDS) {
+                e.actor.mixer.update(dt);
+            }
         }
         this.placeCamera();
         this.hooks.onChanged();
@@ -3484,7 +3518,13 @@ export class Run {
         // Catching your breath: only standing still, with nothing after you,
         // and only before the map wakes. After that it's food.
         const regenRate = this.petBuff?.regen ?? 1;
-        if (!this.chased && !moving && !this.awake && this.time - this.lastHurt > REGEN_DELAY / regenRate && this.hp < this.maxHp) {
+        // (a guest's copies of the enemies are never chasing: anything
+        // roused near it is, version 154)
+        const chased =
+            this.coop?.role === "guest"
+                ? this.enemies.some((e) => e.state !== "idle" && e.state !== "dead" && Math.hypot(e.x - this.px, e.z - this.pz) < GUEST_CHASED_NEAR)
+                : this.chased;
+        if (!chased && !moving && !this.awake && this.time - this.lastHurt > REGEN_DELAY / regenRate && this.hp < this.maxHp) {
             this.regen += REGEN_PER_SECOND * regenRate * dt;
             if (this.regen >= 1) {
                 this.hp = Math.min(this.maxHp, this.hp + Math.floor(this.regen));
@@ -3659,6 +3699,10 @@ export class Run {
         const length = this.player.play(clip, { once: true, speed: Math.max(1, 0.7 / stats.speed) });
         this.swingIn = Math.min(0.3, length * 0.5);
         this.swingTarget = target;
+        // The swing lands with the weapon it began with (version 154: a
+        // weapon swapped in before it landed hit with its own numbers on the
+        // first one's quicker swing)
+        this.swingStats = stats;
         this.attackCooldown = stats.speed;
         if (stats.ranged) {
             this.aiming = Math.min(AIM_SECONDS, stats.speed * 0.5);
@@ -3681,12 +3725,34 @@ export class Run {
         return special || this.rng() < hitChance(this.stats.weapon?.tier ?? 1, this.world.tier, !!e.def.boss);
     }
 
+    // What a melee swing landing now reaches: everything in front within
+    // reach and sight, and what it was aimed at
+    private inSwing(stats: GearStats): Enemy[] {
+        return this.enemies.filter((e) => {
+            if (e.state === "dead") {
+                return false;
+            }
+            const dist = Math.hypot(e.x - this.px, e.z - this.pz) - e.def.radius;
+            if (dist > stats.range || !this.region.lineOfSight(this.px, this.pz, e.x, e.z)) {
+                return false;
+            }
+            const angle = Math.atan2(e.x - this.px, e.z - this.pz);
+            let diff = Math.abs(angle - this.facing) % (Math.PI * 2);
+            diff = diff > Math.PI ? Math.PI * 2 - diff : diff;
+            return diff <= Math.PI * 0.45 || e === this.swingTarget;
+        });
+    }
+
     private landSwing(): void {
         this.swingIn = -1;
-        const stats = this.stats;
+        const stats = this.swingStats ?? this.stats;
+        this.swingStats = undefined;
         // A special lands more, or harder, and may heal; a full Barrows set
-        // has its say too (SET_EFFECTS)
-        const special = this.takeSpecial();
+        // has its say too (SET_EFFECTS). With nothing to hit it waits for
+        // the next swing, the bar kept (version 154: it was spent on air)
+        const struck = stats.ranged ? [] : this.inSwing(stats);
+        const aimed = stats.ranged ? this.swingTarget && this.swingTarget.state !== "dead" : struck.length > 0;
+        const special = aimed ? this.takeSpecial(stats) : undefined;
         const hits = special?.hits ?? 1;
         const set = stats.set;
         const roll = () => {
@@ -3764,26 +3830,20 @@ export class Run {
             }
             return;
         }
-        // Melee hits everything in front within reach
+        // Melee hits everything in front within reach. What's dealt is what
+        // came off (version 154: an armoured elite's six tenths, not the
+        // whole hit, for a heal)
         let dealt = 0;
-        for (const e of this.enemies) {
-            if (e.state === "dead") {
-                continue;
+        for (const e of struck) {
+            for (let i = 0; i < hits && e.hp > 0 && e.state !== "dead"; i++) {
+                const damage = this.lands(e, !!special) ? roll() : 0;
+                const before = e.hp;
+                this.damageEnemy(e, damage);
+                dealt += Math.max(0, before - e.hp);
             }
-            const dist = Math.hypot(e.x - this.px, e.z - this.pz) - e.def.radius;
-            if (dist > stats.range || !this.region.lineOfSight(this.px, this.pz, e.x, e.z)) {
-                continue;
-            }
-            const angle = Math.atan2(e.x - this.px, e.z - this.pz);
-            let diff = Math.abs(angle - this.facing) % (Math.PI * 2);
-            diff = diff > Math.PI ? Math.PI * 2 - diff : diff;
-            if (diff <= Math.PI * 0.45 || e === this.swingTarget) {
-                for (let i = 0; i < hits && e.hp > 0; i++) {
-                    const damage = this.lands(e, !!special) ? roll() : 0;
-                    dealt += Math.min(damage, e.hp);
-                    this.damageEnemy(e, damage);
-                }
-            }
+        }
+        if (this.dead) {
+            return;
         }
         if (special?.heal && dealt > 0) {
             this.hp = Math.min(this.maxHp, this.hp + Math.round(dealt * special.heal));
@@ -3916,11 +3976,16 @@ export class Run {
         });
     }
 
+    // One ball for every shot with no look of its own (version 154: each
+    // shot made a new one, kept till the run ended)
+    private ball?: { geometry: THREE.SphereGeometry; material: THREE.MeshBasicMaterial };
+
     private ballProjectile(): THREE.Object3D {
-        const geometry = new THREE.SphereGeometry(0.12, 6, 6);
-        const material = new THREE.MeshBasicMaterial({ color: 0xdddddd });
-        this.disposables.push(geometry, material);
-        return new THREE.Mesh(geometry, material);
+        if (!this.ball) {
+            this.ball = { geometry: new THREE.SphereGeometry(0.12, 6, 6), material: new THREE.MeshBasicMaterial({ color: 0xdddddd }) };
+            this.disposables.push(this.ball.geometry, this.ball.material);
+        }
+        return new THREE.Mesh(this.ball.geometry, this.ball.material);
     }
 
     // A mage's spell or an archer's arrow: a spell's cast graphic on the
@@ -4127,7 +4192,9 @@ export class Run {
         if (e.def.secondForm && !e.reborn) {
             e.reborn = true;
             e.hp = Math.round(e.def.hp * SECOND_FORM_SHARE);
-            e.interval = e.def.attackInterval * 0.7;
+            // Quicker than it was, enraged or not (version 154: 0.7 of its
+            // interval came after the enraged 0.65, so it slowed)
+            e.interval = e.def.attackInterval * (e.enraged ? 0.55 : 0.7);
             e.tint = new THREE.Color(0.8, 1.25, 0.8);
             tint(e.actor, e.tint);
             e.actor.root.scale.setScalar((e.def.scale ?? 1) * 1.15);
@@ -4308,13 +4375,7 @@ export class Run {
                 }
             }
             if (e.state === "dead") {
-                e.deadFor += dt;
-                if (e.deadFor > 4) {
-                    this.scene.remove(e.actor.root);
-                }
-                if (e.bar) {
-                    e.bar.group.visible = false;
-                }
+                this.fadeDead(e, dt);
                 continue;
             }
             const t = this.targetFor(e, heroes);
@@ -4590,9 +4651,12 @@ export class Run {
     // where, and marks where whoever it's after stands when they're off
     private updateBoss(e: Enemy, t: Hero | undefined, dt: number): void {
         // Left alone too long, an enraged boss gets some of its health back
-        if (e.enraged && e.state !== "idle" && this.time - e.lastHurtAt > BOSS_IDLE_HEAL_SECONDS && e.hp < e.def.hp) {
+        // (a second form no higher than it rose with, version 154: it healed
+        // back past it to the first form's whole)
+        const whole = e.reborn ? Math.round(e.def.hp * SECOND_FORM_SHARE) : e.def.hp;
+        if (e.enraged && e.state !== "idle" && this.time - e.lastHurtAt > BOSS_IDLE_HEAL_SECONDS && e.hp < whole) {
             e.lastHurtAt = this.time;
-            e.hp = Math.min(e.def.hp, e.hp + Math.round(e.def.hp * BOSS_IDLE_HEAL));
+            e.hp = Math.min(whole, e.hp + Math.round(whole * BOSS_IDLE_HEAL));
             this.announce(`${e.def.name} catches its breath and heals.`);
         }
         if (!e.enraged && e.hp <= e.def.hp * BOSS_ENRAGE) {
@@ -4623,15 +4687,23 @@ export class Run {
         e.slamIn -= dt;
         if (e.slamIn <= 0) {
             e.slamIn = e.enraged ? SLAM_ENRAGED : SLAM_SECONDS;
+            // A boss killed while its ring's up neither slams nor hurts
+            // (version 154: it burst all the same, from the body)
             this.hazard(
                 e.x,
                 e.z,
                 SLAM_RANGE,
                 1.2,
-                (hero) => this.hurtHero(hero, e.def, SLAM_HIT * this.weakScale(e), "melee", e.def.pierce),
+                (hero) => {
+                    if (e.state !== "dead") {
+                        this.hurtHero(hero, e.def, SLAM_HIT * this.weakScale(e), "melee", e.def.pierce);
+                    }
+                },
                 () => {
-                    play(e.actor, "attack", { once: true });
-                    e.attacks++;
+                    if (e.state !== "dead") {
+                        play(e.actor, "attack", { once: true });
+                        e.attacks++;
+                    }
                 },
             );
         }
@@ -4643,7 +4715,11 @@ export class Run {
         if (e.strikeIn <= 0 && Math.hypot(t.x - e.x, t.z - e.z) > SLAM_RANGE + 1) {
             e.strikeIn = STRIKE_SECONDS;
             const style: ProtectStyle = e.def.alternates ? (e.style ?? styleOf(e.def)) : styleOf(e.def);
-            this.hazard(t.x, t.z, STRIKE_RADIUS, STRIKE_WARN, (hero) => this.hurtHero(hero, e.def, STRIKE_HIT * this.weakScale(e), style, e.def.pierce));
+            this.hazard(t.x, t.z, STRIKE_RADIUS, STRIKE_WARN, (hero) => {
+                if (e.state !== "dead") {
+                    this.hurtHero(hero, e.def, STRIKE_HIT * this.weakScale(e), style, e.def.pierce);
+                }
+            });
             if (!this.toldStrike) {
                 this.toldStrike = true;
                 this.tell(t, `${e.def.name} marks where you stand: step out of the ring!`);
@@ -4665,7 +4741,9 @@ export class Run {
                 continue;
             }
             this.hazard(x, z, 1, 1.4, (hero) => {
-                this.hurtHero(hero, e.def, 0, "magic", true, Math.round(hero.maxHp * FLOOR_DAMAGE));
+                if (e.state !== "dead") {
+                    this.hurtHero(hero, e.def, 0, "magic", true, Math.round(hero.maxHp * FLOOR_DAMAGE));
+                }
             });
         }
         this.tell(t, `The ground under you glows: ${e.def.name}'s fire is coming.`);
@@ -5092,13 +5170,14 @@ export class Run {
             // when the target's was a miss)
             const base = p.damage > 0 ? p.damage : Math.round((p.maxHit ?? 1) * 0.8);
             const damage = e === target ? p.damage : this.lands(e, false) ? Math.max(1, Math.round(base * (0.75 + this.rng() * 0.25))) : 0;
-            dealt += Math.min(damage, e.hp);
+            const before = e.hp;
             this.damageEnemy(e, damage, this.self, effects);
+            dealt += Math.max(0, before - e.hp);
             if (e !== target) {
                 void this.burst(spell.impact, e.x, e.z);
             }
         }
-        if (effect?.kind === "heal" && dealt > 0) {
+        if (effect?.kind === "heal" && dealt > 0 && !this.dead) {
             this.hp = Math.min(this.maxHp, this.hp + Math.round(dealt * effect.share));
             // The Sanguinesti staff's heal shows on its caster
             if (spell.healLook !== undefined) {
@@ -5134,7 +5213,7 @@ export class Run {
                         }
                         // A healing special's shot (version 150): a share of
                         // what it took off its target
-                        if (p.heal && before > p.target.hp) {
+                        if (p.heal && before > p.target.hp && !this.dead) {
                             this.hp = Math.min(this.maxHp, this.hp + Math.round((before - p.target.hp) * p.heal));
                         }
                         // A chinchompa: everything beside what it hit takes half
@@ -5256,7 +5335,6 @@ export class Run {
             );
             beam.position.set(x, y + 3.5, z);
             this.scene.add(beam);
-            this.disposables.push(beam.geometry, beam.material as THREE.Material);
             if (Math.hypot(x - this.px, z - this.pz) < HEAR_FAR) {
                 playChime(best);
             }
@@ -5268,8 +5346,11 @@ export class Run {
     // A pickup off the ground, whoever took it
     private removePickup(p: Pickup): void {
         this.scene.remove(p.sprite, p.shadow);
+        // Its shaft of light freed with it (version 154: kept till the end)
         if (p.beam) {
             this.scene.remove(p.beam);
+            p.beam.geometry.dispose();
+            (p.beam.material as THREE.Material).dispose();
         }
         if (p.glow) {
             this.scene.remove(p.glow);
@@ -5364,6 +5445,13 @@ export class Run {
                     // The host hands it over (asked again if it hasn't in a moment)
                     const asked = this.requested.get(p.uid);
                     const room = this.roomInPack(p.id, p.count);
+                    // One at a time (version 154): asked for together, a pile
+                    // was all granted against the same free room, and what
+                    // didn't fit was lost
+                    const waiting = [...this.requested].some(([u, at]) => u !== p.uid && this.time - at <= 1.5);
+                    if (waiting) {
+                        continue;
+                    }
                     if (room > 0 && (asked === undefined || this.time - asked > 1.5)) {
                         this.requested.set(p.uid, this.time);
                         this.coop.send({ k: "take", u: p.uid, n: room < p.count ? room : undefined } satisfies UpMessage);
@@ -5715,9 +5803,15 @@ export class Run {
         const grave = this.grave!;
         const left: ItemStack[] = [];
         let taken = 0;
+        // As much of each as the pack's limits allow (version 154: food,
+        // ammunition and thrown weapons came back past them)
         for (const stack of grave.items) {
-            if (addItem(this.inventory, stack.id, stack.count, this.packSize)) {
-                taken += stack.count;
+            const n = roomFor(this.inventory, stack.id, stack.count);
+            if (n > 0 && addItem(this.inventory, stack.id, n, this.packSize)) {
+                taken += n;
+                if (n < stack.count) {
+                    left.push({ id: stack.id, count: stack.count - n });
+                }
             } else {
                 left.push(stack);
             }
@@ -6008,13 +6102,7 @@ export class Run {
                 }
             }
             if (e.state === "dead") {
-                e.deadFor += dt;
-                if (e.deadFor > 4) {
-                    this.scene.remove(e.actor.root);
-                }
-                if (e.bar) {
-                    e.bar.group.visible = false;
-                }
+                this.fadeDead(e, dt);
                 continue;
             }
             e.x += (e.targetX - e.x) * k;
@@ -6076,9 +6164,23 @@ export class Run {
             return;
         }
         const def = this.ghostDef(message.d, lite);
+        // Its fall can come while its model loads (version 154: then it
+        // stood for good, as the host never says a dead one's dead again)
+        this.ghostsLoading.add(message.u);
         const e = await this.makeEnemy(def, message.x, message.z, message.f, message.t as Trait | undefined, message.u);
+        this.ghostsLoading.delete(message.u);
         e.key = !!message.key;
         this.ghosts.set(message.u, e);
+        if (this.ghostsKilled.delete(message.u)) {
+            this.ghostDied(e);
+        }
+    }
+
+    // A ghost's fall heard before it's here (spawnGhost)
+    private ghostFell(u: number): void {
+        if (this.ghostsLoading.has(u)) {
+            this.ghostsKilled.add(u);
+        }
     }
 
     // The map as the host laid it out
@@ -6129,6 +6231,9 @@ export class Run {
         for (const [u, x, z, facing, hp, clip, attacks, state] of s.e) {
             const e = this.ghosts.get(u);
             if (!e) {
+                if (STATE_NAMES[state] === "dead") {
+                    this.ghostFell(u);
+                }
                 continue;
             }
             e.targetX = x;
@@ -6155,6 +6260,25 @@ export class Run {
             }
             e.sentClip = clip;
             e.attacks = attacks;
+        }
+    }
+
+    // A body lies a few seconds, then goes, its health bar with it (version
+    // 154: the bar stayed in the scene, hidden, and the body's animation
+    // kept being worked out every frame till the run ended)
+    private fadeDead(e: Enemy, dt: number): void {
+        if (e.deadFor > DEAD_BODY_SECONDS) {
+            return;
+        }
+        e.deadFor += dt;
+        if (e.bar) {
+            e.bar.group.visible = false;
+        }
+        if (e.deadFor > DEAD_BODY_SECONDS) {
+            this.scene.remove(e.actor.root);
+            if (e.bar) {
+                this.scene.remove(e.bar.group);
+            }
         }
     }
 
@@ -6254,7 +6378,12 @@ export class Run {
                 this.requested.delete(message.u);
                 if (p) {
                     if (message.to === me) {
-                        this.takeItem(p.id, message.n ?? p.count);
+                        const n = message.n ?? p.count;
+                        // No room after all: it goes back down where this
+                        // player stands, for anyone (version 154: it was lost)
+                        if (!this.takeItem(p.id, n) && this.coop) {
+                            this.coop.send({ k: "drop", i: p.id, n, x: round2(this.px), z: round2(this.pz) } satisfies UpMessage);
+                        }
                         this.hooks.onChanged();
                     }
                     // Part taken: the rest stays where it is
@@ -6307,6 +6436,8 @@ export class Run {
                 const e = this.ghosts.get(message.u);
                 if (e) {
                     this.ghostDied(e);
+                } else {
+                    this.ghostFell(message.u);
                 }
                 if (message.by === me) {
                     this.kills++;
@@ -6617,8 +6748,9 @@ export class Run {
         if (this.dead || !item.slot || !removeItem(this.inventory, id, 1)) {
             return false;
         }
+        // Coins, but not coins found here (version 154: gear brought from
+        // the guild and sold paid the genie's "found on this map" wish)
         this.coins += sellPrice(item);
-        this.coinsFound += sellPrice(item);
         this.hooks.onChanged();
         return true;
     }

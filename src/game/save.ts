@@ -38,8 +38,10 @@ export type SaveData = {
     stats: Stats;
     // Tasks done (content/tasks.ts), each paid once
     tasks: string[];
-    // The item insured for the next run: it comes home if you don't
+    // The item insured for the next run: it comes home if you don't. And
+    // what was paid for it, given back if the cover moves (version 154)
     insured?: number;
+    insuredPaid?: number;
     // The guild's upgrades, bought with coins (UPGRADES has what each does)
     upgrades: Upgrades;
     // Gravestones: where you last died on a map, with what you carried in
@@ -326,6 +328,9 @@ export function parseSave(raw: string): SaveData | undefined {
         if (save.insured !== undefined && !ITEM_BY_ID.has(save.insured)) {
             save.insured = undefined;
         }
+        if (save.insured === undefined || typeof save.insuredPaid !== "number" || !(save.insuredPaid >= 0)) {
+            save.insuredPaid = undefined;
+        }
         if (Array.isArray(save.shop)) {
             // (a thrown weapon is sold by the bundle since version 146, never
             // off the gear shelves)
@@ -542,6 +547,31 @@ export function writeSave(save: SaveData, quiet = false): void {
     localStorage.setItem(slotKey(pageSlot), JSON.stringify(save));
     if (!quiet && pageSlot === 0) {
         onWrite?.(save);
+    }
+}
+
+// Owner-only pieces out of a save (version 154): a save code loaded into a
+// browser without a crown, which turned a test character's kit into
+// ordinary items there
+export function dropExclusive(save: SaveData): void {
+    const mine = (s: ItemStack) => !getItem(s.id).exclusive;
+    save.stash = save.stash.filter(mine);
+    save.backpack = save.backpack.filter(mine);
+    for (const [slot, id] of Object.entries(save.equipment)) {
+        if (id !== undefined && getItem(id).exclusive) {
+            delete save.equipment[slot as Slot];
+        }
+    }
+    for (const grave of save.graves) {
+        grave.items = grave.items.filter(mine);
+    }
+    for (const loadout of save.loadouts ?? []) {
+        loadout.backpack = loadout.backpack.filter(mine);
+        for (const [slot, id] of Object.entries(loadout.equipment)) {
+            if (id !== undefined && getItem(id).exclusive) {
+                delete loadout.equipment[slot as Slot];
+            }
+        }
     }
 }
 

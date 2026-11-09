@@ -110,6 +110,7 @@ import {
     newSave,
     packSize,
     parseSave,
+    dropExclusive,
     parseSaveCode,
     peekSlot,
     resetSave,
@@ -1407,7 +1408,14 @@ export class UI {
                             );
                             return;
                         }
-                        Object.assign(this.save, loaded);
+                        // Every field the code's, none of the old save's left
+                        // over (version 154: an old insurance, pet, contract or
+                        // threat levels carried across); owner-only pieces
+                        // only into a crowned browser
+                        if (!crownVerified(crownKey())) {
+                            dropExclusive(loaded);
+                        }
+                        this.replaceSave(loaded);
                         // An account keeps its name whatever the code's was
                         this.keepAccountName();
                         this.persist();
@@ -1424,7 +1432,7 @@ export class UI {
                     title: "Wipe the stash, coins and character and begin again",
                     onclick: () => {
                         if (confirm(this.account?.name ? "Start over? The stash, coins and character are wiped, on every device this account is on." : "Start over? The stash, coins and character are wiped.")) {
-                            Object.assign(this.save, resetSave());
+                            this.replaceSave(resetSave());
                             this.keepAccountName();
                             this.persist();
                             this.showMenu();
@@ -3114,21 +3122,26 @@ export class UI {
             const item = getItem(id);
             const cost = Math.max(10, Math.round(price(item) * 0.2 * (1 - 0.25 * save.upgrades.insurance)));
             const insured = save.insured === id;
+            // Cover moves from one piece to another with its fee back
+            // (version 154: a second piece's fee voided the first's)
+            const refund = save.insured !== undefined && !insured ? (save.insuredPaid ?? 0) : 0;
             return itemRow(
                 item,
                 1,
                 h(
                     "button",
                     {
-                        disabled: insured || save.coins < cost,
+                        disabled: insured || save.coins + refund < cost,
+                        title: refund > 0 ? `Moves the cover from your ${getItem(save.insured!).name}, its ${formatCoins(refund)} back` : undefined,
                         onclick: () => {
-                            save.coins -= cost;
+                            save.coins += refund - cost;
                             save.insured = id;
+                            save.insuredPaid = cost;
                             this.persist();
                             render();
                         },
                     },
-                    insured ? "Insured" : `Insure ${formatCoins(cost)}`,
+                    insured ? "Insured" : refund > 0 ? `Switch ${formatCoins(cost)}` : `Insure ${formatCoins(cost)}`,
                 ),
             );
         });
