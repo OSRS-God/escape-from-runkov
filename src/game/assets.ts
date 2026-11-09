@@ -54,7 +54,7 @@ export function loadModel(url: string): Promise<GLTF> {
                 }
             }
             linearizeColors(gltf.scene);
-            if (url.includes("/maps/")) {
+            if (url.includes("/maps/") || url.includes("/caves/")) {
                 dedupeTriangles(gltf.scene);
             }
             findScrolling(gltf.scene);

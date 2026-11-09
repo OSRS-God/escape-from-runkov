@@ -10,6 +10,7 @@
 //   npcs/<id>.glb, locs/<id>.glb, spotanims/<id>.glb
 //   maps/<id>/<x>_<y>.glb, maps/<id>.json   each map a square at a time
 //                                   (or maps/<id>.glb whole), and its collision
+//   caves/<room>.glb, caves/caves.json      the Depths' rooms
 //   player/kits/<id>.glb, player/items/<id>.glb, player/items.json (every
 //   worn piece's info in one file), player/kits.json, player/colors.json
 //   sounds.pack, sounds.json        every sound, and where each is in the pack
@@ -148,6 +149,19 @@ for (const id of manifest.maps ?? []) {
         copyModel(path.join(from, "map.glb"), path.join(target, "maps", `${id}.glb`));
     }
     copy(path.join(from, "region.json"), path.join(target, "maps", `${id}.json`));
+}
+// The cave rooms the Depths are laid out from each run (Run-Escape's
+// export-assets.ts caves), and their doors and collision
+const caves = path.join(source, "caves");
+if (fs.existsSync(caves)) {
+    for (const file of fs.readdirSync(caves)) {
+        if (file.startsWith("cave_") && file.endsWith(".glb")) {
+            copyModel(path.join(caves, file), path.join(target, "caves", file));
+        }
+    }
+    copy(path.join(caves, "caves.json"), path.join(target, "caves", "caves.json"));
+} else {
+    missing.push("caves (run export-assets.ts caves)");
 }
 for (const id of manifest.sounds) {
     const from = path.join(source, "sounds", `${id}.wav`);

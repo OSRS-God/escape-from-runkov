@@ -130,6 +130,7 @@ import { playMusic } from "./music";
 import { PlayerLook, RUN_CLIP_SPEED } from "./player";
 import { isKept } from "./kit";
 import { Region, Tile, TileSet, loadRegion } from "./region";
+import { layoutCave } from "./caves";
 import { Character, Equipment, Grave, ItemStack } from "./save";
 import { ZOOM_MAX, ZOOM_MIN, saveSettings, settings } from "./settings";
 
@@ -730,6 +731,9 @@ const NIGHT_CHANCE = 0.25;
 const NIGHT_LIGHT = new THREE.Color(0.35, 0.41, 0.68);
 const NIGHT_SKY = 0x0f1424;
 const NIGHT_FOG: [number, number] = [12, 34];
+// The Depths' dark, and how far off it starts and closes in
+const CAVE_DARK = 0x000000;
+const CAVE_FOG: [number, number] = [22, 48];
 const NIGHT_AGGRO = 0.6;
 // How often a night run gives new things in the scene the torchlight
 const TORCH_SWEEP = 0.5;
@@ -1120,6 +1124,10 @@ export class Run {
         // alone, ?night in the address makes every run a night (a way to
         // try the torchlight)
         this.night = this.rng() < NIGHT_CHANCE || (!coop && FORCE_NIGHT);
+        // (a cave has no night: the draw is still made, so the rest stay put)
+        if (world.caves) {
+            this.night = false;
+        }
         this.inventory = carry.inventory.map((s) => ({ ...s }));
         this.equipment = { ...carry.equipment };
         this.coins = carry.coins;
@@ -1161,6 +1169,11 @@ export class Run {
         // distance needs fog
         this.scene.background = new THREE.Color(0x7d96b8);
         this.scene.fog = new THREE.Fog(0x7d96b8, 28, 70);
+        // Underground, the distance goes to black
+        if (world.caves) {
+            this.scene.background = new THREE.Color(CAVE_DARK);
+            this.scene.fog = new THREE.Fog(CAVE_DARK, CAVE_FOG[0], CAVE_FOG[1]);
+        }
     }
 
     static async create(
@@ -1172,7 +1185,9 @@ export class Run {
         hooks: RunHooks,
         coop?: CoopSetup,
     ): Promise<Run> {
-        const region = await loadRegion(world.id);
+        // The Depths are laid out from the run's seed, the same for a whole party
+        const cave = world.caves ? await layoutCave(world.id, world.name, seed) : undefined;
+        const region = cave ? cave.region : await loadRegion(world.id);
         // The host's enemies have more in them for a bigger party
         if (coop?.role === "host" && coop.heroes.length > 1) {
             world = partyWorld(world, coop.heroes.length);
@@ -1185,7 +1200,7 @@ export class Run {
         const map = new THREE.Group();
         run.map = map;
         run.scene.add(map);
-        run.mapLoad = loadMap(region, region.spawn.x, region.spawn.z, (part) => {
+        const onPart = (part: THREE.Object3D) => {
             part.traverse((o) => {
                 const mesh = o as THREE.Mesh;
                 if (mesh.isMesh) {
@@ -1198,7 +1213,8 @@ export class Run {
             });
             map.add(part);
             run.applyNightTo(part);
-        });
+        };
+        run.mapLoad = cave ? cave.load(onPart) : loadMap(region, region.spawn.x, region.spawn.z, onPart);
         await run.mapLoad.near;
         // The minimap is drawn by day either way, so it can be read; and
         // again whole once the far squares are in

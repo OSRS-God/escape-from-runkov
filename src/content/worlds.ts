@@ -43,6 +43,12 @@ export type WorldDef = {
     chests: number;
     chestItems: [number, number];
     lootTiers: { tier: number; weight: number }[];
+    // A cave laid out new every run from cave rooms (game/caves.ts), not a
+    // real region
+    caves?: boolean;
+    // The map whose beating opens this one, for a map outside the order
+    // the rest open in
+    after?: string;
 };
 
 // worlds.json carries Run Escape's blurbs, about its waves and bosses, so
@@ -61,6 +67,7 @@ const DESCRIPTIONS: Record<string, string> = {
     god_wars: "The God Wars Dungeon, where four armies have fought for an age. All of them want you dead.",
     prifddinas: "The crystal city's gauntlet and its corrupted beasts. The Hunllef hunts the deepest halls.",
     inferno: "Inside the volcano under Mor Ul Rek: TzHaar and Jal creatures on the rock, and a Jad among them.",
+    depths: "Caves that are never the same twice: thirty chambers dug anew every run, the biggest map there is. Skotizo waits in one of them.",
 };
 
 // What a map tier asks of you (see scripts/balance.ts): the average enemy
@@ -279,11 +286,62 @@ function tierScale(w: WorldJson): { hp: number; damage: number } {
     };
 }
 
-export const WORLDS: WorldDef[] = (worldsJson as WorldJson[])
+// The Depths, as the user asked: a cave laid out from cave rooms in a new
+// order every run, the biggest map in the game. Its
+// enemies are what lives underground on the other maps, by "map:enemy" in
+// worlds.json, weakest first, and its boss is Skotizo, out of the Catacombs
+// of Kourend. Three stars, opened by beating the Barrows (as the Desert is
+// by the Wilderness), outside the order the other maps open in.
+const DEPTHS_ENEMIES = [
+    "barrows:crypt_spider",
+    "kourend:guanic_bat",
+    "lumbridge:skeleton",
+    "barrows:giant_crypt_rat",
+    "barrows:ghoul",
+    "lumbridge:ghost",
+    "karamja:jogre",
+];
+const DEPTHS_BOSS = "kourend:skotizo";
+const DEPTHS_AFTER = "barrows";
+
+function depthsJson(worlds: WorldJson[]): WorldJson {
+    const find = (key: string) => {
+        const [map, id] = key.split(":");
+        const w = worlds.find((x) => x.id === map);
+        const e = id === w?.boss?.id ? w.boss : w?.enemies.find((x) => x.id === id);
+        if (!e) {
+            throw new Error(`The Depths: no ${key} in worlds.json`);
+        }
+        return e;
+    };
+    return {
+        id: "depths",
+        name: "The Depths",
+        description: "",
+        tier: 3,
+        difficulty: { hp: 1, damage: 1 },
+        enemies: DEPTHS_ENEMIES.map(find),
+        boss: find(DEPTHS_BOSS),
+    };
+}
+
+// Where the Depths go in the maps screen's list: after the other three star maps
+const DEPTHS_LISTED_AFTER = "karamja";
+
+const WORLD_JSONS: WorldJson[] = (() => {
+    const list = (worldsJson as WorldJson[]).slice();
+    list.splice(list.findIndex((w) => w.id === DEPTHS_LISTED_AFTER) + 1, 0, depthsJson(list));
+    return list;
+})();
+
+export const WORLDS: WorldDef[] = WORLD_JSONS
     .filter((w) => w.boss)
     .map((w) => {
         const scale = tierScale(w);
+        const depths = w.id === "depths";
         return {
+            caves: depths || undefined,
+            after: depths ? DEPTHS_AFTER : undefined,
             id: w.id,
             name: w.name,
             description: DESCRIPTIONS[w.id] ?? w.description,
@@ -323,8 +381,14 @@ export const WORLD_ENEMIES: EnemyDef[] = WORLDS.flatMap((w) => [...w.enemies.map
 // (save.ts's stats.mapsBeaten). The first is always open. main.ts holds a
 // run to it and the maps screen shows it.
 export function mapBefore(id: string): WorldDef | undefined {
-    const i = WORLDS.findIndex((w) => w.id === id);
-    return i > 0 ? WORLDS[i - 1] : undefined;
+    const world = WORLD_BY_ID.get(id);
+    if (world?.after) {
+        return WORLD_BY_ID.get(world.after);
+    }
+    // A map with its own opener is left out of the order
+    const order = WORLDS.filter((w) => !w.after);
+    const i = order.findIndex((w) => w.id === id);
+    return i > 0 ? order[i - 1] : undefined;
 }
 
 export function mapUnlocked(mapsBeaten: string[], id: string): boolean {
