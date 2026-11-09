@@ -1146,7 +1146,13 @@ whatever its shape; a depth buffer let any armour sitting a little outside them 
 chestplate). Since version 152 the cape's and the amulet's pieces are drawn 0.07 and 0.14 tiles
 nearer the camera along each point's own line to it (`DRAWN_OVER` in `player.ts`): nothing moves
 on screen, they win against what's only just outside them, and from the other side the body is
-far thicker, so a cape doesn't show through a chest nor an amulet through a back.
+far thicker, so a cape doesn't show through a chest nor an amulet through a back. And the
+client draws only the faces turned to the camera, where the exported pieces were drawn both ways
+round: a cape is two layers, its lining and its outside often coloured apart (the Saradomin
+cape's lining is white under its blue, by the item's own recolours), and both ways round they
+fought, a cape of slivers of both. Every player piece is drawn front faces only since version
+152, so the Saradomin cape is blue with its cream hem as on the OSRS Wiki, not white with blue
+streaks.
 
 ## Checking the gear
 

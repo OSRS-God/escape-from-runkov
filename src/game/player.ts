@@ -181,6 +181,14 @@ export class PlayerLook {
         );
         actors.forEach((actor, i) => {
             if (actor) {
+                // Only the faces turned to the camera, as the client draws
+                // them (version 152): a cape is two layers, its lining and
+                // its outside often coloured apart (the Saradomin cape's
+                // white lining under its blue), and drawn both ways round
+                // they fought, a cape of slivers of both
+                for (const material of actor.materials) {
+                    material.side = THREE.FrontSide;
+                }
                 const over = DRAWN_OVER[slots[i]];
                 if (over) {
                     drawOver(actor, over);

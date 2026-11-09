@@ -78,7 +78,15 @@ Justiciar and the fighter torso). The OSRS client draws them over by face priori
 cape's and amulet's pieces are drawn 0.07 and 0.14 tiles nearer the camera along each point's
 line to it (`DRAWN_OVER`, `drawOver` in player.ts), so nothing moves on screen. Checked on 16
 capes from behind and running, the glory on 16 bodies, and front views with the nudge on and
-off (the same: a cape doesn't show through a chest).
+off (the same: a cape doesn't show through a chest). Then, as the user pointed out against
+OSRS, the random lines: the pieces were drawn double sided (the exporter's glTF), and a cape is
+two layers whose lining and outside the item's recolours colour apart (the Saradomin cape's 88
+lining faces white, 54 outside faces blue, 20 cream, per the cache), so both layers fought.
+The client culls faces turned away; every player piece is now `FrontSide` (player.ts), which
+gives the OSRS Wiki's Saradomin cape (blue, cream hem, white collar), clean pleats on the Cape
+of legends and Obsidian cape, and the Saradomin cloak white with its blue star. Checked 16
+capes and five outfits front, side and back (shields side on, skirts, staffs, godswords): no
+holes.
 
 Version 146 (deployed 8 November 2026 as Version 2026.11.08, `GAME_BUILD` "2026.11.08"): ammunition, as the user asked, for thrown weapons
 that never ran out and enough shots for a whole run with a bow or staff, and speeds. Thrown
