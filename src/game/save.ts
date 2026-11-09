@@ -91,9 +91,6 @@ export type SaveData = {
     // ends. Found on a page opening with no page playing it (runAlive), the
     // run was left by closing or reloading, and counts as a death.
     activeRun?: { map: string; at: number };
-    // Coins paid for pieces taken out of the game (REMOVED_ITEMS), to say
-    // so on the title screen once (version 154)
-    refunded?: number;
 };
 
 export type Friend = { code: string; name: string };
@@ -251,14 +248,6 @@ function newFriendKey(): string {
 
 const THROWN_GRANT = 100;
 
-// Pieces taken out of the game, and the coins each held one is worth to its
-// owner (its sell price, a quarter of its value): parseSave pays them
-const REMOVED_ITEMS: Record<number, number> = {
-    // The Demonic sceptre (version 154): a staff here, but in OSRS a
-    // League's cosmetic for the shield slot with no stats
-    33296: 12_500_000,
-};
-
 // A list with each stackable thing in one stack
 function mergeStacks(list: ItemStack[]): ItemStack[] {
     const out: ItemStack[] = [];
@@ -323,25 +312,6 @@ export function parseSave(raw: string): SaveData | undefined {
         };
         save.threat = levels(save.threat);
         save.stats.bestThreat = levels(save.stats.bestThreat);
-        // A piece the game's taken out since, held anywhere, is paid for at
-        // its sell price, once, as it goes (version 154)
-        let refund = 0;
-        const held = (id: unknown, count = 1) => {
-            const worth = typeof id === "number" ? REMOVED_ITEMS[id] : undefined;
-            if (worth !== undefined && count > 0) {
-                refund += worth * count;
-            }
-        };
-        for (const s of [...(save.stash ?? []), ...(Array.isArray(save.backpack) ? save.backpack : []), ...save.graves.flatMap((g) => g.items ?? [])]) {
-            held(s?.id, s?.count);
-        }
-        for (const id of Object.values(save.equipment ?? {})) {
-            held(id);
-        }
-        if (refund > 0) {
-            save.coins += refund;
-            save.refunded = (save.refunded ?? 0) + refund;
-        }
         // Empty stacks (a deposit that went wrong before version 39) go, and
         // so does anything the game no longer has (the Santa hat, say)
         const whole = (list: ItemStack[]) => list.filter((s) => s && typeof s.id === "number" && s.count > 0 && ITEM_BY_ID.has(s.id));

@@ -1496,8 +1496,8 @@ export const ITEMS: ItemDef[] = [
     staff(21649, "Merfolk trident", 3, 26, 30000),
     staff(33255, "Lithic sceptre", 4, 42, 2000000),
     // (the Demonic sceptre, 33296, went in version 154: in OSRS it's a
-    // League's cosmetic for the shield slot, with no stats; save.ts's
-    // REMOVED_ITEMS pays for any still held)
+    // League's cosmetic for the shield slot, with no stats. A save still
+    // holding one loses it as it loads, unpaid, as the user chose)
     // Magic robes the game lacked: the black wizard's, the Shade and Druid
     // robes, the ghostly and Moonclan sets, the dark squall robes
     armour(1017, "Wizard hat", "head", 1, 2, 20),
