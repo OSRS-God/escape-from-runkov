@@ -1960,6 +1960,13 @@ export function getItem(id: number): ItemDef {
 // purple, legendary gold
 export const TIER_COLOURS = ["#ffffff", "#c8c8c8", "#3ec44a", "#3d8bff", "#a35cff", "#ffb020"];
 
+// Version 158, as the user asked: purple (tier 4) and gold (tier 5) gear only
+// comes from a boss's golden chest. Anything else (chests, kills, champions,
+// superiors, caskets, balloons, the shop) gives this tier at best, but the
+// champion's crystal chest, each piece of which is purple this often
+export const FOUND_TIER_MAX = 3;
+export const CRYSTAL_PURPLE_CHANCE = 0.03;
+
 // A thing's name for many of it, lower case: "bronze knives", "chinchompas"
 export function pluralName(name: string): string {
     const lower = name.toLowerCase();
@@ -2058,7 +2065,9 @@ const STOCK_SIZE = 8;
 const STOCK_TIER_WEIGHTS = [0, 45, 30, 16, 7, 2];
 
 export function rollShopStock(random: () => number, maxTier = 5, size = STOCK_SIZE): number[] {
-    const weights = STOCK_TIER_WEIGHTS.map((w, t) => (t <= Math.max(1, maxTier) ? w : 0));
+    // (purple and gold only from bosses' chests: FOUND_TIER_MAX)
+    const top = Math.min(FOUND_TIER_MAX, Math.max(1, maxTier));
+    const weights = STOCK_TIER_WEIGHTS.map((w, t) => (t <= top ? w : 0));
     const stock: number[] = [];
     for (let tries = 0; tries < 100 && stock.length < size; tries++) {
         let roll = random() * weights.reduce((a, b) => a + b, 0);

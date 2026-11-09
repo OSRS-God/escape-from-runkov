@@ -28,6 +28,8 @@ import {
     iconUrl,
     pluralName,
     rollGear,
+    CRYSTAL_PURPLE_CHANCE,
+    FOUND_TIER_MAX,
     specialOf,
     tierGlows,
 } from "../content/items";
@@ -4387,8 +4389,18 @@ export class Run {
 
     // A piece of gear from a roll over tiers, dropped here; a tier's prize
     // only where prizes are given (the boss's chest, the vault, a champion,
-    // a clue casket), at the weight they're given there
-    private dropGear(tiers: { tier: number; weight: number }[], x: number, z: number, prizes = 0, scatter?: number): void {
+    // a clue casket), at the weight they're given there. Purple and gold
+    // only from a boss's golden chest (`from` "boss"; version 158): anything
+    // else gives FOUND_TIER_MAX at best, but the crystal chest ("crystal"),
+    // a piece of which is purple now and then whatever the map
+    private dropGear(
+        tiers: { tier: number; weight: number }[],
+        x: number,
+        z: number,
+        prizes = 0,
+        scatter?: number,
+        from?: "boss" | "crystal",
+    ): void {
         let roll = this.rng() * tiers.reduce((n, t) => n + t.weight, 0);
         let pick = tiers[tiers.length - 1].tier;
         for (const t of tiers) {
@@ -4397,6 +4409,11 @@ export class Run {
                 pick = t.tier;
                 break;
             }
+        }
+        if (from === "crystal" && this.rng() < CRYSTAL_PURPLE_CHANCE) {
+            pick = FOUND_TIER_MAX + 1;
+        } else if (from !== "boss") {
+            pick = Math.min(pick, FOUND_TIER_MAX);
         }
         // A threat level's better odds at a prize (version 150)
         const item = rollGear(this.rng, pick, Math.min(1, prizes * this.threat.prizes));
@@ -5796,13 +5813,14 @@ export class Run {
         // it stood
         const tier = this.world.tier;
         const drop = (id: number, count: number) => this.dropPickup(id, count, chest.tile.x, chest.tile.z, 0);
-        const gear = (tiers: { tier: number; weight: number }[], prizes = 0) =>
-            this.dropGear(tiers, chest.tile.x, chest.tile.z, prizes, 0);
+        const gear = (tiers: { tier: number; weight: number }[], prizes = 0, from?: "boss" | "crystal") =>
+            this.dropGear(tiers, chest.tile.x, chest.tile.z, prizes, 0, from);
         const purse = (min: number, max: number) => Math.round(randInt(this.rng, min, max) * Math.pow(2.2, tier - 1) * this.threat.coins);
         const potion = () => SHOP_POTIONS[Math.floor(this.rng() * SHOP_POTIONS.length)];
         // Nothing on a map is better than the map: the vault, the golden
         // chest and the caskets give the map's own tier, their chance of its
-        // prize apart
+        // prize apart (and since version 158 only the golden chest gives
+        // purple or gold: dropGear's `from`)
         const own = [{ tier, weight: 1 }];
         if (chest.vault) {
             // The key goes in the lock; two pieces of the map's tier, and a
@@ -5811,8 +5829,8 @@ export class Run {
                 removeItem(this.inventory, VAULT_KEY, 1);
                 this.vaults++;
             }
-            gear(own, PRIZE_CASKET);
-            gear(own, PRIZE_CASKET);
+            gear(own, PRIZE_CASKET, "crystal");
+            gear(own, PRIZE_CASKET, "crystal");
             drop(COINS, purse(200, 400));
             if (by.me) {
                 playChime(true);
@@ -5829,9 +5847,11 @@ export class Run {
                 removeItem(this.inventory, BOSS_KEY, 1);
                 this.hooks.onChanged();
             }
+            // (the only place purple and gold come from; the Depths' rolls
+            // every tier, as the rest of their loot did before version 158)
             const count = 2 + (this.rng() < 0.5 ? 1 : 0);
             for (let i = 0; i < count; i++) {
-                gear(own, PRIZE_BOSS_CHEST);
+                gear(this.world.caves ? this.world.lootTiers : own, PRIZE_BOSS_CHEST, "boss");
             }
             drop(potion(), 1);
             drop(COINS, purse(150, 300));

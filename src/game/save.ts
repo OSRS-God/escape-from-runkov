@@ -1,6 +1,6 @@
 // What persists between runs, in localStorage: the stash, coins, what's worn
 // and who the character is.
-import { ITEM_BY_ID, Slot, getItem, rollShopStock } from "../content/items";
+import { FOUND_TIER_MAX, ITEM_BY_ID, Slot, getItem, rollShopStock } from "../content/items";
 import { Book, SPELL_BY_ID } from "../content/spells";
 import { clampThreat } from "../content/threat";
 import { DEFAULT_COLORS, DEFAULT_KITS } from "./player";
@@ -147,6 +147,17 @@ function profileOf(save: SaveData): Profile {
 }
 
 export type Mode = "regular" | "endless";
+
+// The profile that's out begun again (version 158: Start over in the
+// Depths), from a new save's, a starter kit to pick; the other profile and
+// what's shared (the look, name and friends) as they were
+export function restartProfile(save: SaveData): void {
+    const target = save as unknown as Record<string, unknown>;
+    for (const key of PROFILE_KEYS) {
+        delete target[key];
+    }
+    Object.assign(save, profileOf(newSave()));
+}
 
 export function modeOf(save: SaveData): Mode {
     return save.mode === "endless" ? "endless" : "regular";
@@ -413,8 +424,9 @@ export function parseSave(raw: string): SaveData | undefined {
         }
         if (Array.isArray(save.shop)) {
             // (a thrown weapon is sold by the bundle since version 146, never
-            // off the gear shelves)
-            save.shop = save.shop.filter((id) => ITEM_BY_ID.has(id) && !getItem(id).thrown);
+            // off the gear shelves; and nothing purple or gold since version
+            // 158, which only bosses' chests give)
+            save.shop = save.shop.filter((id) => ITEM_BY_ID.has(id) && !getItem(id).thrown && getItem(id).tier <= FOUND_TIER_MAX);
         }
         // Saves from before looks were built from body kits
         if (!Array.isArray(save.character.kits) || !Array.isArray(save.character.colors)) {

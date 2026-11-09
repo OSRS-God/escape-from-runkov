@@ -189,6 +189,22 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 158 (not yet deployed), as the user asked. Purple (tier 4) and gold (tier 5) gear only
+from a boss's golden chest, on every map: chests, kills, champions, superiors, caskets, balloons
+and the shop give tier 3 at best (items.ts FOUND_TIER_MAX; run.ts dropGear's `from`), but the
+champion's crystal chest, each piece of which is purple 3% of the time (CRYSTAL_PURPLE_CHANCE)
+whatever the map; shop shelves already holding tier 4 or 5 are cleared on load. A boss chest
+still gives its map's own tier (the Depths' every tier), so tier 4 and 5 maps' bosses are where
+purple and gold come from. Start over in the Depths begins only the Depths again (save.ts
+restartProfile: their stash, coins, gear, record and a class to pick; the regular profile and
+the look are kept). The Depths' rooms (Run Escape cave-rooms.ts) got big rocks out in the
+open (a boulder, rock heaps, big sandstone rocks, a rock cluster; each with a clear tile all
+round, so it can't close a way through), skeletons and bones lying about that don't block,
+skeletons by the walls in lairs and red mushrooms in the plainer rooms. Checked: 30 layouts,
+all 60 room designs among them, walked tile to tile at the player's size with the game's own
+collision: every door through, at worst 99.994% of the open ground reached (the rest single
+tiles in corners).
+
 Version 157 (not yet deployed), as the user asked: mages and archers everywhere stand their
 ground and keep shooting however close you come (run.ts's retreat is gone). The Depths get
 fourteen of OSRS's cave slayer monsters (depths-mobs.json: cave bug, crawling hand, cave

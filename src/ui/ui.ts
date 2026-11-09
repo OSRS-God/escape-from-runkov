@@ -121,6 +121,7 @@ import {
     Upgrades,
     loadedSlot,
     modeOf,
+    restartProfile,
     switchMode,
     newSave,
     packSize,
@@ -1514,22 +1515,41 @@ export class UI {
                 "Load code",
             ),
             fullscreenButton(),
-            h(
-                "button",
-                {
-                    class: "quiet",
-                    title: "Wipe the stash, coins and character and begin again",
-                    onclick: () => {
-                        if (confirm(this.account?.name ? "Start over? The stash, coins and character are wiped, on every device this account is on." : "Start over? The stash, coins and character are wiped.")) {
-                            this.replaceSave(resetSave());
-                            this.keepAccountName();
-                            this.persist();
-                            this.showMenu();
-                        }
-                    },
-                },
-                "Start over",
-            ),
+            // In the Depths, only the Depths start over (version 158, as the
+            // user asked): their stash, coins, gear and record, and a class to
+            // pick again; the regular profile and the look stay
+            modeOf(this.save) === "endless"
+                ? h(
+                      "button",
+                      {
+                          class: "quiet",
+                          title: "Wipe your Depths stash, gear and progress and pick a class again; your regular character is kept",
+                          onclick: () => {
+                              if (confirm("Start the Depths over? Your Depths stash, coins, gear and progress are wiped and you pick a class again. Your regular character, stash and maps are kept.")) {
+                                  restartProfile(this.save);
+                                  this.persist();
+                                  this.showMenu();
+                              }
+                          },
+                      },
+                      "Start over",
+                  )
+                : h(
+                      "button",
+                      {
+                          class: "quiet",
+                          title: "Wipe the stash, coins and character and begin again",
+                          onclick: () => {
+                              if (confirm(this.account?.name ? "Start over? The stash, coins and character are wiped, on every device this account is on." : "Start over? The stash, coins and character are wiped.")) {
+                                  this.replaceSave(resetSave());
+                                  this.keepAccountName();
+                                  this.persist();
+                                  this.showMenu();
+                              }
+                          },
+                      },
+                      "Start over",
+                  ),
         ].filter((b): b is HTMLButtonElement => !!b);
     }
 
