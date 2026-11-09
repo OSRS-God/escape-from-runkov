@@ -13,6 +13,35 @@ import { addShadow } from "./shadows";
 // The character's shadow, in tiles, before their height scale
 const SHADOW_RADIUS = 0.45;
 
+// Worn over the body (version 152, as the user asked): OSRS draws a cape and
+// an amulet over the armour by its faces' priorities, where a depth buffer
+// let any armour sitting a little outside them show through (stray lines
+// and patches on a cape, a shoulder through its top, an amulet sunk into a
+// chestplate). Their points are drawn this many tiles nearer the camera
+// along their own line to it, by client slot, so nothing moves on screen
+// and they win against what's only just outside them; seen from the other
+// side the body's far thicker than this, so a cape doesn't show through a
+// chest, nor an amulet through a back
+const DRAWN_OVER: Partial<Record<number, number>> = { 1: 0.07, 2: 0.14 };
+
+function drawOver(actor: Actor, tiles: number): void {
+    for (const material of actor.materials) {
+        const before = material.onBeforeCompile;
+        material.onBeforeCompile = (shader, renderer) => {
+            before.call(material, shader, renderer);
+            shader.vertexShader = shader.vertexShader.replace(
+                "#include <project_vertex>",
+                `#include <project_vertex>
+                mvPosition.xyz -= normalize(mvPosition.xyz) * ${tiles.toFixed(3)};
+                gl_Position = projectionMatrix * mvPosition;`,
+            );
+        };
+        const key = material.customProgramCacheKey.bind(material);
+        material.customProgramCacheKey = () => `${key()}|over${tiles}`;
+        material.needsUpdate = true;
+    }
+}
+
 // The run clip plays this much faster than the cache's (version 137): the
 // walk went 30% faster, and the feet keep up with it (and a tenth slower
 // with the walk since version 146)
@@ -127,11 +156,14 @@ export class PlayerLook {
         }
 
         const urls: string[] = [];
+        // The client slot each piece fills, beside its url
+        const slots: number[] = [];
         for (let slot = 0; slot < 12; slot++) {
             const wornHere = infos.find((i) => i.slot === slot);
             if (wornHere) {
                 if (wornHere.info) {
                     urls.push(assetUrl(`assets/player/items/${wornHere.id}.glb`));
+                    slots.push(slot);
                 }
                 continue;
             }
@@ -141,6 +173,7 @@ export class PlayerLook {
             const bodyPart = BODY_PART_SLOTS.indexOf(slot);
             if (bodyPart !== -1 && look.kits[bodyPart] !== undefined && look.kits[bodyPart] !== -1) {
                 urls.push(assetUrl(`assets/player/kits/${look.kits[bodyPart]}.glb`));
+                slots.push(slot);
             }
         }
         const actors = await Promise.all(
@@ -148,6 +181,10 @@ export class PlayerLook {
         );
         actors.forEach((actor, i) => {
             if (actor) {
+                const over = DRAWN_OVER[slots[i]];
+                if (over) {
+                    drawOver(actor, over);
+                }
                 result.pieces.push(actor);
                 result.urls.push(urls[i]);
                 result.root.add(actor.root);

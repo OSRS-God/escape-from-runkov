@@ -70,6 +70,16 @@ seed tab: threat 5 made an imp 13 hp (8), the boss 900 (600) with floor, 31 cham
 strike ringed the player every 6s with the slam at the boss every 7s; a hit at the way out
 reset 2.0s to 0, poison didn't; 90 misses in 1000 bronze sword swings on Lumbridge.
 
+Version 152 (not yet deployed): worn capes and amulets, as the user asked. Armour sitting a
+little outside a cape showed through it (patches of platebody in the Obsidian cape and 3rd age
+cloak, the Saradomin cape's and Cape of legends' corners through the shoulders), and an amulet
+sank into most chestplates (the glory hidden on rune, dragon, Bandos, Armadyl, iron, Masori,
+Justiciar and the fighter torso). The OSRS client draws them over by face priority; here the
+cape's and amulet's pieces are drawn 0.07 and 0.14 tiles nearer the camera along each point's
+line to it (`DRAWN_OVER`, `drawOver` in player.ts), so nothing moves on screen. Checked on 16
+capes from behind and running, the glory on 16 bodies, and front views with the nudge on and
+off (the same: a cape doesn't show through a chest).
+
 Version 146 (deployed 8 November 2026 as Version 2026.11.08, `GAME_BUILD` "2026.11.08"): ammunition, as the user asked, for thrown weapons
 that never ran out and enough shots for a whole run with a bow or staff, and speeds. Thrown
 weapons stack (`thrown` on ItemDef): one held, each throw takes another of the same from the

@@ -1140,6 +1140,13 @@ its slot, the body kit's piece where nothing is worn, and nothing where a worn i
 (a platebody hides the arms, a full helm the hair and beard). Faces in a body colour are exported
 as lighting only, in a `group_<n>` material, and the game multiplies in the chosen colour from
 `public/assets/player/colors.json`. The game uses the male body kits and item models only.
+The OSRS client draws a character's faces by priority, so a cape and an amulet go over the armour
+whatever its shape; a depth buffer let any armour sitting a little outside them show through
+(stray lines and patches on a cape, a shoulder through its top, an amulet sunk into a
+chestplate). Since version 152 the cape's and the amulet's pieces are drawn 0.07 and 0.14 tiles
+nearer the camera along each point's own line to it (`DRAWN_OVER` in `player.ts`): nothing moves
+on screen, they win against what's only just outside them, and from the other side the body is
+far thicker, so a cape doesn't show through a chest nor an amulet through a back.
 
 ## Checking the gear
 
