@@ -10,6 +10,7 @@
 // doesn't make two.
 import { AMMO_LIMITS, ANKOU, COINS, FOOD_LIMIT, GILDED, GUTHIX_SUNFIRE, ITEMS, ItemDef, RED_GHOSTLY, SANGUINE_TORVA, THROWN_LIMIT } from "../content/items";
 import { CROWN_PETS } from "../content/crownpets";
+import { playingEndless } from "../content/worlds";
 import { crownKey, crownKnown, crownVerified } from "./crown";
 import { addItem, countOf } from "./inventory";
 import { SaveData, loadedSlot } from "./save";
@@ -57,11 +58,14 @@ const PLAYTESTER_MAIN_KIT = GUTHIX_SUNFIRE.map((id) => ({ id, count: 1 }));
 
 // The kit this page's character keeps: a test character's, or the owner's
 // first character's Ankou outfit, red ghostly robes and Sanguine torva, or
-// the playtester's first character's Guthix sunfire set
+// the playtester's first character's Guthix sunfire set. Endless is a fresh
+// start (version 156): a crown keeps only its own pieces there, never every
+// item, on either character.
 function kitHere(): { id: number; count: number }[] {
     const crown = crownVerified(crownKey());
-    if (loadedSlot() !== TEST_SLOT) {
-        return crown?.alt === "owner" ? OWNER_MAIN_KIT : crown?.alt === "developer" ? PLAYTESTER_MAIN_KIT : [];
+    const own = crown?.alt === "owner" ? OWNER_MAIN_KIT : crown?.alt === "developer" ? PLAYTESTER_MAIN_KIT : [];
+    if (playingEndless() || loadedSlot() !== TEST_SLOT) {
+        return own;
     }
     return !crown ? [] : crown.alt === "owner" ? OWNER_KIT : crown.alt === "developer" ? PLAYTESTER_KIT : KIT;
 }
