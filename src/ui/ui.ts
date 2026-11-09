@@ -1356,6 +1356,27 @@ export class UI {
         return el;
     }
 
+    // The Depths' room, under Co-op (as the user asked): in, with a line on
+    // what they are, or out again from their own profile
+    private depthsRoom(withSub: boolean): HTMLElement {
+        const inside = modeOf(this.save) === "endless";
+        const sub = inside ? "Back to your regular stash, gear and maps" : "A fresh start: its own stash and class";
+        return this.roomButton(inside ? "Leave the Depths" : "The Depths", withSub ? sub : undefined, this.depthsIcon(), () =>
+            inside ? this.switchProfile("regular") : this.showEndlessEntry(),
+        );
+    }
+
+    // Its icon: a lit bullseye lantern (OSRS item 4550, which the game
+    // doesn't otherwise have), from the cache with the icon sheet's lift
+    // (public/ui/depths-lantern.png)
+    private depthsIcon(): HTMLElement {
+        const img = document.createElement("img");
+        img.className = "room-icon";
+        img.src = assetUrl("ui/depths-lantern.png");
+        img.alt = "";
+        return img;
+    }
+
     // The one room with no item for it
     private gearIcon(): SVGElement {
         const ns = "http://www.w3.org/2000/svg";
@@ -1444,10 +1465,6 @@ export class UI {
             h("button", { class: "discord", title: "Join the game's Discord server", onclick: () => window.open(DISCORD_URL, "_blank", "noopener") }, "Discord"),
             // And its code (version 132)
             h("button", { class: "github", title: "The game's code on GitHub", onclick: () => window.open(GITHUB_URL, "_blank", "noopener") }, "GitHub"),
-            // The Depths' fresh start and back (version 156)
-            modeOf(this.save) === "endless"
-                ? h("button", { class: "endless", title: "Back to your regular stash, gear and maps; this Depths profile waits as it is", onclick: () => this.switchProfile("regular") }, "Leave the Depths")
-                : h("button", { class: "endless", title: "A fresh start in the Depths: its own stash and class", onclick: () => this.showEndlessEntry() }, "The Depths"),
             // To switch accounts or make another (version 117)
             loggedIn
                 ? h("button", { title: `Logged in as ${this.account!.name}: log out to switch accounts or make another`, onclick: () => void this.logOut() }, "Log out")
@@ -1555,6 +1572,7 @@ export class UI {
                 { class: "rail" },
                 this.roomButton("Choose a map", f.play, this.itemIcon(2677), () => this.showMaps(), true),
                 this.coopEnabled ? this.roomButton("Co-op", f.coop.sub, this.itemIcon(1019), () => this.showCoop(), false, f.coop.end) : null,
+                this.depthsRoom(true),
                 this.roomButton("Bank & gear", f.stash, this.itemIcon(1127), () => this.showStash()),
                 this.roomButton("Shop", f.shop, this.itemIcon(995), () => this.showShop()),
                 this.roomButton("Tasks & pets", f.tasks, this.itemIcon(989), () => this.showTasks()),
@@ -1626,6 +1644,7 @@ export class UI {
             h(
                 "div",
                 { class: "card-tiles" },
+                this.depthsRoom(false),
                 this.roomButton("Bank & gear", undefined, this.itemIcon(1127), () => this.showStash()),
                 this.roomButton("Shop", undefined, this.itemIcon(995), () => this.showShop()),
                 this.roomButton("Tasks", undefined, this.itemIcon(989), () => this.showTasks()),
@@ -1752,6 +1771,7 @@ export class UI {
             { class: "osrs-rooms" },
             this.roomButton("Choose a map", f.play, this.itemIcon(2677), () => this.showMaps(), true, h("span", { class: "room-arrow" }, "▸")),
             this.coopEnabled ? this.roomButton("Co-op", coop.sub, this.itemIcon(1019), () => this.showCoop(), false, coop.end) : null,
+            this.depthsRoom(true),
             this.roomButton("Bank & gear", f.stash, this.itemIcon(1127), () => this.showStash()),
             this.roomButton("Shop", f.shop, this.itemIcon(995), () => this.showShop()),
             this.roomButton("Tasks & pets", f.tasks, this.itemIcon(989), () => this.showTasks()),
