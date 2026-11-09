@@ -189,7 +189,9 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 156 (not yet deployed): Endless, a new mode, as the user asked. It's open from the
+Version 156 (not yet deployed; on the playtest since 9 November 2026): the Depths, a new mode,
+as the user asked (first called Endless, renamed the same day; `endless` is still its id in the
+code and the save, so a profile made under the old name carries on). It's open from the
 start (at first it took beating the Inferno; the user asked for it straight away), and
 entering it (the maps screen's Endless row, or the
 title screen's Endless mode button) puts out a profile of its own (save.ts's `mode`, `other`

@@ -47,7 +47,7 @@ export type WorldDef = {
     // A cave laid out new every run from cave rooms (game/caves.ts), not a
     // real region
     caves?: boolean;
-    // Endless: the bosses a run picks from (ENDLESS_BOSSES of them), each
+    // The Depths: the bosses a run picks from (ENDLESS_BOSSES of them), each
     // made at this map's tier
     bosses?: EnemyDef[];
 };
@@ -154,7 +154,7 @@ const SHOOTERS: Record<string, Shooter> = {
     iorwerth_archer: ARROW,
     tzhaar_xil: ARROW,
     javelin_colossus: { ...ARROW, interval: 2 },
-    // Endless's (endless-bosses.json): Supreme shoots as in OSRS, and the
+    // The Depths' (endless-bosses.json): Supreme shoots as in OSRS, and the
     // Ice Queen throws ice
     dagannoth_supreme: ARROW,
     ice_queen: WATER_BOLT,
@@ -291,9 +291,11 @@ function tierScale(w: WorldJson): { hp: number; damage: number } {
     };
 }
 
-// Endless, a mode of its own, as the user asked: a cave laid out from cave
-// rooms in a new order every run, the biggest map in the game, with
-// ENDLESS_BOSSES bosses of its own in it each run, far apart, and loot of
+// The Depths, a mode of their own, as the user asked (first called Endless,
+// still its id in the code and the save, so saves made then keep it): a
+// cave laid out from cave rooms in a new order every run, the biggest map
+// in the game, with ENDLESS_BOSSES bosses of its own in it each run, far
+// apart, and loot of
 // every tier. The bosses are OSRS's cave and lair bosses, none of them met
 // on another map (endless-bosses.json: their clips found with Run Escape's
 // find-npc-seqs.ts and classify-npc-seqs.ts). Their sounds are OSRS's, by
@@ -323,7 +325,7 @@ const ENDLESS_ENEMIES = [
     "kourend:reanimated_demon",
 ];
 export const ENDLESS_ID = "endless";
-// How many bosses a run of Endless has, of endless-bosses.json's
+// How many bosses a run of the Depths has, of endless-bosses.json's
 export const ENDLESS_BOSSES = 5;
 // Its loot, every tier, leaning a little to the better ones
 const ENDLESS_LOOT = [
@@ -341,13 +343,13 @@ function endlessJson(worlds: WorldJson[]): WorldJson {
         const [map, id] = key.split(":");
         const e = worlds.find((x) => x.id === map)?.enemies.find((x) => x.id === id);
         if (!e) {
-            throw new Error(`Endless: no ${key} in worlds.json`);
+            throw new Error(`The Depths: no ${key} in worlds.json`);
         }
         return e;
     };
     return {
         id: ENDLESS_ID,
-        name: "Endless",
+        name: "The Depths",
         description: "",
         // (each depth has its own: ENDLESS_WORLDS)
         tier: 1,
@@ -386,7 +388,7 @@ function makeWorld(w: WorldJson): WorldDef {
     };
 }
 
-// Endless at each depth, 1 to 5: its enemies and bosses at that tier (a
+// The Depths at each depth, 1 to 5: their enemies and bosses at that tier (a
 // fresh start's starter kit is one star's gear, so it begins at one), and
 // its loot of every tier at every depth
 export const ENDLESS_DEPTHS = 5;
@@ -398,7 +400,7 @@ export const WORLDS: WorldDef[] = [...REGULAR_JSONS.map(makeWorld), ENDLESS_WORL
 
 export const WORLD_BY_ID: Map<string, WorldDef> = new Map(WORLDS.map((w) => [w.id, w]));
 
-// Which profile is out (save.ts's modes), and Endless's depth for it: main.ts
+// Which profile is out (save.ts's modes), and the Depths' depth for it: main.ts
 // gives the save's
 type ModeSource = () => { endless: boolean; depth: number };
 let modeSource: ModeSource = () => ({ endless: false, depth: 1 });
@@ -419,11 +421,11 @@ export function endlessWorld(depth = endlessDepth()): WorldDef {
     return ENDLESS_WORLDS[Math.min(ENDLESS_DEPTHS, Math.max(1, depth)) - 1];
 }
 
-// The regular maps: every one but Endless, a mode of its own (for the
+// The regular maps: every one but the Depths, a mode of their own (for the
 // tasks that ask for every map, and the pets)
 export const REGULAR_WORLDS: WorldDef[] = WORLDS.filter((w) => w.id !== ENDLESS_ID);
 
-// A map by id (Endless at the profile's depth)
+// A map by id (the Depths at the profile's depth)
 export function getWorld(id: string): WorldDef {
     const world = id === ENDLESS_ID ? endlessWorld() : WORLD_BY_ID.get(id);
     if (!world) {
@@ -440,13 +442,13 @@ export const WORLD_ENEMIES: EnemyDef[] = WORLDS.flatMap((w) => [...w.enemies.map
 // (save.ts's stats.mapsBeaten). The first is always open. main.ts holds a
 // run to it and the maps screen shows it.
 export function mapBefore(id: string): WorldDef | undefined {
-    // Endless is out of the order, and open from the start
+    // The Depths are out of the order, and open from the start
     const i = REGULAR_WORLDS.findIndex((w) => w.id === id);
     return i > 0 ? REGULAR_WORLDS[i - 1] : undefined;
 }
 
-// Whether a run may go to a map: in Endless's profile only Endless, and in
-// the regular one every map but Endless, in order (Endless is gone into from
+// Whether a run may go to a map: in the Depths' profile only the Depths, and
+// in the regular one every map but the Depths, in order (they're gone into from
 // the maps screen, onto its own profile, whenever the player likes)
 export function mapUnlocked(mapsBeaten: string[], id: string): boolean {
     if (playingEndless()) {
@@ -460,7 +462,7 @@ export function mapUnlocked(mapsBeaten: string[], id: string): boolean {
 }
 
 // The highest tier with a map open: what the shop's ammunition goes up to
-// (in Endless, its depth)
+// (in the Depths, their depth)
 export function tierUnlocked(mapsBeaten: string[]): number {
     if (playingEndless()) {
         return endlessDepth();

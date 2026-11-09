@@ -731,7 +731,7 @@ const NIGHT_CHANCE = 0.25;
 const NIGHT_LIGHT = new THREE.Color(0.35, 0.41, 0.68);
 const NIGHT_SKY = 0x0f1424;
 const NIGHT_FOG: [number, number] = [12, 34];
-// The caves' dark (Endless), and how far off it starts and closes in
+// The caves' dark (the Depths), and how far off it starts and closes in
 const CAVE_DARK = 0x000000;
 const CAVE_FOG: [number, number] = [22, 48];
 const NIGHT_AGGRO = 0.6;
@@ -809,7 +809,7 @@ const ENEMY_FULL_REACH = 14000;
 const ENEMY_MIN = 40;
 const ENEMY_MAX = 200;
 
-// Endless's bosses are each the best spread of this many candidates
+// The Depths' bosses are each the best spread of this many candidates
 const BOSS_SPREAD_CANDIDATES = 40;
 
 // `count` different ones of a list, in a random order
@@ -1201,7 +1201,7 @@ export class Run {
         hooks: RunHooks,
         coop?: CoopSetup,
     ): Promise<Run> {
-        // Endless's caves are laid out from the run's seed, the same for a whole party
+        // The Depths' caves are laid out from the run's seed, the same for a whole party
         const cave = world.caves ? await layoutCave(world.id, world.name, seed) : undefined;
         const region = cave ? cave.region : await loadRegion(world.id);
         // The host's enemies have more in them for a bigger party
@@ -1764,8 +1764,8 @@ export class Run {
             jobs.push(this.loadChest(chest));
         }
 
-        // Chests, one by each boss and the rest about the map. Endless has
-        // ENDLESS_BOSSES of every map's bosses, a different few each run,
+        // Chests, one by each boss and the rest about the map. The Depths have
+        // ENDLESS_BOSSES of their own bosses, a different few each run,
         // each as far from the others and from where you arrive as can be
         // found
         const bossDefs = this.world.bosses ? pickSome(this.rng, this.world.bosses, ENDLESS_BOSSES) : [this.world.boss];
@@ -4296,8 +4296,8 @@ export class Run {
             this.hooks.onMessage(`${e.def.name} falls and drops the golden chest's key. The nearest way out is ${this.exitDirection()}.`);
             // Now and then something small is left behind, if you haven't
             // got one from here already
-            // (none from Endless, whose bosses are every map's: their pets
-            // are on their own maps)
+            // (none from the Depths: pets are a map's own boss's, and the
+            // Depths' bosses change every run)
             const pets = this.carry.pets ?? [];
             if (!this.world.bosses && !pets.includes(this.world.id) && !this.petFound && this.rng() < 1 / PET_ONE_IN) {
                 this.petFound = this.world.id;

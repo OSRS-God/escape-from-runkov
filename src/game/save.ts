@@ -91,13 +91,14 @@ export type SaveData = {
     // ends. Found on a page opening with no page playing it (runAlive), the
     // run was left by closing or reloading, and counts as a death.
     activeRun?: { map: string; at: number };
-    // Endless (version 156), a fresh start of its own, as the user asked:
+    // The Depths (version 156; "endless" in the code and the save, its first
+    // name), a fresh start of their own, as the user asked:
     // its own stash, coins, gear, record and the rest (PROFILE_KEYS), with a
     // starter kit picked again. The profile played is the one in the save's
     // own fields; the other waits in `other`. `mode` says which is out.
     mode?: "endless";
     other?: Profile;
-    // How deep Endless goes for this profile, 1 to 5 (its tier): one deeper
+    // How deep the Depths go for this profile, 1 to 5 (their tier): one deeper
     // each time it's beaten
     endlessDepth?: number;
 };
@@ -152,7 +153,7 @@ export function modeOf(save: SaveData): Mode {
 }
 
 // Puts the other profile out: what's out now goes into `other`, and a first
-// time into Endless starts from a new save's (a starter kit to pick)
+// time into the Depths starts from a new save's (a starter kit to pick)
 export function switchMode(save: SaveData, mode: Mode): void {
     if (modeOf(save) === mode) {
         return;
@@ -479,7 +480,7 @@ export function parseSave(raw: string): SaveData | undefined {
             }
             save.thrownBundles = true;
         }
-        // Endless's profiles (version 156): the one waiting is made good the
+        // The Depths' profiles (version 156): the one waiting is made good the
         // same way as the one out, from its own fields and the shared ones
         if (save.mode !== "endless") {
             delete save.mode;

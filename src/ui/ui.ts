@@ -789,7 +789,7 @@ export class UI {
         this.menu.raise = layout === "card" ? 0.14 : layout === "osrs" ? 0.08 : 0.05;
     }
 
-    // Endless's door (version 156): what a fresh start means, before it's
+    // The Depths' door (version 156): what a fresh start means, before it's
     // taken. The first time in, the profile's new (an empty stash and a
     // starter kit to pick); after that it's as it was left.
     showEndlessEntry(): void {
@@ -799,7 +799,7 @@ export class UI {
             h(
                 "div",
                 { class: "screen account" },
-                h("h1", {}, "Endless mode"),
+                h("h1", {}, "The Depths"),
                 h(
                     "div",
                     { class: "panel account-panel starter-panel" },
@@ -808,14 +808,14 @@ export class UI {
                         { class: "subtitle" },
                         first
                             ? "A fresh start from scratch: a stash of your own with nothing in it, no coins to speak of, and a starting class to pick again. Your regular stash, gear and maps wait untouched, and you can go back to them from the title screen whenever you like."
-                            : "Back to your Endless profile, its stash and gear as you left them. Your regular stash, gear and maps wait untouched.",
+                            : "Back to your Depths profile, its stash and gear as you left them. Your regular stash, gear and maps wait untouched.",
                     ),
                     h(
                         "div",
                         { class: "subtitle" },
                         `The caves are dug anew every run, thirty chambers wide, with ${ENDLESS_BOSSES} lair bosses far apart and loot from every tier. They start at one star and go a star deeper each time you slay a boss and escape, down to ${ENDLESS_DEPTHS}.`,
                     ),
-                    h("button", { class: "primary", onclick: () => this.switchProfile("endless") }, first ? "Start fresh in Endless" : "Enter Endless"),
+                    h("button", { class: "primary", onclick: () => this.switchProfile("endless") }, first ? "Start fresh in the Depths" : "Enter the Depths"),
                     h("button", { onclick: () => this.showMaps() }, "Back"),
                 ),
             ),
@@ -823,7 +823,7 @@ export class UI {
     }
 
     // The other profile out (save.ts's modes): straight to its title screen,
-    // or its starter kits on a first time into Endless
+    // or its starter kits on a first time into the Depths
     private switchProfile(mode: Mode): void {
         switchMode(this.save, mode);
         this.persist();
@@ -850,7 +850,7 @@ export class UI {
             h(
                 "div",
                 { class: "screen account" },
-                h("h1", {}, modeOf(this.save) === "endless" ? "Endless: choose your style" : "Choose your style"),
+                h("h1", {}, modeOf(this.save) === "endless" ? "The Depths: choose your style" : "Choose your style"),
                 h(
                     "div",
                     { class: "panel account-panel starter-panel" },
@@ -891,8 +891,8 @@ export class UI {
             play: last
                 ? `Last: ${last.name} ${"★".repeat(last.tier)}${s.fastestEscape > 0 ? ` · best escape ${time(s.fastestEscape)}` : ""}`
                 : modeOf(save) === "endless"
-                  ? `Endless, depth ${getWorld(ENDLESS_ID).tier} of ${ENDLESS_DEPTHS}`
-                  : `${REGULAR_WORLDS.length} maps, one star to five, then Endless`,
+                  ? `The Depths, depth ${getWorld(ENDLESS_ID).tier} of ${ENDLESS_DEPTHS}`
+                  : `${REGULAR_WORLDS.length} maps, one star to five, then the Depths`,
             stash:
                 plural(pieces, "piece") +
                 ` · ${formatCoins(vaultWorth(save.stash, save.coins))}` +
@@ -1444,10 +1444,10 @@ export class UI {
             h("button", { class: "discord", title: "Join the game's Discord server", onclick: () => window.open(DISCORD_URL, "_blank", "noopener") }, "Discord"),
             // And its code (version 132)
             h("button", { class: "github", title: "The game's code on GitHub", onclick: () => window.open(GITHUB_URL, "_blank", "noopener") }, "GitHub"),
-            // Endless's fresh start and back (version 156)
+            // The Depths' fresh start and back (version 156)
             modeOf(this.save) === "endless"
-                ? h("button", { class: "endless", title: "Back to your regular stash, gear and maps; this Endless profile waits as it is", onclick: () => this.switchProfile("regular") }, "Leave Endless")
-                : h("button", { class: "endless", title: "A fresh start in Endless mode: its own stash and class", onclick: () => this.showEndlessEntry() }, "Endless mode"),
+                ? h("button", { class: "endless", title: "Back to your regular stash, gear and maps; this Depths profile waits as it is", onclick: () => this.switchProfile("regular") }, "Leave the Depths")
+                : h("button", { class: "endless", title: "A fresh start in the Depths: its own stash and class", onclick: () => this.showEndlessEntry() }, "The Depths"),
             // To switch accounts or make another (version 117)
             loggedIn
                 ? h("button", { title: `Logged in as ${this.account!.name}: log out to switch accounts or make another`, onclick: () => void this.logOut() }, "Log out")
@@ -2986,7 +2986,7 @@ export class UI {
 
     showMaps(): void {
         const beaten = this.save.stats.mapsBeaten;
-        // Endless's profile plays only Endless, at its depth; the regular one
+        // The Depths' profile plays only the Depths, at its depth; the regular one
         // sees it last, as the way into that profile
         const endlessMode = modeOf(this.save) === "endless";
         const worlds = endlessMode ? [getWorld(ENDLESS_ID)] : WORLDS;
@@ -2995,7 +2995,7 @@ export class UI {
             const grave = this.save.graves.find((g) => g.map === world.id);
             const things = grave ? grave.items.reduce((n, s) => n + s.count, 0) : 0;
             const door = !endlessMode && world.id === ENDLESS_ID;
-            // (Endless is open from the start)
+            // (the Depths are open from the start)
             const open = door || mapUnlocked(beaten, world.id);
             const before = mapBefore(world.id);
             return h(
@@ -3036,25 +3036,25 @@ export class UI {
                     : h("button", { class: "primary", disabled: !open, onclick: () => this.hooks.startRun(world.id) }, open ? "Go" : "Locked"),
             );
         });
-        // Endless is a mode of its own, under a heading of its own
+        // The Depths are a mode of their own, under a heading of their own
         const endlessAt = worlds.findIndex((w) => w.id === ENDLESS_ID);
         if (endlessAt >= 0 && !endlessMode) {
-            rows.splice(endlessAt, 0, h("div", { class: "map-mode" }, "Endless mode"));
+            rows.splice(endlessAt, 0, h("div", { class: "map-mode" }, "The Depths"));
         }
         this.show(
             h(
                 "div",
                 { class: "screen" },
-                h("h2", {}, endlessMode ? "Endless mode" : "Where to?"),
+                h("h2", {}, endlessMode ? "The Depths" : "Where to?"),
                 h(
                     "div",
                     { class: "subtitle" },
                     endlessMode
-                        ? "Your Endless profile: its own stash and gear, and the caves alone. Slay a boss and escape to go a star deeper. Leave Endless from here or the title screen to go back to your regular maps."
+                        ? "Your Depths profile: its own stash and gear, and the caves alone. Slay a boss and escape to go a star deeper. Leave the Depths from here or the title screen to go back to your regular maps."
                         : "The maps open in order: slay a map's boss and escape in the same run, and the next opens. Stars are how hard a map is and how good its chests are; the guild's starter kit is good for one star.",
                 ),
                 h("div", { class: "panel maps" }, h("div", { class: "item-list" }, ...rows)),
-                endlessMode ? h("button", { onclick: () => this.switchProfile("regular") }, "Leave Endless") : null,
+                endlessMode ? h("button", { onclick: () => this.switchProfile("regular") }, "Leave the Depths") : null,
                 h("button", { onclick: () => this.back() }, "Back"),
             ),
         );

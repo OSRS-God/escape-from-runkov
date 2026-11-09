@@ -58,7 +58,7 @@ const PLAYTESTER_MAIN_KIT = GUTHIX_SUNFIRE.map((id) => ({ id, count: 1 }));
 
 // The kit this page's character keeps: a test character's, or the owner's
 // first character's Ankou outfit, red ghostly robes and Sanguine torva, or
-// the playtester's first character's Guthix sunfire set. Endless is a fresh
+// the playtester's first character's Guthix sunfire set. The Depths are a fresh
 // start (version 156): a crown keeps only its own pieces there, never every
 // item, on either character.
 function kitHere(): { id: number; count: number }[] {

@@ -49,7 +49,7 @@ if (!crownKey() && activeSlot() !== 0) {
     setActiveSlot(0);
 }
 const { save, wiped } = loadSave();
-// Which profile is out, and how deep Endless goes for it (worlds.ts asks)
+// Which profile is out, and how deep the Depths go for it (worlds.ts asks)
 setModeSource(() => ({ endless: save.mode === "endless", depth: save.endlessDepth ?? 1 }));
 let run: Run | undefined;
 
@@ -500,10 +500,10 @@ async function onRunEnd(result: RunResult): Promise<void> {
         if (report.bossKills > 0 && !stats.mapsBeaten.includes(result.world.id)) {
             stats.mapsBeaten.push(result.world.id);
         }
-        // Endless beaten at its depth goes a star deeper (version 156)
+        // The Depths beaten at their depth go a star deeper (version 156)
         if (report.bossKills > 0 && result.world.id === ENDLESS_ID && result.world.tier >= endlessDepth() && endlessDepth() < ENDLESS_DEPTHS) {
             save.endlessDepth = endlessDepth() + 1;
-            ui.message(`Endless goes deeper: depth ${save.endlessDepth} of ${ENDLESS_DEPTHS}, ${save.endlessDepth} star enemies and bosses from the next run on.`);
+            ui.message(`The Depths go deeper: depth ${save.endlessDepth} of ${ENDLESS_DEPTHS}, ${save.endlessDepth} star enemies and bosses from the next run on.`);
         }
         // And beaten at its threat level: the next level opens (version
         // 150). A party's guest, playing at the host's level, counts no
