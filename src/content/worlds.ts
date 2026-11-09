@@ -47,9 +47,6 @@ export type WorldDef = {
     // A cave laid out new every run from cave rooms (game/caves.ts), not a
     // real region
     caves?: boolean;
-    // The map whose beating opens this one, for a map outside the order
-    // the rest open in
-    after?: string;
     // Endless: the bosses a run picks from (ENDLESS_BOSSES of them), each
     // made at this map's tier
     bosses?: EnemyDef[];
@@ -298,8 +295,9 @@ function tierScale(w: WorldJson): { hp: number; damage: number } {
 // find-npc-seqs.ts and classify-npc-seqs.ts, their sounds borrowed from
 // like enemies). Its enemies are what lives underground on the other maps,
 // by "map:enemy" in worlds.json, weakest first. Played on a fresh start of
-// its own (save.ts's profiles), opened by beating the last map of the
-// regular order, one star at first and a star deeper each time it's beaten.
+// its own (save.ts's profiles), open from the start (the user asked: at
+// first it took beating the last regular map), one star at first and a
+// star deeper each time it's beaten.
 const ENDLESS_ENEMIES = [
     "barrows:crypt_spider",
     "kourend:guanic_bat",
@@ -312,7 +310,7 @@ const ENDLESS_ENEMIES = [
     "kourend:reanimated_demon",
 ];
 export const ENDLESS_ID = "endless";
-// How many bosses a run of Endless has, from every map's
+// How many bosses a run of Endless has, of endless-bosses.json's
 export const ENDLESS_BOSSES = 5;
 // Its loot, every tier, leaning a little to the better ones
 const ENDLESS_LOOT = [
@@ -324,8 +322,6 @@ const ENDLESS_LOOT = [
 ];
 
 const REGULAR_JSONS = (worldsJson as WorldJson[]).filter((w) => w.boss);
-// The last map of the regular order, whose beating opens Endless
-const FINAL_MAP = REGULAR_JSONS[REGULAR_JSONS.length - 1].id;
 
 function endlessJson(worlds: WorldJson[]): WorldJson {
     const find = (key: string) => {
@@ -354,7 +350,6 @@ function makeWorld(w: WorldJson): WorldDef {
     const endless = w.id === ENDLESS_ID;
     return {
         caves: endless || undefined,
-        after: endless ? FINAL_MAP : undefined,
         // Its own cave bosses, at its depth's tier
         bosses: endless ? (endlessBossesJson as WorldEnemyJson[]).map((b) => convertEnemy(b, w, scale)) : undefined,
         id: w.id,
@@ -411,15 +406,6 @@ export function endlessWorld(depth = endlessDepth()): WorldDef {
     return ENDLESS_WORLDS[Math.min(ENDLESS_DEPTHS, Math.max(1, depth)) - 1];
 }
 
-// Whether the regular profile has opened Endless: the last map beaten
-export function endlessOpen(regularBeaten: string[]): boolean {
-    return regularBeaten.includes(FINAL_MAP);
-}
-
-export function finalMap(): WorldDef {
-    return WORLD_BY_ID.get(FINAL_MAP)!;
-}
-
 // The regular maps: every one but Endless, a mode of its own (for the
 // tasks that ask for every map, and the pets)
 export const REGULAR_WORLDS: WorldDef[] = WORLDS.filter((w) => w.id !== ENDLESS_ID);
@@ -441,19 +427,14 @@ export const WORLD_ENEMIES: EnemyDef[] = WORLDS.flatMap((w) => [...w.enemies.map
 // (save.ts's stats.mapsBeaten). The first is always open. main.ts holds a
 // run to it and the maps screen shows it.
 export function mapBefore(id: string): WorldDef | undefined {
-    const world = WORLD_BY_ID.get(id);
-    if (world?.after) {
-        return WORLD_BY_ID.get(world.after);
-    }
-    // A map with its own opener is left out of the order
-    const order = WORLDS.filter((w) => !w.after);
-    const i = order.findIndex((w) => w.id === id);
-    return i > 0 ? order[i - 1] : undefined;
+    // Endless is out of the order, and open from the start
+    const i = REGULAR_WORLDS.findIndex((w) => w.id === id);
+    return i > 0 ? REGULAR_WORLDS[i - 1] : undefined;
 }
 
 // Whether a run may go to a map: in Endless's profile only Endless, and in
 // the regular one every map but Endless, in order (Endless is gone into from
-// the maps screen, onto its own profile, once endlessOpen)
+// the maps screen, onto its own profile, whenever the player likes)
 export function mapUnlocked(mapsBeaten: string[], id: string): boolean {
     if (playingEndless()) {
         return id === ENDLESS_ID;

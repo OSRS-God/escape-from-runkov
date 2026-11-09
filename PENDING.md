@@ -189,8 +189,9 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 156 (not yet deployed): Endless, a new mode, as the user asked. It's opened by beating
-the last regular map (the Inferno), and entering it (the maps screen's Endless row, or the
+Version 156 (not yet deployed): Endless, a new mode, as the user asked. It's open from the
+start (at first it took beating the Inferno; the user asked for it straight away), and
+entering it (the maps screen's Endless row, or the
 title screen's Endless mode button) puts out a profile of its own (save.ts's `mode`, `other`
 and PROFILE_KEYS: stash, coins, gear, record, upgrades, pets and the rest; the look, name and
 friends are shared): the first time, an empty stash and the starter kits to pick again. Leave

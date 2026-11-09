@@ -172,11 +172,6 @@ export function switchMode(save: SaveData, mode: Mode): void {
     }
 }
 
-// The regular profile's record, whichever is out: what opens Endless
-export function regularStats(save: SaveData): Stats {
-    return modeOf(save) === "regular" ? save.stats : (save.other?.stats ?? save.stats);
-}
-
 export type Friend = { code: string; name: string };
 export type Loadout = { name: string; equipment: Equipment; backpack: ItemStack[] };
 export type BankTab = { name: string; ids: number[] };

@@ -10,7 +10,6 @@ import {
     WORLDS,
     WORLD_BY_ID,
     WorldDef,
-    endlessOpen,
     getWorld,
     mapBefore,
     mapUnlocked,
@@ -122,7 +121,6 @@ import {
     Upgrades,
     loadedSlot,
     modeOf,
-    regularStats,
     switchMode,
     newSave,
     packSize,
@@ -1449,9 +1447,7 @@ export class UI {
             // Endless's fresh start and back (version 156)
             modeOf(this.save) === "endless"
                 ? h("button", { class: "endless", title: "Back to your regular stash, gear and maps; this Endless profile waits as it is", onclick: () => this.switchProfile("regular") }, "Leave Endless")
-                : endlessOpen(regularStats(this.save).mapsBeaten)
-                  ? h("button", { class: "endless", title: "A fresh start in Endless mode: its own stash and class", onclick: () => this.showEndlessEntry() }, "Endless mode")
-                  : null,
+                : h("button", { class: "endless", title: "A fresh start in Endless mode: its own stash and class", onclick: () => this.showEndlessEntry() }, "Endless mode"),
             // To switch accounts or make another (version 117)
             loggedIn
                 ? h("button", { title: `Logged in as ${this.account!.name}: log out to switch accounts or make another`, onclick: () => void this.logOut() }, "Log out")
@@ -2999,7 +2995,8 @@ export class UI {
             const grave = this.save.graves.find((g) => g.map === world.id);
             const things = grave ? grave.items.reduce((n, s) => n + s.count, 0) : 0;
             const door = !endlessMode && world.id === ENDLESS_ID;
-            const open = door ? endlessOpen(beaten) : mapUnlocked(beaten, world.id);
+            // (Endless is open from the start)
+            const open = door || mapUnlocked(beaten, world.id);
             const before = mapBefore(world.id);
             return h(
                 "div",
