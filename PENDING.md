@@ -88,6 +88,50 @@ of legends and Obsidian cape, and the Saradomin cloak white with its blue star. 
 capes and five outfits front, side and back (shields side on, skirts, staffs, godswords): no
 holes.
 
+Version 153 (not yet deployed; the relay part needs its own deploy to Fly): the serious
+findings of a code check the user asked for.
+- Crown keys: a party member's loadout carried their raw crown key, which the relay sent to
+  everyone in the room, so anyone in a party with the owner or playtester could have worn
+  their crown (and had the test kit). Now the key goes only to the relay (`crownKey` on the
+  member, not the loadout), which checks it against the same SHA-256s (`crownFor`,
+  `CROWN_HASHES` in coop-relay.mjs) and sets `loadout.crown` to the crown's alt, whatever the
+  loadout said; the game shows party crowns by alt (`crownByAlt`, `nameColorFor`). Friends'
+  crowns are checked the same way (hello's `crownKey`; a said crown is ignored). Tested on the
+  local relay: the host shows "owner", a stranger claiming it with a made-up key shows none,
+  and the key is in nothing the stranger received. The old keys may already have leaked in a
+  party: new keys need new hashes in crown.ts and coop-relay.mjs.
+- Reloading mid-run: the save held the pre-run pack until the run ended, so reloading just
+  before a death kept everything. `save.activeRun` is set as a run is packed and cleared as it
+  ends; the playing page writes a heartbeat every 3s under its own key (`runAlive`), and marks
+  its tab in sessionStorage (`RUN_HERE`). A page opening on a run its own tab was playing, or
+  one quiet for 30s, settles it as a death (`settleAbandonedRun`, sharing `leaveCarried` with
+  onRunEnd: insurance pays, a gravestone with no spot stands 1.5 tiles from where you arrive);
+  while another tab plays one, a new run can't start. Tested on the main character: a reload
+  mid-run emptied the pack and worn gear into a Lumbridge gravestone (5 items), found a step
+  from the arrival next run.
+- Co-op hosts took guests' messages at their word. Now (`receiveUp`): numbers must be finite;
+  a hit is at most 5 times the guest's gear's max hit (`guestMaxHit`, kept from their
+  loadout and `gear` messages, at least 20), never negative, on an enemy within 15.5 tiles;
+  take, drop, open, dig and revive need the guest near (3.5 tiles; revive's range plus 1.5);
+  drops must be real, non-exclusive items; the vault and golden chest need a key, and digging
+  a clue scroll, that this host handed that guest (`guestHolds`); a `move` without a sound
+  defence keeps the last; `gear` keeps only real items in their own slots. Not tried in a live
+  party.
+- Accounts API: a login whose name no account could have (or whose password is a length none
+  has) is refused with nothing kept but the try from that network (any length of name was
+  kept before); tries at a name are counted per network (`login:<name>@<net>`, 8 per 15
+  minutes), with 100 per 15 minutes from all networks (a network that hasn't got it wrong
+  still gets its try), so nobody can lock a player out; tries and sign-ups are noted before
+  they're judged, so a burst can't all pass the count (`note` first, `unnote` on a good
+  login); IPv6 addresses count by their /64 (`networkOf`).
+- Relay: incoming frames and messages not yet whole are budgeted across every connection
+  (48 MB, then one holding over 64 KB is dropped; `Connection.account`); the output cap
+  counts the frame being written; only known messages count as activity, and only
+  `ACTIVE_MESSAGES` keep a room alive; character names go through `chatText`, which now also
+  strips the Arabic letter mark, the Mongolian vowel separator, the Hangul fillers, the blank
+  Braille cell and tag characters, and stacked marks past two. Run-Escape's 65 relay tests:
+  64 pass before and after (the one failure is the two relays having grown apart).
+
 Version 146 (deployed 8 November 2026 as Version 2026.11.08, `GAME_BUILD` "2026.11.08"): ammunition, as the user asked, for thrown weapons
 that never ran out and enough shots for a whole run with a bow or staff, and speeds. Thrown
 weapons stack (`thrown` on ItemDef): one held, each throw takes another of the same from the

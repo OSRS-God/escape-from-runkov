@@ -7,7 +7,7 @@ import * as THREE from "three";
 
 import { Actor, play } from "./assets";
 import { Loadout } from "./coop";
-import { CROWN_SHEET_HEIGHT, DEFAULT_NAME_COLOR, crownSprite, crownVerified, nameColorOf } from "./crown";
+import { CROWN_SHEET_HEIGHT, Crown, DEFAULT_NAME_COLOR, crownByAlt, crownSprite, nameColorFor } from "./crown";
 import { gearStats } from "./inventory";
 import { Overhead } from "./overhead";
 import { HERO_ATTACK, HERO_DEATH, HERO_IDLE, HERO_RUN, HeroAnim, HeroState, PRAY_NAMES, prayCode } from "./party";
@@ -84,10 +84,10 @@ export class Mate implements Hero {
     private crown?: THREE.Sprite;
     // Their protection prayer's icon (version 103)
     private readonly overhead: Overhead;
-    private crownKey?: string;
+    // Their crown, as the relay checked their key (version 153)
+    private readonly crownOf?: Crown;
     private readonly size: number;
     private readonly character: Loadout["character"];
-    private readonly crownKeyOf?: string;
     private attackClip: string;
     // Whether they hold a staff, and the animation of the last spell they
     // cast (version 108)
@@ -119,11 +119,8 @@ export class Mate implements Hero {
         this.fill = fill;
         this.scene.add(group);
         this.overhead = new Overhead(scene);
-        this.crownKey = loadout.crown;
-        this.crownKeyOf = loadout.crown;
-        if (crownVerified(loadout.crown, () => this.wearCrown())) {
-            this.wearCrown();
-        }
+        this.crownOf = crownByAlt(loadout.crown);
+        this.wearCrown();
         this.wear(loadout.equipment);
         if (loadout.pet) {
             void createPet(loadout.pet).then((actor) => {
@@ -196,14 +193,14 @@ export class Mate implements Hero {
     }
 
     private wearCrown(): void {
-        const crown = crownVerified(this.crownKey);
+        const crown = this.crownOf;
         if (!crown || this.crown || this.removed) {
             return;
         }
         this.crown = crownSprite(crown);
         this.scene.add(this.crown);
         // A crown colours the name, if they picked a colour
-        const color = nameColorOf(this.character, this.crownKeyOf);
+        const color = nameColorFor(this.character, crown);
         if (color) {
             this.nameColor = color;
             const old = this.label;

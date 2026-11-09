@@ -9,7 +9,7 @@
 // it stays the same box from the lobby into the run and back. What anyone
 // types is only ever drawn as text, never as HTML.
 import { ChatLine, MAX_CHAT_CHARS, MemberView, Session } from "../game/coop";
-import { crownIcon, crownVerified, nameColorOf } from "../game/crown";
+import { crownByAlt, crownIcon, nameColorFor } from "../game/crown";
 import { saveSettings, settings } from "../game/settings";
 
 type Kind = "game" | "party" | "system";
@@ -223,13 +223,14 @@ export class Chat {
         const row = el("div", `chat-line ${entry.kind}`);
         if (entry.kind === "party") {
             const member = this.member(entry.from);
-            const crown = crownVerified(member?.loadout?.crown, () => this.redraw());
+            // The crown the relay checked their key for (version 153)
+            const crown = crownByAlt(member?.loadout?.crown);
             const name = el("span", "chat-name");
             if (crown) {
                 name.append(crownIcon(crown));
             }
             name.append(document.createTextNode(`${entry.name || "Adventurer"}:`));
-            const color = member?.loadout ? nameColorOf(member.loadout.character, member.loadout.crown) : undefined;
+            const color = member?.loadout ? nameColorFor(member.loadout.character, crown) : undefined;
             if (color) {
                 name.style.color = color;
             }

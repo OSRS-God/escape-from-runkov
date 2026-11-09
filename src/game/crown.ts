@@ -2,10 +2,12 @@
 // their name on the title screen and in co-op lobbies, and over their head
 // in a run, and their playtester the developer's crown (version 65), and
 // nobody else can. A browser holds a key (given once by a link: the page
-// opened with ?crown=<key> keeps it and drops it from the address), the key
-// goes to the party with their loadout, and everyone's game checks it
-// against the keys' SHA-256 here before drawing a crown: the keys
-// themselves are in no build.
+// opened with ?crown=<key> keeps it and drops it from the address). This
+// browser checks its own key against the keys' SHA-256 here; the keys
+// themselves are in no build. In a party (version 153) the key goes to the
+// relay alone, which checks it the same way and tells the room only which
+// crown, if any (its alt, on the loadout): until then the key itself went
+// to everyone in the party, who could have worn it.
 import * as THREE from "three";
 
 import { assetUrl } from "./paths";
@@ -69,8 +71,14 @@ export const NAME_COLORS: { name: string; color: string }[] = [
 // has checked out and they picked one of the palette; else nothing (the
 // default). Everyone's game checks, so only a crown colours a name.
 export function nameColorOf(character: { nameColor?: string }, key: string | undefined): string | undefined {
+    return nameColorFor(character, crownVerified(key));
+}
+
+// The same for a crown already known (a party member's, as the relay
+// checked it)
+export function nameColorFor(character: { nameColor?: string }, crown: Crown | undefined): string | undefined {
     const color = character.nameColor;
-    if (!color || color === DEFAULT_NAME_COLOR || !NAME_COLORS.some((c) => c.color === color) || !crownVerified(key)) {
+    if (!color || color === DEFAULT_NAME_COLOR || !NAME_COLORS.some((c) => c.color === color) || !crown) {
         return undefined;
     }
     return color;

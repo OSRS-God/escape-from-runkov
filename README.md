@@ -566,8 +566,10 @@ The server is a Cloudflare Pages Function, `functions/api/[[path]].ts`, with D1 
 `runkov-accounts` for the main site, `runkov-accounts-playtest` for the playtest and every other
 preview, so the playtest's kit never reaches a real save. Passwords are PBKDF2-SHA256 (100,000
 rounds, a salt each), a device's token is kept as its SHA-256, a session lasts 180 days unseen,
-and wrong passwords are limited to 8 a name and 30 an address in 15 minutes, new accounts to 10
-an address an hour. `db/accounts.sql` has the tables (the function makes them too). Locally:
+and wrong passwords are limited to 8 a name from each network, 100 a name from all of them (a
+network that hasn't got it wrong still gets its try) and 30 a network in 15 minutes, new accounts
+to 10 a network an hour; an IPv6 address counts by its /64, tries are noted before they're
+judged, and a login with a name no account could have keeps nothing of the name (version 153). `db/accounts.sql` has the tables (the function makes them too). Locally:
 `npx wrangler pages dev dist --port 8790` serves a build with the API and a local database, and the
 Vite dev server's game uses it there.
 
@@ -606,8 +608,10 @@ and nobody else can (`crown.ts`, a table of crowns by key hash): their browser h
 opening the game with `?crown=<key>` (the title screen says "This browser holds the crown now";
 with `&home` too the address keeps the key, for a phone's home-screen icon, which has storage of
 its own),
-the key goes to the party with their loadout, and each game checks it against the keys' SHA-256
-before drawing a crown. The keys are in no build. A crowned browser also picks a colour for the
+the browser checks its own key against the keys' SHA-256 before drawing a crown, and in co-op the
+key goes to the relay alone (since version 153; before, it went to the whole party with the
+loadout), which checks it the same way and tells the room and friends only which crown (its
+`alt`). The keys are in no build or file. A crowned browser also picks a colour for the
 character's name on the Character screen (ten swatches, version 73): it shows on the title
 screen, in party rows, in the HUD's party list and over the head in a run, and every game draws
 it only after that player's key has checked out. A crowned browser has **two characters**

@@ -13,6 +13,7 @@ import {
     COINS,
     EAT_DELAY,
     FOOD_BY_TIER,
+    ITEM_BY_ID,
     POTION_SECONDS,
     PRAYER_RESTORE,
     PRAYER_BONUS_SCALE,
@@ -511,6 +512,22 @@ const EXTRACT_WAKE = 15;
 const REVIVE_WINDOW = 60;
 const REVIVE_SECONDS = 4;
 const REVIVE_RANGE = 1.6;
+// What a host takes of a guest's word (version 153; receiveUp): how far a
+// guest's own place can lag behind what it says it's doing, how near it
+// must be to what it takes, opens, drops or digs, how far off what it hits
+// can be, and how hard a hit can be (its gear's max hit this many times
+// over, for specials, Dharok's and potions; at least the floor). The keys
+// and clue scrolls a guest uses are counted out as the host hands them over.
+const GUEST_LAG = 1.5;
+const GUEST_REACH = 2 + GUEST_LAG;
+const GUEST_SHOT_REACH = 14 + GUEST_LAG;
+const GUEST_HIT_SCALE = 5;
+const GUEST_HIT_MIN = 20;
+const HELD_BY_HOST = new Set([VAULT_KEY, BOSS_KEY, CLUE_SCROLL]);
+
+function finite(n: unknown): n is number {
+    return typeof n === "number" && Number.isFinite(n);
+}
 const REVIVE_HP_SHARE = 0.3;
 const REVIVE_GRACE = 3;
 // A fall with nobody standing to help, or a solo one: this long on the
@@ -960,6 +977,10 @@ export class Run {
     // Whether the first charge (RILE_SPEED) has been called out
     private toldRiled = false;
     private toldStrike = false;
+    // A host's count of each guest's gear's max hit, and of the keys and
+    // clue scrolls it has handed each (version 153; receiveUp)
+    private readonly guestMaxHit = new Map<string, number>();
+    private readonly guestHolds = new Map<string, Map<number, number>>();
     private pet?: Pet;
     // What the pet that came along does for you (pets.ts)
     private readonly petBuff?: PetBuff;
@@ -1118,6 +1139,7 @@ export class Run {
             for (const hero of coop.heroes) {
                 if (hero.id !== coop.me) {
                     this.mates.set(hero.id, new Mate(hero.id, hero.name, hero.loadout, this.px, this.pz, this.scene, (x, z) => this.groundY(x, z)));
+                    this.guestMaxHit.set(hero.id, gearStats(hero.loadout.equipment ?? {}).damage);
                 }
             }
         }
@@ -1599,11 +1621,16 @@ export class Run {
         // Your gravestone, where you fell last time, with what you carried
         const grave = this.carry.grave;
         if (grave && grave.items.length > 0) {
+            // A run left by closing the page has no spot (version 153): its
+            // stone stands a step from where you arrive
+            const known = Number.isFinite(grave.x) && Number.isFinite(grave.z);
+            const gx = known ? grave.x : this.px + 1.5;
+            const gz = known ? grave.z : this.pz + 1.5;
             jobs.push(
                 createActor("locs", 404).then((actor) => {
-                    this.placeActor(actor, grave.x, grave.z);
+                    this.placeActor(actor, gx, gz);
                     addShadow(actor.root, 0.5);
-                    this.grave = { actor, x: grave.x, z: grave.z, items: grave.items.map((s) => ({ ...s })) };
+                    this.grave = { actor, x: gx, z: gz, items: grave.items.map((s) => ({ ...s })) };
                 }),
             );
         }
@@ -6352,10 +6379,22 @@ export class Run {
         if (!mate || mate.done) {
             return;
         }
+        // What a guest's word can be (version 153, as a code check found):
+        // the host took every message at its word, so a changed game could
+        // hit for anything or heal an enemy, drop any item, open the vault
+        // without its key or dig caskets with no clue. Numbers must be
+        // numbers, a guest must be near what it acts on, a hit can be no
+        // more than its gear could do, and the keys and clue scrolls it uses
+        // are ones this host handed it
+        const near = (x: unknown, z: unknown, reach: number) => finite(x) && finite(z) && Math.hypot(mate.x - x, mate.z - z) <= reach;
         switch (message.k) {
             case "move": {
+                if (![message.x, message.z, message.f, message.hp, message.mh].every(finite)) {
+                    break;
+                }
                 const wasDown = mate.dead;
-                mate.move(message.x, message.z, message.f, message.hp, message.mh, message.a, message.ac, message.d, message.dead === 1);
+                const d = Array.isArray(message.d) && message.d.length === 3 && message.d.every(finite) ? message.d : mate.defenceVs;
+                mate.move(message.x, message.z, message.f, message.hp, message.mh, message.a, message.ac, d, message.dead === 1);
                 // Their protection, for its icon over them here and in the snapshot
                 mate.protect = PRAY_NAMES[message.p ?? 0] ?? "none";
                 // A guest just fell with others still standing: everyone hears
@@ -6364,18 +6403,24 @@ export class Run {
                 }
                 break;
             }
-            case "revive":
-                this.revive(message.id, mate);
+            case "revive": {
+                const target = typeof message.id === "string" ? this.heroById(message.id) : undefined;
+                if (target && near(target.x, target.z, REVIVE_RANGE + GUEST_LAG)) {
+                    this.revive(message.id, mate);
+                }
                 break;
+            }
             case "hit": {
                 const e = this.enemies.find((x) => x.uid === message.u);
-                if (e && e.state !== "dead") {
-                    this.damageEnemy(e, message.d, mate, {
+                const most = Math.max(GUEST_HIT_MIN, (this.guestMaxHit.get(from) ?? 0) * GUEST_HIT_SCALE);
+                if (e && e.state !== "dead" && finite(message.d) && message.d >= 0 && message.d <= most && near(e.x, e.z, GUEST_SHOT_REACH)) {
+                    const share = (v: unknown, cap: number) => (finite(v) && v >= 0 ? Math.min(cap, v) : undefined);
+                    this.damageEnemy(e, Math.round(message.d), mate, {
                         slow: !!message.slow,
                         stall: !!message.stall,
-                        freeze: typeof message.frz === "number" ? Math.min(20, message.frz) : undefined,
-                        weaken: typeof message.wk === "number" ? Math.min(0.15, message.wk) : undefined,
-                        poison: typeof message.psn === "number" ? Math.min(30, message.psn) : undefined,
+                        freeze: share(message.frz, 20),
+                        weaken: share(message.wk, 0.15),
+                        poison: share(message.psn, 30),
                     });
                 }
                 break;
@@ -6390,7 +6435,8 @@ export class Run {
                 break;
             }
             case "take": {
-                const p = this.pickups.find((x) => x.uid === message.u);
+                const found = this.pickups.find((x) => x.uid === message.u);
+                const p = found && near(found.x, found.z, GUEST_REACH) ? found : undefined;
                 if (p && p.id === COINS && this.splitsLoot()) {
                     this.shareCoins(from, p.count);
                     coop.send({ k: "taken", u: p.uid } satisfies DownMessage);
@@ -6399,43 +6445,78 @@ export class Run {
                 }
                 if (p) {
                     // Part of it, when that's all the guest has room for
-                    const n = Math.floor(message.n ?? p.count);
+                    const n = finite(message.n) ? Math.floor(message.n) : p.count;
                     if (n > 0 && n < p.count) {
                         p.count -= n;
+                        this.guestHold(from, p.id, n);
                         coop.send({ k: "taken", u: p.uid, to: from, n, left: p.count } satisfies DownMessage);
                     } else {
+                        this.guestHold(from, p.id, p.count);
                         coop.send({ k: "taken", u: p.uid, to: from } satisfies DownMessage);
                         this.removePickup(p);
                     }
                 }
                 break;
             }
-            case "drop":
-                if (message.n > 0 && message.n <= 1000) {
-                    this.dropPickup(message.i, message.n, message.x, message.z, 0);
+            case "drop": {
+                // A real item, not an owner's own, at their feet; a key or a
+                // clue only one this host handed them
+                const item = finite(message.i) ? ITEM_BY_ID.get(message.i) : undefined;
+                const n = message.n;
+                if (
+                    item &&
+                    !item.exclusive &&
+                    Number.isInteger(n) &&
+                    n > 0 &&
+                    n <= 1000 &&
+                    near(message.x, message.z, GUEST_REACH) &&
+                    (!HELD_BY_HOST.has(item.id) || this.guestSpend(from, item.id, n))
+                ) {
+                    this.dropPickup(item.id, n, message.x, message.z, 0);
                 }
                 break;
+            }
             case "open": {
-                const chest = this.chests[message.c];
-                if (chest && !chest.opened) {
+                const chest = finite(message.c) ? this.chests[message.c] : undefined;
+                if (
+                    chest &&
+                    !chest.opened &&
+                    near(chest.tile.x, chest.tile.z, GUEST_REACH) &&
+                    (!chest.vault || this.guestSpend(from, VAULT_KEY, 1)) &&
+                    (!chest.boss || this.guestSpend(from, BOSS_KEY, 1))
+                ) {
                     this.openChest(chest, mate);
                 }
                 break;
             }
             case "dig":
-                this.dropCasket(message.x, message.z);
-                this.announce(`${mate.name} digs up a casket.`);
+                if (near(message.x, message.z, GUEST_REACH) && this.guestSpend(from, CLUE_SCROLL, 1)) {
+                    this.dropCasket(message.x, message.z);
+                    this.announce(`${mate.name} digs up a casket.`);
+                }
                 break;
             case "wake": {
                 const woke = this.wakeNear(message.x, message.z, EXTRACT_WAKE);
                 this.announce(woke > 0 ? `${mate.name} opens the way out. Everything near has heard it.` : `${mate.name} opens the way out. Nothing stirs.`);
                 break;
             }
-            case "gear":
-                // Drawn here, and passed on to the other guests
-                mate.wear(message.e);
-                coop.send({ k: "gear", id: from, e: message.e } satisfies DownMessage);
+            case "gear": {
+                // Drawn here, and passed on to the other guests: only items
+                // the game has, each in its own slot
+                const e: Equipment = {};
+                if (typeof message.e === "object" && message.e !== null) {
+                    for (const [slot, id] of Object.entries(message.e as Record<string, unknown>)) {
+                        const item = finite(id) ? ITEM_BY_ID.get(id) : undefined;
+                        if (item && item.slot === slot) {
+                            e[slot as keyof Equipment] = item.id;
+                        }
+                    }
+                }
+                this.guestMaxHit.set(from, gearStats(e).damage);
+                mate.wear(e);
+                coop.send({ k: "gear", id: from, e } satisfies DownMessage);
                 break;
+            }
             case "loaded":
                 this.waitingFor.delete(from);
                 break;
@@ -6443,6 +6524,30 @@ export class Run {
                 this.mateGone(mate, message.how);
                 break;
         }
+    }
+
+    // A key or clue scroll handed to a guest, counted; spent when it's used
+    // or put down, and only if it's there
+    private guestHold(from: string, id: number, n: number): void {
+        if (!HELD_BY_HOST.has(id)) {
+            return;
+        }
+        let held = this.guestHolds.get(from);
+        if (!held) {
+            held = new Map();
+            this.guestHolds.set(from, held);
+        }
+        held.set(id, (held.get(id) ?? 0) + n);
+    }
+
+    private guestSpend(from: string, id: number, n: number): boolean {
+        const held = this.guestHolds.get(from);
+        const has = held?.get(id) ?? 0;
+        if (!held || has < n) {
+            return false;
+        }
+        held.set(id, has - n);
+        return true;
     }
 
     // The relay says a player left the room

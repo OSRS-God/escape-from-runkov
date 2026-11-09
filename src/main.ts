@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import { COINS, ITEMS, PRIZES, SLOTS, rollGear, rollShopStock } from "./content/items";
+import { COINS, ITEMS, PRIZES, SLOTS, getItem, rollGear, rollShopStock } from "./content/items";
 import { TASKS } from "./content/tasks";
 import { clampThreat, threatOpen } from "./content/threat";
 import { WORLD_BY_ID, WorldDef, getWorld, mapUnlocked } from "./content/worlds";
@@ -14,7 +14,20 @@ import { restoreCrownPets, restoreKit } from "./game/kit";
 import { MenuScene } from "./game/menu";
 import { PlayerLook } from "./game/player";
 import { CoopSetup, Run, RunCarry, RunResult } from "./game/run";
-import { GRAVE_RUNS, Grave, ItemStack, activeSlot, loadSave, loadedSlot, packSize, setActiveSlot, setOnWrite, writeSave } from "./game/save";
+import {
+    GRAVE_RUNS,
+    Grave,
+    ItemStack,
+    activeSlot,
+    loadSave,
+    loadedSlot,
+    packSize,
+    runAlive,
+    runHeartbeatAge,
+    setActiveSlot,
+    setOnWrite,
+    writeSave,
+} from "./game/save";
 import { settings } from "./game/settings";
 import { isTouch } from "./ui/touch";
 import { UI } from "./ui/ui";
@@ -37,6 +50,13 @@ if (!crownKey() && activeSlot() !== 0) {
 const { save, wiped } = loadSave();
 let run: Run | undefined;
 
+// A run under way (version 153; settleAbandonedRun): how long its page may
+// go quiet before the run counts as left, how often it speaks up, and the
+// tab's own word that it was playing one
+const ABANDONED_AFTER_MS = 30_000;
+const HEARTBEAT_MS = 3_000;
+const RUN_HERE = "dungeon-extraction-run-here";
+
 // Co-op: the connection to the relay (coop.ts), there or not
 const session = new Session();
 
@@ -45,6 +65,19 @@ const menu = new MenuScene(renderer);
 const ui = new UI(document.getElementById("ui")!, save, menu, session, { startRun });
 if (wiped) {
     ui.notice = "This version starts everyone fresh: the save from before it has been cleared.";
+}
+// A run left by closing or reloading the page counts as a death (version
+// 153), and the page playing a run says so every few seconds
+{
+    const settled = settleAbandonedRun();
+    if (settled) {
+        ui.notice = settled;
+    }
+    setInterval(() => {
+        if (run) {
+            runAlive();
+        }
+    }, HEARTBEAT_MS);
 }
 if (crownTaken) {
     ui.notice = new URLSearchParams(location.search).has("home")
@@ -83,6 +116,14 @@ function packUp(worldId: string): RunCarry {
     save.stats.runs++;
     // The title screen offers the last three maps played
     save.recentMaps = [worldId, ...save.recentMaps.filter((id) => id !== worldId)].slice(0, 3);
+    // Under way: what's packed is out there until the run says otherwise
+    save.activeRun = { map: worldId, at: Date.now() };
+    runAlive();
+    try {
+        sessionStorage.setItem(RUN_HERE, String(save.activeRun.at));
+    } catch {
+        // No session storage: the heartbeat alone tells
+    }
     writeSave(save);
     broughtCoins = countOf(save.backpack, COINS);
     return {
@@ -102,7 +143,26 @@ function packUp(worldId: string): RunCarry {
     };
 }
 
+// Whether a run may start here: not while another tab plays one with the
+// same pack (version 153); a left one is settled first
+function runMayStart(): boolean {
+    if (!save.activeRun || run) {
+        return true;
+    }
+    const settled = settleAbandonedRun();
+    if (settled) {
+        ui.message(settled);
+        ui.showMenu();
+        return true;
+    }
+    ui.message("A run is under way in another tab of the game. Finish it there first.");
+    return false;
+}
+
 function startRun(worldId: string): void {
+    if (!runMayStart()) {
+        return;
+    }
     // The maps open in order: the one before this must be beaten
     if (!mapUnlocked(save.stats.mapsBeaten, worldId)) {
         ui.showMaps();
@@ -118,6 +178,9 @@ function startRun(worldId: string): void {
 let launching: { ups: [string, unknown][]; downs: unknown[] } | undefined;
 
 function startParty(game: GameStart): void {
+    if (!runMayStart()) {
+        return;
+    }
     const me = session.id;
     const world = WORLD_BY_ID.get(game.mapId);
     if (!me || !world) {
@@ -212,12 +275,112 @@ async function launchWorld(world: WorldDef, carry: RunCarry, seed: number, coop?
         );
     } catch (e) {
         console.error(e);
+        // Nothing went out: the pack's still at home
+        save.activeRun = undefined;
+        writeSave(save);
         ui.message("The map failed to load. Check the browser console.");
         ui.showMenu();
         return;
     }
     ui.showHud(run);
     run.start();
+}
+
+// Died, or walked out: the pack and what was worn stay out there, but for
+// the one piece that was insured. A death leaves a gravestone where you fell
+// (x and z; none known, where you arrived), with what you carried, for the
+// next few runs: one a map, so a second death there moves the stone and what
+// the old one still held goes in with the rest. One safety net a death: with
+// insurance paid out, the stone holds only every other thing. Coins carried
+// are gone either way.
+function leaveCarried(
+    carry: Pick<RunCarry, "inventory" | "equipment">,
+    map: string,
+    x: number,
+    z: number,
+    died: boolean,
+): { lost: ItemStack[]; insured?: number; graveMade: boolean; graveHalved: boolean } {
+    const lost: ItemStack[] = carry.inventory.filter((s) => s.id !== COINS).map((s) => ({ ...s }));
+    for (const slot of SLOTS) {
+        const id = carry.equipment[slot];
+        if (id !== undefined) {
+            lost.push({ id, count: 1 });
+        }
+    }
+    let insured: number | undefined;
+    if (save.insured !== undefined) {
+        const i = lost.findIndex((s) => s.id === save.insured);
+        if (i !== -1) {
+            if (lost[i].count > 1) {
+                lost[i].count--;
+            } else {
+                lost.splice(i, 1);
+            }
+            addItem(save.stash, save.insured, 1);
+            insured = save.insured;
+        }
+    }
+    save.equipment = {};
+    save.backpack = [];
+    let graveMade = false;
+    let graveHalved = false;
+    if (died) {
+        save.stats.deaths++;
+        if (lost.length > 0) {
+            const inGrave = insured !== undefined ? lost.filter((_, i) => i % 2 === 0) : lost;
+            graveHalved = insured !== undefined && inGrave.length < lost.length;
+            const grave: Grave = { map, x, z, items: inGrave.map((s) => ({ ...s })), runsLeft: GRAVE_RUNS };
+            const old = save.graves.findIndex((g) => g.map === map);
+            if (old !== -1) {
+                for (const stack of save.graves[old].items) {
+                    addItem(grave.items, stack.id, stack.count);
+                }
+                save.graves.splice(old, 1);
+            }
+            save.graves.push(grave);
+            graveMade = true;
+        }
+    }
+    return { lost, insured, graveMade, graveHalved };
+}
+
+// A run the page closed on, or was reloaded in, with nobody playing it
+// (version 153, as a code check found): until then the save still held the
+// pack from before the run, so reloading just before a death kept it all.
+// It counts as a death where you arrived; insurance pays as ever. A tab
+// that was playing it knows at once (RUN_HERE lives through a reload); any
+// other waits until the run's page has gone quiet (another tab may still be
+// playing it).
+function runWasHere(): boolean {
+    try {
+        return save.activeRun !== undefined && sessionStorage.getItem(RUN_HERE) === String(save.activeRun.at);
+    } catch {
+        return false;
+    }
+}
+
+function settleAbandonedRun(): string | undefined {
+    const left = save.activeRun;
+    if (!left || (!runWasHere() && runHeartbeatAge() < ABANDONED_AFTER_MS)) {
+        return undefined;
+    }
+    for (const grave of save.graves) {
+        grave.runsLeft--;
+    }
+    save.graves = save.graves.filter((g) => g.runsLeft > 0 && g.items.length > 0);
+    const { insured, graveMade } = leaveCarried({ inventory: save.backpack, equipment: save.equipment }, left.map, NaN, NaN, true);
+    save.insured = undefined;
+    save.activeRun = undefined;
+    save.lastRun = { at: Date.now(), map: left.map, kind: "died" };
+    restoreKit(save);
+    restoreCrownPets(save);
+    writeSave(save);
+    const name = WORLD_BY_ID.get(left.map)?.name ?? "the map";
+    return (
+        `Your last run on ${name} ended when the page closed, and counts as a death.` +
+        (graveMade ? ` What you carried is in your gravestone where you arrived.` : "") +
+        (insured !== undefined ? ` Your insured ${getItem(insured).name} is back in the bank.` : "")
+    );
 }
 
 async function onRunEnd(result: RunResult): Promise<void> {
@@ -295,55 +458,11 @@ async function onRunEnd(result: RunResult): Promise<void> {
         }
         kept = result.carry.inventory;
     } else {
-        // Died, or walked out: the pack and what was worn stay out there,
-        // but for the one piece that was insured
-        const lost: ItemStack[] = result.carry.inventory.slice();
-        for (const slot of SLOTS) {
-            const id = result.carry.equipment[slot];
-            if (id !== undefined) {
-                lost.push({ id, count: 1 });
-            }
-        }
-        if (save.insured !== undefined) {
-            const i = lost.findIndex((s) => s.id === save.insured);
-            if (i !== -1) {
-                if (lost[i].count > 1) {
-                    lost[i].count--;
-                } else {
-                    lost.splice(i, 1);
-                }
-                addItem(save.stash, save.insured, 1);
-                insured = save.insured;
-            }
-        }
-        save.equipment = {};
-        save.backpack = [];
-        if (result.kind === "died") {
-            stats.deaths++;
-            // A gravestone where you fell, with what you carried, for the
-            // next few runs: one a map, so a second death there moves the
-            // stone and what the old one still held goes in with the rest.
-            // One safety net a death: with insurance paid out, the stone
-            // holds only every other thing.
-            if (lost.length > 0) {
-                const inGrave = insured !== undefined ? lost.filter((_, i) => i % 2 === 0) : lost;
-                graveHalved = insured !== undefined && inGrave.length < lost.length;
-                const grave: Grave = { map: result.world.id, x: report.x, z: report.z, items: inGrave.map((s) => ({ ...s })), runsLeft: GRAVE_RUNS };
-                const old = save.graves.findIndex((g) => g.map === result.world.id);
-                if (old !== -1) {
-                    for (const stack of save.graves[old].items) {
-                        addItem(grave.items, stack.id, stack.count);
-                    }
-                    save.graves.splice(old, 1);
-                }
-                save.graves.push(grave);
-                graveMade = true;
-            }
-        }
-        kept = lost;
+        ({ lost: kept, insured, graveMade, graveHalved } = leaveCarried(result.carry, result.world.id, report.x, report.z, result.kind === "died"));
     }
-    // Insurance is for one run, whichever way it went
+    // Insurance is for one run, whichever way it went, and the run's over
     save.insured = undefined;
+    save.activeRun = undefined;
     // The owner's kept kit comes home whatever happened (kit.ts), and a
     // crown's pet stays its own
     restoreKit(save);

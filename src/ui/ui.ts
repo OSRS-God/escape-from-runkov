@@ -67,7 +67,7 @@ import { Chat } from "./chat";
 import { FullMap } from "./fullmap";
 import { REGEN_DELAY, hitChance, soak } from "../game/combat";
 import { FriendStatus, FriendView, GAME_BUILD, GameStart, Loadout, LootRule, MemberView, Presence, RoomView, Session } from "../game/coop";
-import { DEFAULT_NAME_COLOR, NAME_COLORS, crownByAlt, crownIcon, crownKey, crownVerified, nameColorOf } from "../game/crown";
+import { DEFAULT_NAME_COLOR, NAME_COLORS, crownByAlt, crownIcon, crownKey, crownVerified, nameColorFor, nameColorOf } from "../game/crown";
 import { Contract, contractProgress, contractResetsIn, todaysContract } from "../game/contract";
 import { combatLevel, foodMinutes, minutesText, packSummary, prayerSeconds, vaultWorth } from "../game/gear";
 import { Account } from "../game/account";
@@ -1199,7 +1199,7 @@ export class UI {
     private tellFriends(): void {
         this.session.setPresence(this.presence());
         if (this.session.room) {
-            this.session.setMe({ loadout: this.myLoadout() });
+            this.session.setMe({ loadout: this.myLoadout(), crownKey: crownKey() ?? null });
         }
     }
 
@@ -1871,7 +1871,6 @@ export class UI {
             character: save.character,
             equipment: { ...save.equipment },
             pet: save.pet,
-            crown: crownKey(),
             activity: this.status(),
             pack: { ...summary, ammo },
         };
@@ -1889,12 +1888,12 @@ export class UI {
         return el;
     }
 
-    // A member's name for a party row: their crown before it, once their
-    // key has checked out (the check redraws the screen)
+    // A member's name for a party row: their crown before it, as the relay
+    // checked their key (version 153)
     private heroLabel(member: MemberView, members: MemberView[], suffix: string): HTMLElement {
-        const crown = crownVerified(member.loadout?.crown, () => this.onSessionChange());
+        const crown = crownByAlt(member.loadout?.crown);
         const span = h("span", { class: "name" }, crown ? crownIcon(crown) : null, this.heroName(member, members) + suffix);
-        const color = member.loadout ? nameColorOf(member.loadout.character, member.loadout.crown) : undefined;
+        const color = member.loadout ? nameColorFor(member.loadout.character, crown) : undefined;
         if (color) {
             span.style.color = color;
         }
@@ -1989,6 +1988,8 @@ export class UI {
         session.setMe({
             characterId: this.save.character.name.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 40),
             loadout: this.myLoadout(),
+            // For the relay to check, and to tell the room only which crown
+            crownKey: crownKey() ?? null,
             unlocks: { maps: WORLDS.filter((w) => mapUnlocked(this.save.stats.mapsBeaten, w.id)).map((w) => w.id), endless: [], hard: [] },
         });
         if (view.status === "offline" && !view.error) {
@@ -2229,7 +2230,7 @@ export class UI {
         const ready = host || m.ready;
         const weapon = lo?.equipment.weapon !== undefined ? getItem(lo.equipment.weapon) : undefined;
         const style = weaponStyle(weapon);
-        const crown = crownVerified(lo?.crown, () => this.onSessionChange());
+        const crown = crownByAlt(lo?.crown);
         const pack = lo?.pack;
         const away = lo?.activity === "vault" ? "in the vault" : lo?.activity === "shop" ? "in the shop" : undefined;
         const gear = (["head", "body", "weapon", "neck"] as Slot[]).map((slot) => {

@@ -127,6 +127,10 @@ const IDLE_MS = 30 * 60_000;
 // sent now and then to hold a room for ever. A connection in no room only
 // idles on pings (IDLE_CONNECTION_MS): browsing the list is waiting for a room.
 const IDLE_MESSAGES = new Set(["ping", "list", "me", "rename", "hello", "stats"]);
+// The messages that do count (game version 153): only these. Any other
+// type, one the relay doesn't know, counted before, so `{"t":"x"}` now and
+// then held a room or a connection's place for ever.
+const ACTIVE_MESSAGES = new Set(["create", "join", "leave", "settings", "kick", "disband", "start", "end", "chat", "up", "down"]);
 // Bigger than any real loadout (the shop's bonuses, unlocked items and
 // Armoury); a bigger one is dropped rather than sent round the room
 export const MAX_LOADOUT_BYTES = 16 * 1024;
@@ -170,6 +174,12 @@ const MAX_DEPTH = 16;
 // What can wait to go out to one connection before it's dropped: a player
 // whose game has stopped reading would otherwise grow the relay's memory
 const MAX_BUFFERED_BYTES = 1024 * 1024;
+// Frames and messages not yet whole, across every connection (game version
+// 153; Connection.account): past this, a connection holding more than the
+// second number is dropped. The Fly machine has 256 MB.
+const MAX_HELD_BYTES = 48 * 1024 * 1024;
+const MAX_HELD_UNDER_PRESSURE = 64 * 1024;
+let heldBytes = 0;
 const PING_MS = 20_000;
 // How often a room hears how it is, however often it changes. Each time it's
 // everyone's loadout and unlocks to everyone (up to about 130 KB for four),
@@ -198,6 +208,8 @@ class Connection {
         // A message in pieces (continuation frames), and its size so far
         this.fragments = [];
         this.fragmentBytes = 0;
+        // What of those this connection counts in heldBytes
+        this.held = 0;
         this.closed = false;
         this.alive = true;
         this.second = 0;
@@ -225,6 +237,7 @@ class Connection {
         this.chunks.push(data);
         this.buffered += data.length;
         if (this.buffered < this.need) {
+            this.account();
             return;
         }
         const buffer = this.chunks.length === 1 ? this.chunks[0] : Buffer.concat(this.chunks);
@@ -241,6 +254,20 @@ class Connection {
         const rest = buffer.subarray(at);
         this.chunks = rest.length > 0 ? [rest] : [];
         this.buffered = rest.length;
+        this.account();
+    }
+
+    // This connection's share of what every connection holds of frames and
+    // messages not yet whole (game version 153): past MAX_HELD_BYTES in all,
+    // one holding more than MAX_HELD_UNDER_PRESSURE is dropped, so a few
+    // dozen slow senders of big frames can't run the relay out of memory
+    account() {
+        const now = this.closed ? 0 : this.buffered + this.fragmentBytes;
+        heldBytes += now - this.held;
+        this.held = now;
+        if (!this.closed && heldBytes > MAX_HELD_BYTES && now > MAX_HELD_UNDER_PRESSURE) {
+            this.close(1013);
+        }
     }
 
     // The frame starting at `at`, or how many bytes from there it needs
@@ -311,6 +338,10 @@ class Connection {
                 }
                 this.fragments.push(payload);
                 this.fragmentBytes += payload.length;
+                this.account();
+                if (this.closed) {
+                    return;
+                }
                 if (
                     this.fragmentBytes > MAX_MESSAGE_BYTES ||
                     this.fragments.length > MAX_FRAGMENTS
@@ -322,6 +353,7 @@ class Connection {
                     const whole = Buffer.concat(this.fragments, this.fragmentBytes);
                     this.fragments = [];
                     this.fragmentBytes = 0;
+                    this.account();
                     this.receiveMessage(whole);
                 }
                 return;
@@ -395,7 +427,9 @@ class Connection {
         if (this.closed) {
             return;
         }
-        if (this.socket.writableLength > MAX_BUFFERED_BYTES) {
+        // With this frame (game version 153: before, the check let one more
+        // of any size through)
+        if (this.socket.writableLength + frame.length > MAX_BUFFERED_BYTES) {
             // Not reading what it's sent: nothing more will get through
             this.socket.destroy();
             this.finish();
@@ -436,6 +470,9 @@ class Connection {
         this.closed = true;
         this.chunks = [];
         this.fragments = [];
+        this.buffered = 0;
+        this.fragmentBytes = 0;
+        this.account();
         if (this.onClose) {
             const onClose = this.onClose;
             this.onClose = undefined;
@@ -612,7 +649,20 @@ const HIDDEN_CHARS = [
     [0x2028, 0x202e],
     [0x2060, 0x206f],
     [0xfeff, 0xfeff],
+    // And (game version 153) the ones that look like nothing: the Arabic
+    // letter mark, the Mongolian vowel separator, the Hangul fillers, the
+    // blank Braille cell and the tag characters
+    [0x061c, 0x061c],
+    [0x180e, 0x180e],
+    [0x115f, 0x1160],
+    [0x3164, 0x3164],
+    [0xffa0, 0xffa0],
+    [0x2800, 0x2800],
+    [0xe0000, 0xe007f],
 ];
+// Marks stacked on one letter beyond this many go (they spill over the lines
+// round them)
+const MAX_MARKS = 2;
 
 export function chatText(text) {
     const clean = [...text]
@@ -621,6 +671,7 @@ export function chatText(text) {
             return HIDDEN_CHARS.some(([from, to]) => n >= from && n <= to) ? " " : c;
         })
         .join("")
+        .replace(new RegExp(`(\\p{M}{${MAX_MARKS}})\\p{M}+`, "gu"), "$1")
         .replace(/\s+/g, " ")
         .trim();
     return [...clean].slice(0, MAX_CHAT_CHARS).join("");
@@ -648,6 +699,21 @@ export function friendCode(key) {
         code += CODE_CHARS[hash[i] % CODE_CHARS.length];
     }
     return code;
+}
+
+// The game's crowns (its src/game/crown.ts), by the SHA-256 of their keys:
+// which crown a key is for, if any (game version 153). The keys are in no
+// file; the relay only ever keeps the crown's name.
+const CROWN_HASHES = new Map([
+    ["4e0f860e8d27645123e773042753a6cf8ad67908bf69c0a660d06809cbb539bd", "owner"],
+    ["355ef517371c4a0d44209d2ec6ce627ecfed14eabc61695fc7dd94ecc07ef6ca", "developer"],
+]);
+
+export function crownFor(key) {
+    if (typeof key !== "string" || key.length === 0 || key.length > 256) {
+        return undefined;
+    }
+    return CROWN_HASHES.get(createHash("sha256").update(key).digest("hex"));
 }
 
 function cleanFriendCode(code) {
@@ -884,7 +950,9 @@ export function createRelay(limits = {}) {
                 name: client.name,
                 characterId: client.characterId,
                 ready: client.ready,
-                loadout: client.loadout,
+                // Their crown as the relay checked it, whatever the loadout
+                // said (an older game sent its key in it)
+                loadout: client.loadout ? { ...client.loadout, crown: client.crownAlt } : undefined,
                 unlocks: client.unlocks,
             })),
         };
@@ -1074,9 +1142,12 @@ export function createRelay(limits = {}) {
 
     // The name a player gave their character, as their loadout carries it,
     // trimmed to the game's limit; nothing when they've sent none
+    // Through the chat's filter (game version 153): a name shows in the
+    // public rooms list, the friends list and chat, and was only trimmed,
+    // so control and direction characters reached everyone
     function characterName(client) {
         const name = client?.loadout?.character?.name;
-        return typeof name === "string" ? name.trim().slice(0, 16) : "";
+        return typeof name === "string" ? [...chatText(name)].slice(0, 16).join("") : "";
     }
 
     function listing(room) {
@@ -1208,8 +1279,13 @@ export function createRelay(limits = {}) {
     }
 
     // What a player's told the room about themselves. Their name isn't theirs
-    // to say: the relay gives it.
+    // to say: the relay gives it. Nor is their crown (game version 153): the
+    // key comes to the relay alone, which checks it and keeps only which
+    // crown it's for
     function setMember(client, message) {
+        if (message.crownKey !== undefined) {
+            client.crownAlt = crownFor(message.crownKey);
+        }
         if (message.characterId !== undefined) {
             client.characterId = cleanId(message.characterId);
         }
@@ -1315,10 +1391,12 @@ export function createRelay(limits = {}) {
     // payload: the message's bytes as they came, for passing on
     function handle(client, message, payload) {
         const room = client.room;
-        if (message.t !== "ping") {
+        // A connection's doing something with any message the relay knows
+        // but a ping; a room only with ACTIVE_MESSAGES
+        if (message.t !== "ping" && (IDLE_MESSAGES.has(message.t) || ACTIVE_MESSAGES.has(message.t))) {
             client.lastActive = Date.now();
         }
-        if (!IDLE_MESSAGES.has(message.t)) {
+        if (ACTIVE_MESSAGES.has(message.t)) {
             client.lastActive = Date.now();
             if (room) {
                 room.lastActive = client.lastActive;
@@ -1376,8 +1454,11 @@ export function createRelay(limits = {}) {
                 if (typeof message.name === "string") {
                     presence.name = chatText(message.name).slice(0, 16);
                 }
-                if (message.crown === null || typeof message.crown === "string") {
-                    presence.crown = message.crown ? message.crown.slice(0, 128) : undefined;
+                // The crown friends see, from the key as the relay checks it
+                // (game version 153; a crown a game only said it wore was
+                // anyone's to say)
+                if (message.crownKey === null || typeof message.crownKey === "string") {
+                    presence.crown = crownFor(message.crownKey);
                 }
                 if (message.color === null || typeof message.color === "string") {
                     presence.color = /^#[0-9a-fA-F]{6}$/.test(message.color ?? "") ? message.color : undefined;

@@ -7,6 +7,7 @@
 // room is made or joined by code, each player says who they are ("me"),
 // the host starts it with a GameStart everyone gets, then guests send "up"
 // (to the host) and the host sends "down" (to everyone else).
+import { crownKey } from "./crown";
 import { Character, Equipment } from "./save";
 
 // The build a game is: a room only takes players on the host's (the relay
@@ -58,7 +59,8 @@ export type Loadout = {
     character: Character;
     equipment: Equipment;
     pet?: string;
-    // The moderator's crown key, for the lobby to check (crown.ts)
+    // The crown the relay checked their key for (crown.ts's alt, version
+    // 153): the relay sets it, whatever a player says here
     crown?: string;
     // For the war room (version 115): what they're doing between runs, and
     // their pack in a few numbers (gear.ts's PackSummary, and the shots or
@@ -74,6 +76,9 @@ export type MemberView = {
     characterId: string;
     ready: boolean;
     loadout?: Loadout;
+    // This browser's crown key, for the relay alone to check (version 153):
+    // the relay never sends it on
+    crownKey?: string | null;
     build?: string;
     // The maps this player has unlocked (the relay only lets a room be made
     // on one its host has; with MULTIPLAYER_ANY_MAP on, as the Fly relay
@@ -360,7 +365,10 @@ export class Session {
 
     private sendHello(): void {
         if (this.friendKey && this.presence) {
-            this.send({ t: "hello", key: this.friendKey, ...this.presence, crown: this.presence.crown ?? null, color: this.presence.color ?? null });
+            // The crown key, for the relay to check (version 153): friends
+            // see only the crown it's for
+            const { crown: _said, ...presence } = this.presence;
+            this.send({ t: "hello", key: this.friendKey, ...presence, crownKey: crownKey() ?? null, color: this.presence.color ?? null });
         }
     }
 

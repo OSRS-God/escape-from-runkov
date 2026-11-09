@@ -42,7 +42,12 @@ const SESSION_MS = 180 * 86_400_000;
 // Wrong passwords for a name, and from an address, in this window; and
 // accounts made from an address in an hour
 const LOGIN_WINDOW_MS = 15 * 60_000;
+// Since version 153 the tries for a name are counted per network trying it,
+// so nobody can lock a player out from elsewhere; a name tried from many
+// networks at once is still held to this many, but a network that hasn't
+// got it wrong lately still gets its try (the player themselves, usually)
 const LOGIN_TRIES_PER_NAME = 8;
+const LOGIN_TRIES_PER_NAME_ALL = 100;
 const LOGIN_TRIES_PER_ADDRESS = 30;
 const SIGNUPS_PER_ADDRESS_PER_HOUR = 10;
 
@@ -149,12 +154,33 @@ async function recent(db: D1Database, key: string, since: number): Promise<numbe
     return row?.n ?? 0;
 }
 
-async function note(db: D1Database, ...keys: string[]): Promise<void> {
+// Tries are noted before they're judged (version 153): checked first and
+// noted after, a burst of them sent at once all passed the count. Returns
+// when, so a try that came good can be taken back.
+async function note(db: D1Database, ...keys: string[]): Promise<number> {
     const now = Date.now();
     await db.batch([
         ...keys.map((key) => db.prepare("INSERT INTO attempts (key, at) VALUES (?, ?)").bind(key, now)),
         db.prepare("DELETE FROM attempts WHERE at < ?").bind(now - 86_400_000),
     ]);
+    return now;
+}
+
+async function unnote(db: D1Database, at: number, ...keys: string[]): Promise<void> {
+    await db.batch(keys.map((key) => db.prepare("DELETE FROM attempts WHERE key = ? AND at = ?").bind(key, at)));
+}
+
+// The network an address is on, for the limits (version 153): an IPv6
+// address by its /64, as one connection is given a whole /64
+function networkOf(address: string): string {
+    if (!address.includes(":") || address.includes(".")) {
+        return address;
+    }
+    const [head, tail] = address.toLowerCase().split("::");
+    const front = head ? head.split(":") : [];
+    const back = tail !== undefined && tail !== "" ? tail.split(":") : [];
+    const groups = tail === undefined ? front : [...front, ...new Array<string>(Math.max(0, 8 - front.length - back.length)).fill("0"), ...back];
+    return `${groups.slice(0, 4).map((g) => g.padStart(4, "0")).join(":")}::/64`;
 }
 
 async function newSession(db: D1Database, account: number): Promise<string> {
@@ -205,7 +231,7 @@ export async function onRequest(context: Context): Promise<Response> {
     await tablesMade;
     const url = new URL(request.url);
     const route = url.pathname.replace(/^\/api\/?/, "").replace(/\/$/, "");
-    const address = request.headers.get("CF-Connecting-IP") ?? "local";
+    const address = networkOf(request.headers.get("CF-Connecting-IP") ?? "local");
     try {
         if (route === "name" && request.method === "GET") {
             const name = cleanName(url.searchParams.get("name") ?? "");
@@ -231,7 +257,9 @@ export async function onRequest(context: Context): Promise<Response> {
             if (body?.save !== undefined && !save) {
                 return fail(400, "That save can't be kept.");
             }
-            if ((await recent(db, `signup:${address}`, Date.now() - 3_600_000)) >= SIGNUPS_PER_ADDRESS_PER_HOUR) {
+            // Noted first, so sign-ups sent at once count each other
+            await note(db, `signup:${address}`);
+            if ((await recent(db, `signup:${address}`, Date.now() - 3_600_000)) > SIGNUPS_PER_ADDRESS_PER_HOUR) {
                 return fail(429, "That's a lot of new accounts from here. Try again in an hour.");
             }
             const salt = randomHex(16);
@@ -246,7 +274,6 @@ export async function onRequest(context: Context): Promise<Response> {
             } catch {
                 return fail(409, "That name is taken by another player.");
             }
-            await note(db, `signup:${address}`);
             return json(201, { token: await newSession(db, id), name, rev: save ? 1 : 0 });
         }
         if (route === "login" && request.method === "POST") {
@@ -255,11 +282,24 @@ export async function onRequest(context: Context): Promise<Response> {
             const password = String(body?.password ?? "");
             const canon = canonName(name);
             const since = Date.now() - LOGIN_WINDOW_MS;
-            if (
-                (await recent(db, `login:${canon}`, since)) >= LOGIN_TRIES_PER_NAME ||
-                (await recent(db, `login@${address}`, since)) >= LOGIN_TRIES_PER_ADDRESS
-            ) {
-                return fail(429, "Too many wrong passwords. Wait 15 minutes and try again.");
+            const wrong = () => fail(401, "That name and password don't match an account.");
+            const tooMany = () => fail(429, "Too many wrong passwords. Wait 15 minutes and try again.");
+            const fromHere = `login@${address}`;
+            // Not a name an account could have, or a password no account has
+            // (version 153): nothing to look up, and nothing of it kept but
+            // the try from here (a name of any length was kept before)
+            if (nameProblem(name) || password.length < MIN_PASSWORD || password.length > MAX_PASSWORD) {
+                await note(db, fromHere);
+                return (await recent(db, fromHere, since)) > LOGIN_TRIES_PER_ADDRESS ? tooMany() : wrong();
+            }
+            // This network's tries at the name, everyone's, and this
+            // network's at any name: noted now, taken back if it comes good
+            const mine = `login:${canon}@${address}`;
+            const everyone = `login:${canon}`;
+            const at = await note(db, mine, everyone, fromHere);
+            const [tries, all, here] = await Promise.all([recent(db, mine, since), recent(db, everyone, since), recent(db, fromHere, since)]);
+            if (tries > LOGIN_TRIES_PER_NAME || here > LOGIN_TRIES_PER_ADDRESS || (all > LOGIN_TRIES_PER_NAME_ALL && tries > 1)) {
+                return tooMany();
             }
             const row = await db
                 .prepare("SELECT id, name, salt, hash, rounds, save, rev FROM accounts WHERE canon = ?")
@@ -268,9 +308,9 @@ export async function onRequest(context: Context): Promise<Response> {
             // A name nobody has costs the same as a wrong password
             const hash = await passwordHash(password, row?.salt ?? "nobody", row?.rounds ?? ROUNDS);
             if (!row || !sameText(hash, row.hash)) {
-                await note(db, `login:${canon}`, `login@${address}`);
-                return fail(401, "That name and password don't match an account.");
+                return wrong();
             }
+            await unnote(db, at, mine, everyone, fromHere);
             return json(200, {
                 token: await newSession(db, row.id),
                 name: row.name,

@@ -85,6 +85,10 @@ export type SaveData = {
     thrownBundles?: boolean;
     // The threat level picked for each map (content/threat.ts, version 150)
     threat?: Record<string, number>;
+    // A run under way (version 153): set as one's packed, cleared as it
+    // ends. Found on a page opening with no page playing it (runAlive), the
+    // run was left by closing or reloading, and counts as a death.
+    activeRun?: { map: string; at: number };
 };
 
 export type Friend = { code: string; name: string };
@@ -508,6 +512,30 @@ let onWrite: ((save: SaveData) => void) | undefined;
 
 export function setOnWrite(listener: (save: SaveData) => void): void {
     onWrite = listener;
+}
+
+// The page playing a run says so every few seconds (version 153), under
+// its own key so the save isn't written each time; a run whose page has
+// said nothing for a while has been left
+function aliveKey(): string {
+    return `${slotKey(pageSlot)}-alive`;
+}
+
+export function runAlive(): void {
+    try {
+        localStorage.setItem(aliveKey(), String(Date.now()));
+    } catch {
+        // No storage: nothing to settle later either
+    }
+}
+
+export function runHeartbeatAge(): number {
+    try {
+        const at = Number(localStorage.getItem(aliveKey()));
+        return at > 0 ? Date.now() - at : Infinity;
+    } catch {
+        return Infinity;
+    }
 }
 
 export function writeSave(save: SaveData, quiet = false): void {
