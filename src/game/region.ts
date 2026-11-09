@@ -1,6 +1,6 @@
 // An exported OSRS region: its collision, ground heights and where things
 // are, from public/assets/maps/<id>/region.json (or laid out from cave rooms
-// for the Depths, caves.ts). The exporter's coordinates
+// for Endless, caves.ts). The exporter's coordinates
 // are OSRS world tiles (x east, y north); in the scene x stays x, up is y,
 // and north runs along -z. Tile (tx, ty) covers scene x in [tx, tx+1) and z
 // in (-(ty+1), -ty].

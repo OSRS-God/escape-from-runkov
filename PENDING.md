@@ -189,7 +189,21 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 156 (not yet deployed): the Depths, a new three star map, as the user asked: a cave
+Version 156 (not yet deployed): Endless, a new mode, as the user asked. It's opened by beating
+the last regular map (the Inferno), and entering it (the maps screen's Endless row, or the
+title screen's Endless mode button) puts out a profile of its own (save.ts's `mode`, `other`
+and PROFILE_KEYS: stash, coins, gear, record, upgrades, pets and the rest; the look, name and
+friends are shared): the first time, an empty stash and the starter kits to pick again. Leave
+Endless (title screen, maps screen or the starter screen) brings the regular profile back as
+it was. Both ride in the one save, so the account keeps both. In Endless only Endless can be
+played: five bosses a run, picked from six cave and lair bosses met nowhere else
+(endless-bosses.json: King Black Dragon, Elvarg, Thermonuclear smoke devil, Giant Mole,
+Cerberus, Sarachnis, exported with their own idle, walk, attack and death clips), each placed
+as far from the others and the start as can be found, each with a golden chest; loot rolls
+every tier, one to five. It starts at depth 1 (one star enemies and bosses, as a starter kit
+can manage) and goes a star deeper for each escape with a boss slain, to 5. No pets drop
+there, the daily contract's boss job takes any boss, and the "every map" tasks count the
+regular maps only. Before that: the map itself, at first called the Depths, a cave
 laid out new from the run's seed every run, the biggest map in the game (384 by 320 tiles,
 about 62,000 open against Lumbridge's 37,502). Thirty rooms, one per cell of a six by five
 grid, grown off a start on the south edge with a quarter of the side by side pairs joined
@@ -201,11 +215,13 @@ with a door in the middle of each side it opens on, so rooms meet; all 61 (every
 in four kinds, and solid rock) are drawn by export-assets.ts's new `caves` command with the
 same loader as the real maps, and copy-assets.mjs takes them into assets/caves (18 MB
 compressed). Enemies are other maps' underground ones (crypt spider, guanic bat, skeleton,
-giant crypt rat, ghoul, ghost, jogre) and the boss is Skotizo; it opens on beating the
-Barrows, outside the order the other maps open in (`after` in worlds.ts). No night in a cave,
-and the distance fades to black. Tested: a run loads in 1.6 s with all thirty rooms, 201
-enemies and 116 chests; build passes. Not yet tried: co-op (guests lay out the same seed),
-a whole run to the boss and out.
+giant crypt rat, ghoul, ghost, jogre, kurask, reanimated demon). No night in a cave, and the
+distance fades to black. Tested: entering Endless gives the starter screen with an empty
+stash and the regular profile kept (and a save round trip of both); a depth 1 run loads with
+all thirty rooms, five bosses 153 to 537 steps from the start in different corners, five
+golden chests and every-tier loot; build and check-gear pass. Not yet tried: co-op (guests
+lay out the same seed), a whole run to a boss and out, depth going up. The relay needs no
+change (a player's unlocks list just says endless in Endless).
 
 Version 146 (deployed 8 November 2026 as Version 2026.11.08, `GAME_BUILD` "2026.11.08"): ammunition, as the user asked, for thrown weapons
 that never ran out and enough shots for a whole run with a bow or staff, and speeds. Thrown

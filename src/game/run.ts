@@ -51,7 +51,7 @@ import {
     staffCasts,
 } from "../content/spells";
 import { Threat, threatName, threatOf, threatText } from "../content/threat";
-import { WorldDef } from "../content/worlds";
+import { ENDLESS_BOSSES, WorldDef } from "../content/worlds";
 import { GameStart, LootRule } from "./coop";
 import { Hero, Mate } from "./mates";
 import {
@@ -731,7 +731,7 @@ const NIGHT_CHANCE = 0.25;
 const NIGHT_LIGHT = new THREE.Color(0.35, 0.41, 0.68);
 const NIGHT_SKY = 0x0f1424;
 const NIGHT_FOG: [number, number] = [12, 34];
-// The Depths' dark, and how far off it starts and closes in
+// The caves' dark (Endless), and how far off it starts and closes in
 const CAVE_DARK = 0x000000;
 const CAVE_FOG: [number, number] = [22, 48];
 const NIGHT_AGGRO = 0.6;
@@ -809,6 +809,19 @@ const ENEMY_FULL_REACH = 14000;
 const ENEMY_MIN = 40;
 const ENEMY_MAX = 200;
 
+// Endless's bosses are each the best spread of this many candidates
+const BOSS_SPREAD_CANDIDATES = 40;
+
+// `count` different ones of a list, in a random order
+function pickSome<T>(rng: Rng, list: T[], count: number): T[] {
+    const left = list.slice();
+    const picked: T[] = [];
+    while (picked.length < count && left.length > 0) {
+        picked.push(left.splice(Math.floor(rng() * left.length), 1)[0]);
+    }
+    return picked;
+}
+
 function randInt(rng: Rng, min: number, max: number): number {
     return min + Math.floor(rng() * (max - min + 1));
 }
@@ -822,6 +835,7 @@ function partyWorld(world: WorldDef, players: number): WorldDef {
         ...world,
         enemies: world.enemies.map((e) => ({ def: tougher(e.def, PARTY_ENEMY_HP), weight: e.weight })),
         boss: tougher(world.boss, PARTY_BOSS_HP),
+        bosses: world.bosses?.map((b) => tougher(b, PARTY_BOSS_HP)),
     };
 }
 
@@ -837,15 +851,17 @@ function threatWorld(world: WorldDef, threat: Threat): WorldDef {
         damage: Math.round(def.damage * threat.enemyDamage),
         foodChance: def.foodChance * threat.food,
     });
+    const boss = (def: EnemyDef): EnemyDef => ({
+        ...def,
+        hp: Math.round(def.hp * threat.bossHp),
+        damage: Math.round(def.damage * threat.bossDamage),
+        floor: def.floor || threat.bossFloor || undefined,
+    });
     return {
         ...world,
         enemies: world.enemies.map((e) => ({ def: enemy(e.def), weight: e.weight })),
-        boss: {
-            ...world.boss,
-            hp: Math.round(world.boss.hp * threat.bossHp),
-            damage: Math.round(world.boss.damage * threat.bossDamage),
-            floor: world.boss.floor || threat.bossFloor || undefined,
-        },
+        boss: boss(world.boss),
+        bosses: world.bosses?.map(boss),
     };
 }
 
@@ -1185,7 +1201,7 @@ export class Run {
         hooks: RunHooks,
         coop?: CoopSetup,
     ): Promise<Run> {
-        // The Depths are laid out from the run's seed, the same for a whole party
+        // Endless's caves are laid out from the run's seed, the same for a whole party
         const cave = world.caves ? await layoutCave(world.id, world.name, seed) : undefined;
         const region = cave ? cave.region : await loadRegion(world.id);
         // The host's enemies have more in them for a bigger party
@@ -1748,10 +1764,27 @@ export class Run {
             jobs.push(this.loadChest(chest));
         }
 
-        // Chests, one by the boss and the rest about the map
-        const bossTile = this.bossTile(reach, taken);
+        // Chests, one by each boss and the rest about the map. Endless has
+        // ENDLESS_BOSSES of every map's bosses, a different few each run,
+        // each as far from the others and from where you arrive as can be
+        // found
+        const bossDefs = this.world.bosses ? pickSome(this.rng, this.world.bosses, ENDLESS_BOSSES) : [this.world.boss];
+        const bossTiles: Tile[] = [];
+        const first = this.bossTile(reach, taken);
+        if (first) {
+            bossTiles.push(first);
+        }
+        const apart: Tile[] = [{ x: this.px, z: this.pz }, ...bossTiles];
+        while (bossTiles.length > 0 && bossTiles.length < bossDefs.length) {
+            const tile = this.spreadTile(reach, 40, taken, apart, BOSS_SPREAD_CANDIDATES);
+            if (!tile) {
+                break;
+            }
+            bossTiles.push(tile);
+            apart.push(tile);
+        }
         const chestTiles: { tile: Tile; boss: boolean }[] = [];
-        if (bossTile) {
+        for (const bossTile of bossTiles) {
             const near = this.flatTile(reach, 6, taken);
             chestTiles.push({ tile: this.nearTile(bossTile, taken, reach) ?? near ?? bossTile, boss: true });
         }
@@ -1838,9 +1871,9 @@ export class Run {
                 }
             }
         }
-        if (bossTile) {
-            jobs.push(this.spawnEnemy(this.world.boss, bossTile).then(() => undefined));
-        }
+        bossTiles.forEach((tile, i) => {
+            jobs.push(this.spawnEnemy(bossDefs[i], tile).then(() => undefined));
+        });
     }
 
     // A chest's model on its tile (gilded for the boss's; the crystal chest
@@ -2146,11 +2179,11 @@ export class Run {
     // A flat tile as far as can be found from every tile already placed: the
     // best of a few candidates (each of them flat, reachable and free), by
     // its distance to the nearest placed one. Only the one chosen is taken.
-    private spreadTile(reach: Int16Array, minDistance: number, taken: Set<number>, placed: Tile[]): Tile | undefined {
+    private spreadTile(reach: Int16Array, minDistance: number, taken: Set<number>, placed: Tile[], candidates = SPREAD_CANDIDATES): Tile | undefined {
         const peek: TileSet = { has: (i) => taken.has(i), add: () => undefined };
         let best: Tile | undefined;
         let bestGap = -1;
-        for (let tries = 0; tries < SPREAD_CANDIDATES; tries++) {
+        for (let tries = 0; tries < candidates; tries++) {
             const tile = this.flatTile(reach, minDistance, peek);
             if (!tile) {
                 break;
@@ -2220,7 +2253,7 @@ export class Run {
         if (coop?.role === "guest") {
             const host = coop.heroes.find((h) => h.id !== coop.me)?.name ?? "the host";
             this.hooks.onMessage(
-                `${this.world.name}, with ${host}'s party. Chests are scattered about, the boss guards a golden one; the ways out are to be found. They close in ${Math.round(this.closeSeconds() / 60)} minutes. A genie waits where you arrived: ${this.ferryFee().toLocaleString()} coins buys a wish out.`,
+                `${this.world.name}, with ${host}'s party. Chests are scattered about, ${this.bossGuards()}; the ways out are to be found. They close in ${Math.round(this.closeSeconds() / 60)} minutes. A genie waits where you arrived: ${this.ferryFee().toLocaleString()} coins buys a wish out.`,
             );
             // The host's map comes once this one's ready for it; the world
             // holds until everyone's loaded
@@ -2228,7 +2261,7 @@ export class Run {
             coop.send({ k: "loaded" } satisfies UpMessage);
         } else {
             this.hooks.onMessage(
-                `${this.world.name}. Chests are scattered about, the boss guards a golden one. There are ${this.exits.length} ways out, the nearest somewhere to the ${this.exitCompass()}: find one, or the boss will tell you. They close in ${Math.round(this.closeSeconds() / 60)} minutes. A genie waits where you arrived: ${this.ferryFee().toLocaleString()} coins buys a wish out.`,
+                `${this.world.name}. Chests are scattered about, ${this.bossGuards()}. There are ${this.exits.length} ways out, the nearest somewhere to the ${this.exitCompass()}: find one, or ${this.world.bosses ? "a" : "the"} boss will tell you. They close in ${Math.round(this.closeSeconds() / 60)} minutes. A genie waits where you arrived: ${this.ferryFee().toLocaleString()} coins buys a wish out.`,
             );
             if (coop?.role === "host") {
                 this.sendWorld();
@@ -4263,8 +4296,10 @@ export class Run {
             this.hooks.onMessage(`${e.def.name} falls and drops the golden chest's key. The nearest way out is ${this.exitDirection()}.`);
             // Now and then something small is left behind, if you haven't
             // got one from here already
+            // (none from Endless, whose bosses are every map's: their pets
+            // are on their own maps)
             const pets = this.carry.pets ?? [];
-            if (!pets.includes(this.world.id) && !this.petFound && this.rng() < 1 / PET_ONE_IN) {
+            if (!this.world.bosses && !pets.includes(this.world.id) && !this.petFound && this.rng() < 1 / PET_ONE_IN) {
                 this.petFound = this.world.id;
                 this.hooks.onMessage(`Something small crawls out from under ${e.def.name}. It seems to like you.`);
             }
@@ -6231,7 +6266,18 @@ export class Run {
         for (const spawn of message.spawns) {
             void this.spawnGhost(spawn);
         }
-        this.hooks.onMessage(`There are ${this.exits.length} ways out, the nearest somewhere to the ${this.exitCompass()}: find one, or the boss will tell you.`);
+        this.hooks.onMessage(`There are ${this.exits.length} ways out, the nearest somewhere to the ${this.exitCompass()}: find one, or ${this.world.bosses ? "a" : "the"} boss will tell you.`);
+    }
+
+    // Who guards the golden chests, for the run's first message
+    private bossGuards(): string {
+        if (!this.world.bosses) {
+            return "the boss guards a golden one";
+        }
+        const names = this.enemies.filter((e) => e.def.boss).map((e) => e.def.name);
+        return names.length > 0
+            ? `${names.length} bosses each guard a golden one, far apart: ${names.join(", ")}`
+            : `${ENDLESS_BOSSES} bosses each guard a golden one, far apart`;
     }
 
     private applySnapshot(s: Extract<DownMessage, { k: "s" }>): void {
@@ -6473,7 +6519,7 @@ export class Run {
                     const name = e?.def.name ?? "The boss";
                     this.hooks.onMessage(`${name} falls. The golden chest is yours. The nearest way out is ${this.exitDirection()}.`);
                     const pets = this.carry.pets ?? [];
-                    if (!pets.includes(this.world.id) && !this.petFound && this.rng() < 1 / PET_ONE_IN) {
+                    if (!this.world.bosses && !pets.includes(this.world.id) && !this.petFound && this.rng() < 1 / PET_ONE_IN) {
                         this.petFound = this.world.id;
                         this.hooks.onMessage(`Something small crawls out from under ${name}. It seems to like you.`);
                     }

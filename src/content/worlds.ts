@@ -3,6 +3,7 @@
 // (made by Run-Escape/scripts/cache/make-game-worlds.ts). Chests and the
 // boss are scattered about; the way out is where you came in.
 import { EnemyDef, SECOND_FORM_SHARE } from "./enemies";
+import endlessBossesJson from "./endless-bosses.json";
 import worldsJson from "./worlds.json";
 
 type WorldEnemyJson = {
@@ -49,6 +50,9 @@ export type WorldDef = {
     // The map whose beating opens this one, for a map outside the order
     // the rest open in
     after?: string;
+    // Endless: the bosses a run picks from (ENDLESS_BOSSES of them), each
+    // made at this map's tier
+    bosses?: EnemyDef[];
 };
 
 // worlds.json carries Run Escape's blurbs, about its waves and bosses, so
@@ -67,7 +71,7 @@ const DESCRIPTIONS: Record<string, string> = {
     god_wars: "The God Wars Dungeon, where four armies have fought for an age. All of them want you dead.",
     prifddinas: "The crystal city's gauntlet and its corrupted beasts. The Hunllef hunts the deepest halls.",
     inferno: "Inside the volcano under Mor Ul Rek: TzHaar and Jal creatures on the rock, and a Jad among them.",
-    depths: "Caves that are never the same twice: thirty chambers dug anew every run, the biggest map there is. Skotizo waits in one of them.",
+    endless: "Caves that are never the same twice: thirty chambers dug anew every run, the biggest map there is. Five lair bosses lurk far apart, and the loot comes from every tier. A fresh start: its own stash, its own class.",
 };
 
 // What a map tier asks of you (see scripts/balance.ts): the average enemy
@@ -286,13 +290,17 @@ function tierScale(w: WorldJson): { hp: number; damage: number } {
     };
 }
 
-// The Depths, as the user asked: a cave laid out from cave rooms in a new
-// order every run, the biggest map in the game. Its
-// enemies are what lives underground on the other maps, by "map:enemy" in
-// worlds.json, weakest first, and its boss is Skotizo, out of the Catacombs
-// of Kourend. Three stars, opened by beating the Barrows (as the Desert is
-// by the Wilderness), outside the order the other maps open in.
-const DEPTHS_ENEMIES = [
+// Endless, a mode of its own, as the user asked: a cave laid out from cave
+// rooms in a new order every run, the biggest map in the game, with
+// ENDLESS_BOSSES bosses of its own in it each run, far apart, and loot of
+// every tier. The bosses are OSRS's cave and lair bosses, none of them met
+// on another map (endless-bosses.json: their clips found with Run Escape's
+// find-npc-seqs.ts and classify-npc-seqs.ts, their sounds borrowed from
+// like enemies). Its enemies are what lives underground on the other maps,
+// by "map:enemy" in worlds.json, weakest first. Played on a fresh start of
+// its own (save.ts's profiles), opened by beating the last map of the
+// regular order, one star at first and a star deeper each time it's beaten.
+const ENDLESS_ENEMIES = [
     "barrows:crypt_spider",
     "kourend:guanic_bat",
     "lumbridge:skeleton",
@@ -300,73 +308,125 @@ const DEPTHS_ENEMIES = [
     "barrows:ghoul",
     "lumbridge:ghost",
     "karamja:jogre",
+    "fremennik:kurask",
+    "kourend:reanimated_demon",
 ];
-const DEPTHS_BOSS = "kourend:skotizo";
-const DEPTHS_AFTER = "barrows";
+export const ENDLESS_ID = "endless";
+// How many bosses a run of Endless has, from every map's
+export const ENDLESS_BOSSES = 5;
+// Its loot, every tier, leaning a little to the better ones
+const ENDLESS_LOOT = [
+    { tier: 1, weight: 12 },
+    { tier: 2, weight: 16 },
+    { tier: 3, weight: 20 },
+    { tier: 4, weight: 24 },
+    { tier: 5, weight: 28 },
+];
 
-function depthsJson(worlds: WorldJson[]): WorldJson {
+const REGULAR_JSONS = (worldsJson as WorldJson[]).filter((w) => w.boss);
+// The last map of the regular order, whose beating opens Endless
+const FINAL_MAP = REGULAR_JSONS[REGULAR_JSONS.length - 1].id;
+
+function endlessJson(worlds: WorldJson[]): WorldJson {
     const find = (key: string) => {
         const [map, id] = key.split(":");
-        const w = worlds.find((x) => x.id === map);
-        const e = id === w?.boss?.id ? w.boss : w?.enemies.find((x) => x.id === id);
+        const e = worlds.find((x) => x.id === map)?.enemies.find((x) => x.id === id);
         if (!e) {
-            throw new Error(`The Depths: no ${key} in worlds.json`);
+            throw new Error(`Endless: no ${key} in worlds.json`);
         }
         return e;
     };
     return {
-        id: "depths",
-        name: "The Depths",
+        id: ENDLESS_ID,
+        name: "Endless",
         description: "",
-        tier: 3,
+        // (each depth has its own: ENDLESS_WORLDS)
+        tier: 1,
         difficulty: { hp: 1, damage: 1 },
-        enemies: DEPTHS_ENEMIES.map(find),
-        boss: find(DEPTHS_BOSS),
+        enemies: ENDLESS_ENEMIES.map(find),
+        // The maps screen names them all; a run picks its own (run.ts)
+        boss: (endlessBossesJson as WorldEnemyJson[])[0],
     };
 }
 
-// Where the Depths go in the maps screen's list: after the other three star maps
-const DEPTHS_LISTED_AFTER = "karamja";
+function makeWorld(w: WorldJson): WorldDef {
+    const scale = tierScale(w);
+    const endless = w.id === ENDLESS_ID;
+    return {
+        caves: endless || undefined,
+        after: endless ? FINAL_MAP : undefined,
+        // Its own cave bosses, at its depth's tier
+        bosses: endless ? (endlessBossesJson as WorldEnemyJson[]).map((b) => convertEnemy(b, w, scale)) : undefined,
+        id: w.id,
+        name: w.name,
+        description: DESCRIPTIONS[w.id] ?? w.description,
+        tier: w.tier,
+        enemies: w.enemies.map((e, i) => ({
+            def: convertEnemy(e, w, scale),
+            // The weaker ones are the more common
+            weight: Math.max(1, w.enemies.length - i),
+        })),
+        boss: convertEnemy(w.boss!, w, scale),
+        ambient: AMBIENT[w.id] ?? [],
+        // For a full 128 by 128 map; a run scales it by the map's open ground
+        enemyCount: 100 + w.tier * 10,
+        // Likewise a full map's worth of chests; about half hold gear, a
+        // piece or two
+        chests: 16 + w.tier * 2,
+        chestItems: w.tier >= 4 ? [1, 2] : [1, 1],
+        lootTiers: endless ? ENDLESS_LOOT : lootTiersFor(w.tier),
+    };
+}
 
-const WORLD_JSONS: WorldJson[] = (() => {
-    const list = (worldsJson as WorldJson[]).slice();
-    list.splice(list.findIndex((w) => w.id === DEPTHS_LISTED_AFTER) + 1, 0, depthsJson(list));
-    return list;
-})();
+// Endless at each depth, 1 to 5: its enemies and bosses at that tier (a
+// fresh start's starter kit is one star's gear, so it begins at one), and
+// its loot of every tier at every depth
+export const ENDLESS_DEPTHS = 5;
+const ENDLESS_WORLDS: WorldDef[] = Array.from({ length: ENDLESS_DEPTHS }, (_, i) =>
+    makeWorld({ ...endlessJson(REGULAR_JSONS), tier: i + 1 }),
+);
 
-export const WORLDS: WorldDef[] = WORLD_JSONS
-    .filter((w) => w.boss)
-    .map((w) => {
-        const scale = tierScale(w);
-        const depths = w.id === "depths";
-        return {
-            caves: depths || undefined,
-            after: depths ? DEPTHS_AFTER : undefined,
-            id: w.id,
-            name: w.name,
-            description: DESCRIPTIONS[w.id] ?? w.description,
-            tier: w.tier,
-            enemies: w.enemies.map((e, i) => ({
-                def: convertEnemy(e, w, scale),
-                // The weaker ones are the more common
-                weight: Math.max(1, w.enemies.length - i),
-            })),
-            boss: convertEnemy(w.boss!, w, scale),
-            ambient: AMBIENT[w.id] ?? [],
-            // For a full 128 by 128 map; a run scales it by the map's open ground
-            enemyCount: 100 + w.tier * 10,
-            // Likewise a full map's worth of chests; about half hold gear, a
-            // piece or two
-            chests: 16 + w.tier * 2,
-            chestItems: w.tier >= 4 ? [1, 2] : [1, 1],
-            lootTiers: lootTiersFor(w.tier),
-        };
-    });
+export const WORLDS: WorldDef[] = [...REGULAR_JSONS.map(makeWorld), ENDLESS_WORLDS[0]];
 
 export const WORLD_BY_ID: Map<string, WorldDef> = new Map(WORLDS.map((w) => [w.id, w]));
 
+// Which profile is out (save.ts's modes), and Endless's depth for it: main.ts
+// gives the save's
+type ModeSource = () => { endless: boolean; depth: number };
+let modeSource: ModeSource = () => ({ endless: false, depth: 1 });
+
+export function setModeSource(source: ModeSource): void {
+    modeSource = source;
+}
+
+export function playingEndless(): boolean {
+    return modeSource().endless;
+}
+
+export function endlessDepth(): number {
+    return Math.min(ENDLESS_DEPTHS, Math.max(1, modeSource().depth || 1));
+}
+
+export function endlessWorld(depth = endlessDepth()): WorldDef {
+    return ENDLESS_WORLDS[Math.min(ENDLESS_DEPTHS, Math.max(1, depth)) - 1];
+}
+
+// Whether the regular profile has opened Endless: the last map beaten
+export function endlessOpen(regularBeaten: string[]): boolean {
+    return regularBeaten.includes(FINAL_MAP);
+}
+
+export function finalMap(): WorldDef {
+    return WORLD_BY_ID.get(FINAL_MAP)!;
+}
+
+// The regular maps: every one but Endless, a mode of its own (for the
+// tasks that ask for every map, and the pets)
+export const REGULAR_WORLDS: WorldDef[] = WORLDS.filter((w) => w.id !== ENDLESS_ID);
+
+// A map by id (Endless at the profile's depth)
 export function getWorld(id: string): WorldDef {
-    const world = WORLD_BY_ID.get(id);
+    const world = id === ENDLESS_ID ? endlessWorld() : WORLD_BY_ID.get(id);
     if (!world) {
         throw new Error("Unknown world " + id);
     }
@@ -374,7 +434,7 @@ export function getWorld(id: string): WorldDef {
 }
 
 // Every enemy in every world, for the enemy table
-export const WORLD_ENEMIES: EnemyDef[] = WORLDS.flatMap((w) => [...w.enemies.map((e) => e.def), w.boss]);
+export const WORLD_ENEMIES: EnemyDef[] = WORLDS.flatMap((w) => [...w.enemies.map((e) => e.def), ...(w.bosses ?? [w.boss])]);
 
 // The maps open in WORLDS' order (worlds.json, by tier), each once the one
 // before it is beaten: escaped from in a run where its boss fell
@@ -391,12 +451,25 @@ export function mapBefore(id: string): WorldDef | undefined {
     return i > 0 ? order[i - 1] : undefined;
 }
 
+// Whether a run may go to a map: in Endless's profile only Endless, and in
+// the regular one every map but Endless, in order (Endless is gone into from
+// the maps screen, onto its own profile, once endlessOpen)
 export function mapUnlocked(mapsBeaten: string[], id: string): boolean {
+    if (playingEndless()) {
+        return id === ENDLESS_ID;
+    }
+    if (id === ENDLESS_ID) {
+        return false;
+    }
     const before = mapBefore(id);
     return before === undefined || mapsBeaten.includes(before.id);
 }
 
 // The highest tier with a map open: what the shop's ammunition goes up to
+// (in Endless, its depth)
 export function tierUnlocked(mapsBeaten: string[]): number {
+    if (playingEndless()) {
+        return endlessDepth();
+    }
     return WORLDS.filter((w) => mapUnlocked(mapsBeaten, w.id)).reduce((n, w) => Math.max(n, w.tier), 1);
 }

@@ -3,7 +3,7 @@
 // coins and a clue scroll when a run does it. A run's attempt is what it
 // did towards it; only an escape from the contract's map counts.
 import { CLUE_SCROLL, formatCoins } from "../content/items";
-import { WORLDS, WORLD_BY_ID, WorldDef, mapUnlocked } from "../content/worlds";
+import { WORLDS, WORLD_BY_ID, WorldDef, getWorld, mapUnlocked } from "../content/worlds";
 import type { RunResult } from "./run";
 import type { SaveData } from "./save";
 
@@ -58,8 +58,9 @@ export function todaysContract(save: SaveData, now = Date.now()): Contract {
     const open = WORLDS.filter((w) => mapUnlocked(save.stats.mapsBeaten, w.id));
     const near = open.slice(-3);
     const rolled = near[Math.floor(random() * near.length)] ?? WORLDS[0];
-    const kept = save.contract?.day === day ? WORLD_BY_ID.get(save.contract.map) : undefined;
-    const world = kept ?? rolled;
+    const kept = save.contract?.day === day && WORLD_BY_ID.has(save.contract.map) ? getWorld(save.contract.map) : undefined;
+    // (Endless at the profile's depth)
+    const world = kept ?? getWorld(rolled.id);
     if (!kept) {
         save.contract = { day, map: world.id, best: 0, done: false };
     }
@@ -84,7 +85,8 @@ export function todaysContract(save: SaveData, now = Date.now()): Contract {
             break;
         case "boss":
             target = 1;
-            text = `Slay ${world.boss.name} on ${world.name} and escape.`;
+            // (Endless's bosses are a different few each run: any of them)
+            text = world.bosses ? `Slay a boss in ${world.name} and escape.` : `Slay ${world.boss.name} on ${world.name} and escape.`;
             break;
     }
     return { day, kind, world, target, reward, rewardItem: CLUE_SCROLL, text };

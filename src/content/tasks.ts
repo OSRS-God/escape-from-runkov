@@ -6,7 +6,7 @@ import { RunResult } from "../game/run";
 import { SaveData, UPGRADES, packSize } from "../game/save";
 import { SLOTS, getItem, isPrize } from "./items";
 import { isBossPet } from "./crownpets";
-import { WORLDS } from "./worlds";
+import { REGULAR_WORLDS, WORLDS } from "./worlds";
 
 export type Task = {
     id: string;
@@ -95,9 +95,9 @@ export const TASKS: Task[] = [
     { id: "vaults5", name: "Vault regular: unlock five vaults", reward: 1200, done: (s) => s.stats.vaults >= 5 },
     // A crown's own pet (pets.ts) is no boss's drop, so it counts for none
     { id: "pets3", name: "Menagerie: find three pets", reward: 1200, done: (s) => s.pets.filter(isBossPet).length >= 3 },
-    { id: "pets_all", name: "Zookeeper: find every boss's pet", reward: 6000, done: (s) => s.pets.filter(isBossPet).length >= WORLDS.length },
-    { id: "tour_all", name: "Globetrotter: escape from every map", reward: 5000, done: (s) => s.stats.mapsEscaped.length >= WORLDS.length },
-    { id: "conqueror", name: "Conqueror: beat every map", reward: 8000, done: (s) => s.stats.mapsBeaten.length >= WORLDS.length },
+    { id: "pets_all", name: "Zookeeper: find every boss's pet", reward: 6000, done: (s) => s.pets.filter(isBossPet).length >= REGULAR_WORLDS.length },
+    { id: "tour_all", name: "Globetrotter: escape from every map", reward: 5000, done: (s) => REGULAR_WORLDS.every((w) => s.stats.mapsEscaped.includes(w.id)) },
+    { id: "conqueror", name: "Conqueror: beat every map", reward: 8000, done: (s) => REGULAR_WORLDS.every((w) => s.stats.mapsBeaten.includes(w.id)) },
     {
         id: "upgrade",
         name: "Guild patron: buy a guild upgrade",

@@ -10,7 +10,7 @@
 //   npcs/<id>.glb, locs/<id>.glb, spotanims/<id>.glb
 //   maps/<id>/<x>_<y>.glb, maps/<id>.json   each map a square at a time
 //                                   (or maps/<id>.glb whole), and its collision
-//   caves/<room>.glb, caves/caves.json      the Depths' rooms
+//   caves/<room>.glb, caves/caves.json      Endless's cave rooms
 //   player/kits/<id>.glb, player/items/<id>.glb, player/items.json (every
 //   worn piece's info in one file), player/kits.json, player/colors.json
 //   sounds.pack, sounds.json        every sound, and where each is in the pack
@@ -33,7 +33,8 @@ const source = process.argv[2] ?? path.join(root, "..", "full-assets");
 const target = path.join(root, "public", "assets");
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "assets.json"), "utf8"));
 
-// The worlds' enemies and bosses come from src/content/worlds.json
+// The worlds' enemies and bosses come from src/content/worlds.json, and
+// Endless's own bosses from src/content/endless-bosses.json
 const worldsFile = path.join(root, "src", "content", "worlds.json");
 if (fs.existsSync(worldsFile)) {
     const worlds = JSON.parse(fs.readFileSync(worldsFile, "utf8"));
@@ -43,6 +44,12 @@ if (fs.existsSync(worldsFile)) {
                 manifest.npcs.push(enemy.npcId);
             }
         }
+    }
+}
+const endlessBossesFile = path.join(root, "src", "content", "endless-bosses.json");
+for (const boss of fs.existsSync(endlessBossesFile) ? JSON.parse(fs.readFileSync(endlessBossesFile, "utf8")) : []) {
+    if (!manifest.npcs.includes(boss.npcId)) {
+        manifest.npcs.push(boss.npcId);
     }
 }
 
@@ -150,7 +157,7 @@ for (const id of manifest.maps ?? []) {
     }
     copy(path.join(from, "region.json"), path.join(target, "maps", `${id}.json`));
 }
-// The cave rooms the Depths are laid out from each run (Run-Escape's
+// The cave rooms Endless is laid out from each run (Run-Escape's
 // export-assets.ts caves), and their doors and collision
 const caves = path.join(source, "caves");
 if (fs.existsSync(caves)) {

@@ -91,7 +91,91 @@ export type SaveData = {
     // ends. Found on a page opening with no page playing it (runAlive), the
     // run was left by closing or reloading, and counts as a death.
     activeRun?: { map: string; at: number };
+    // Endless (version 156), a fresh start of its own, as the user asked:
+    // its own stash, coins, gear, record and the rest (PROFILE_KEYS), with a
+    // starter kit picked again. The profile played is the one in the save's
+    // own fields; the other waits in `other`. `mode` says which is out.
+    mode?: "endless";
+    other?: Profile;
+    // How deep Endless goes for this profile, 1 to 5 (its tier): one deeper
+    // each time it's beaten
+    endlessDepth?: number;
 };
+
+// The fields each profile keeps for itself; the rest (the character's look
+// and name, friends, the save's version) is the same in both
+const PROFILE_KEYS = [
+    "coins",
+    "stash",
+    "backpack",
+    "equipment",
+    "shop",
+    "stats",
+    "tasks",
+    "insured",
+    "insuredPaid",
+    "upgrades",
+    "graves",
+    "pets",
+    "pet",
+    "wear",
+    "recentMaps",
+    "autocast",
+    "spellbook",
+    "loadouts",
+    "bankOrder",
+    "bankTabs",
+    "lastRun",
+    "contract",
+    "pickStarter",
+    "threat",
+    "activeRun",
+    "endlessDepth",
+] as const;
+type ProfileKey = (typeof PROFILE_KEYS)[number];
+export type Profile = Partial<Pick<SaveData, ProfileKey>>;
+
+function profileOf(save: SaveData): Profile {
+    const out: Record<string, unknown> = {};
+    for (const key of PROFILE_KEYS) {
+        if (save[key] !== undefined) {
+            out[key] = save[key];
+        }
+    }
+    return out as Profile;
+}
+
+export type Mode = "regular" | "endless";
+
+export function modeOf(save: SaveData): Mode {
+    return save.mode === "endless" ? "endless" : "regular";
+}
+
+// Puts the other profile out: what's out now goes into `other`, and a first
+// time into Endless starts from a new save's (a starter kit to pick)
+export function switchMode(save: SaveData, mode: Mode): void {
+    if (modeOf(save) === mode) {
+        return;
+    }
+    const away = profileOf(save);
+    const back = save.other ?? profileOf(newSave());
+    const target = save as unknown as Record<string, unknown>;
+    for (const key of PROFILE_KEYS) {
+        delete target[key];
+    }
+    Object.assign(save, back);
+    save.other = away;
+    if (mode === "endless") {
+        save.mode = "endless";
+    } else {
+        delete save.mode;
+    }
+}
+
+// The regular profile's record, whichever is out: what opens Endless
+export function regularStats(save: SaveData): Stats {
+    return modeOf(save) === "regular" ? save.stats : (save.other?.stats ?? save.stats);
+}
 
 export type Friend = { code: string; name: string };
 export type Loadout = { name: string; equipment: Equipment; backpack: ItemStack[] };
@@ -400,6 +484,30 @@ export function parseSave(raw: string): SaveData | undefined {
             }
             save.thrownBundles = true;
         }
+        // Endless's profiles (version 156): the one waiting is made good the
+        // same way as the one out, from its own fields and the shared ones
+        if (save.mode !== "endless") {
+            delete save.mode;
+        }
+        if (typeof save.endlessDepth === "number" && Number.isFinite(save.endlessDepth)) {
+            save.endlessDepth = Math.min(5, Math.max(1, Math.floor(save.endlessDepth)));
+        } else {
+            delete save.endlessDepth;
+        }
+        if (data.other && typeof data.other === "object") {
+            const shared: Record<string, unknown> = { ...data, other: undefined, mode: undefined };
+            for (const key of PROFILE_KEYS) {
+                delete shared[key];
+            }
+            const other = parseSave(JSON.stringify({ ...shared, ...data.other }));
+            if (other) {
+                save.other = profileOf(other);
+            } else {
+                delete save.other;
+            }
+        } else {
+            delete save.other;
+        }
         save.friendKey ??= newFriendKey();
         return save;
     } catch {
@@ -572,6 +680,13 @@ export function dropExclusive(save: SaveData): void {
                 delete loadout.equipment[slot as Slot];
             }
         }
+    }
+    // And the profile waiting (version 156), the same way
+    if (save.other) {
+        const o = save.other;
+        const other = { ...o, stash: o.stash ?? [], backpack: o.backpack ?? [], equipment: o.equipment ?? {}, graves: o.graves ?? [] } as SaveData;
+        dropExclusive(other);
+        save.other = profileOf(other);
     }
 }
 

@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { COINS, ITEMS, PRIZES, SLOTS, getItem, rollGear, rollShopStock } from "./content/items";
 import { TASKS } from "./content/tasks";
 import { clampThreat, threatOpen } from "./content/threat";
-import { WORLD_BY_ID, WorldDef, getWorld, mapUnlocked } from "./content/worlds";
+import { ENDLESS_DEPTHS, ENDLESS_ID, WORLD_BY_ID, WorldDef, endlessDepth, getWorld, mapUnlocked, setModeSource } from "./content/worlds";
 import { Account } from "./game/account";
 import { recordAttempt } from "./game/contract";
 import { GameStart, Session } from "./game/coop";
@@ -49,6 +49,8 @@ if (!crownKey() && activeSlot() !== 0) {
     setActiveSlot(0);
 }
 const { save, wiped } = loadSave();
+// Which profile is out, and how deep Endless goes for it (worlds.ts asks)
+setModeSource(() => ({ endless: save.mode === "endless", depth: save.endlessDepth ?? 1 }));
 let run: Run | undefined;
 
 // A run under way (version 153; settleAbandonedRun): how long its page may
@@ -206,7 +208,7 @@ function startParty(game: GameStart): void {
         return;
     }
     const me = session.id;
-    const world = WORLD_BY_ID.get(game.mapId);
+    const world = WORLD_BY_ID.has(game.mapId) ? getWorld(game.mapId) : undefined;
     if (!me || !world) {
         ui.message("The party's map isn't in this version of the game.");
         return;
@@ -497,6 +499,11 @@ async function onRunEnd(result: RunResult): Promise<void> {
         const openBefore = threatOpen(stats.bestThreat, stats.mapsBeaten, result.world.id);
         if (report.bossKills > 0 && !stats.mapsBeaten.includes(result.world.id)) {
             stats.mapsBeaten.push(result.world.id);
+        }
+        // Endless beaten at its depth goes a star deeper (version 156)
+        if (report.bossKills > 0 && result.world.id === ENDLESS_ID && result.world.tier >= endlessDepth() && endlessDepth() < ENDLESS_DEPTHS) {
+            save.endlessDepth = endlessDepth() + 1;
+            ui.message(`Endless goes deeper: depth ${save.endlessDepth} of ${ENDLESS_DEPTHS}, ${save.endlessDepth} star enemies and bosses from the next run on.`);
         }
         // And beaten at its threat level: the next level opens (version
         // 150). A party's guest, playing at the host's level, counts no

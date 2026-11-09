@@ -1,4 +1,4 @@
-// The Depths: a cave laid out new from the run's seed every run, from rooms
+// Endless's caves: a cave laid out new from the run's seed every run, from rooms
 // made in the cache's own map format and drawn by the same exporter as the
 // real maps (Run-Escape's scripts/cache/cave-rooms.ts and export-assets.ts
 // caves): every room is a map square, with doors in the middle of some of
