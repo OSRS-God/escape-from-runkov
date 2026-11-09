@@ -5,7 +5,7 @@
 import * as THREE from "three";
 
 import { getItem } from "../content/items";
-import { Actor } from "./assets";
+import { Actor, scrollTextures } from "./assets";
 import { loadMap } from "./mapload";
 import { playMusic } from "./music";
 import { assetUrl } from "./paths";
@@ -225,6 +225,7 @@ export class MenuScene {
             );
             this.camera.lookAt(stand.x, stand.y + LOOK_HEIGHT, stand.z);
         }
+        scrollTextures(performance.now() / 1000);
         this.renderer.render(this.scene, this.camera);
     }
 

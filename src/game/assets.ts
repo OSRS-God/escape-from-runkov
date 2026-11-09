@@ -57,11 +57,74 @@ export function loadModel(url: string): Promise<GLTF> {
             if (url.includes("/maps/")) {
                 dedupeTriangles(gltf.scene);
             }
+            findScrolling(gltf.scene);
             return gltf;
         });
         models.set(url, promise);
     }
     return promise;
+}
+
+// The textures the client scrolls (version 155, as the user asked: the fire
+// and infernal capes' lava stood still), by cache id: texture coordinates a
+// second, from the cache's direction and speed for each (the client moves
+// one speed / 128 of the way across each 20 ms tick; Run Escape's
+// scripts/cache/dump-texture-anims.ts prints them). 40 is the fire cape's,
+// 59 the infernal cape's, the rest lava and the like the maps may have.
+const TEXTURE_SCROLL: Record<number, [number, number]> = {
+    17: [0, -0.78125],
+    24: [0, -0.78125],
+    34: [0, -0.78125],
+    40: [0, -0.78125],
+    56: [0, -0.78125],
+    57: [0, -0.78125],
+    59: [0, -0.390625],
+    99: [0.390625, 0],
+    100: [0.78125, 0],
+    101: [1.171875, 0],
+    102: [1.5625, 0],
+    103: [1.953125, 0],
+    105: [0.390625, 0],
+    106: [0.78125, 0],
+    107: [1.171875, 0],
+    108: [1.5625, 0],
+    109: [1.953125, 0],
+    111: [0.390625, 0],
+    112: [0.78125, 0],
+    113: [1.171875, 0],
+    114: [1.5625, 0],
+    115: [1.953125, 0],
+};
+// Each loaded texture that scrolls, with its speed: every copy of a model
+// shares its file's textures, so moving one moves them all
+const scrolling = new Map<THREE.Texture, [number, number]>();
+
+// The exporter names a textured material texture_<cache id>
+function findScrolling(root: THREE.Object3D): void {
+    root.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) {
+            return;
+        }
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+            const map = (material as THREE.MeshBasicMaterial).map;
+            const id = /^texture_(\d+)$/.exec(material.name)?.[1];
+            const speed = id !== undefined ? TEXTURE_SCROLL[Number(id)] : undefined;
+            if (map && speed) {
+                map.wrapS = map.wrapT = THREE.RepeatWrapping;
+                scrolling.set(map, speed);
+            }
+        }
+    });
+}
+
+// Every scrolling texture where the client's clock would have it, before a
+// frame's drawn (the run's and the menu's)
+export function scrollTextures(seconds: number): void {
+    const wrap = (n: number) => ((n % 1) + 1) % 1;
+    for (const [texture, [u, v]] of scrolling) {
+        texture.offset.set(wrap(u * seconds), wrap(v * seconds));
+    }
 }
 
 // The exporter writes the client's palette colours, which are sRGB, as glTF

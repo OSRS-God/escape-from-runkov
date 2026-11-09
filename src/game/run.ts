@@ -100,6 +100,7 @@ import {
     playChime,
     playPop,
     playSound,
+    scrollTextures,
     setWorldLight,
     tint,
 } from "./assets";
@@ -2238,6 +2239,8 @@ export class Run {
             } else if (!this.paused) {
                 this.update(dt);
             }
+            // The lava capes and lava flowing, as the client does it
+            scrollTextures(performance.now() / 1000);
             this.renderer.render(this.scene, this.camera);
         };
         loop();

@@ -179,6 +179,16 @@ Version 154 (not yet deployed): the code check's gameplay bugs, as the user aske
   back (3,377 coins now). Tested: a save given one loads without it and with no coins more.
   check-gear: 1041 items, 0 problems.
 
+Version 155 (not yet deployed): the fire and infernal capes' lava moves, as in OSRS, as the
+user asked. The client scrolls some textures: each moves speed / 128 of the way across a 20 ms
+tick in its direction. Run Escape's new scripts/cache/dump-texture-anims.ts prints every one
+the cache animates as texture coordinates a second (40, the fire cape's, 0.78 a second; 59,
+the infernal cape's, 0.39; and the rest of the lava kind); `TEXTURE_SCROLL` in assets.ts has
+them, `findScrolling` finds each in a loaded model by its material's name (texture_<id>), and
+`scrollTextures` moves them before each frame (the run's and the menu's). So any map lava
+with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
+moving, the infernal cape's at half the fire cape's pace.
+
 Version 146 (deployed 8 November 2026 as Version 2026.11.08, `GAME_BUILD` "2026.11.08"): ammunition, as the user asked, for thrown weapons
 that never ran out and enough shots for a whole run with a bow or staff, and speeds. Thrown
 weapons stack (`thrown` on ItemDef): one held, each throw takes another of the same from the
