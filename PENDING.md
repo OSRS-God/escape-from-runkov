@@ -203,7 +203,12 @@ Cerberus, Sarachnis, exported with their own idle, walk, attack and death clips,
 sounds by the OSRS Wiki's list of sound ids: the Giant Mole's own, the dragon set for the King
 Black Dragon, Dragon Slayer's breath and scream for Elvarg, the dust devils' for the smoke
 devil, the hellhounds' bark, snarl and death for Cerberus, the big spiders' for Sarachnis;
-the cache's animations carry none of them, since the server sends an NPC's), each placed
+the cache's animations carry none of them, since the server sends an NPC's; then eight more,
+as the user asked, for fourteen: Dagannoth Rex and Supreme (Supreme shoots), Obor, Bryophyta,
+Scorpia, Calvar'ion, the Corporeal Beast and the Ice Queen (who throws ice), each with
+animations found by classify-npc-seqs.ts and sounds by the same list: the dagannoths', the
+giants', the scorpions', Vet'ion's own, the grim giant's for the Corporeal Beast, an ice spell
+and the female hit and death), each placed
 as far from the others and the start as can be found, each with a golden chest; loot rolls
 every tier, one to five. It starts at depth 1 (one star enemies and bosses, as a starter kit
 can manage) and goes a star deeper for each escape with a boss slain, to 5. No pets drop

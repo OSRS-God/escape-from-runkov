@@ -68,7 +68,7 @@ const DESCRIPTIONS: Record<string, string> = {
     god_wars: "The God Wars Dungeon, where four armies have fought for an age. All of them want you dead.",
     prifddinas: "The crystal city's gauntlet and its corrupted beasts. The Hunllef hunts the deepest halls.",
     inferno: "Inside the volcano under Mor Ul Rek: TzHaar and Jal creatures on the rock, and a Jad among them.",
-    endless: "Caves that are never the same twice: thirty chambers dug anew every run, the biggest map there is. Five lair bosses lurk far apart, and the loot comes from every tier. A fresh start: its own stash, its own class.",
+    endless: "Caves that are never the same twice: thirty chambers dug anew every run, the biggest map there is. Five of fourteen lair bosses lurk far apart, and the loot comes from every tier. A fresh start: its own stash, its own class.",
 };
 
 // What a map tier asks of you (see scripts/balance.ts): the average enemy
@@ -154,6 +154,10 @@ const SHOOTERS: Record<string, Shooter> = {
     iorwerth_archer: ARROW,
     tzhaar_xil: ARROW,
     javelin_colossus: { ...ARROW, interval: 2 },
+    // Endless's (endless-bosses.json): Supreme shoots as in OSRS, and the
+    // Ice Queen throws ice
+    dagannoth_supreme: ARROW,
+    ice_queen: WATER_BOLT,
 };
 
 // Bosses' own moves (enemies.ts says what each is; run.ts does them)
@@ -297,7 +301,11 @@ function tierScale(w: WorldJson): { hp: number; damage: number } {
 // doesn't tie them to it): the Giant Mole's own (mole_attack, _hit, _death),
 // the dragons' for the King Black Dragon, Elvarg's breath and scream from
 // Dragon Slayer, the dust devils' for the smoke devil, the hellhounds' bark,
-// snarl and death for Cerberus, and the big spiders' for Sarachnis. Its
+// snarl and death for Cerberus, the big spiders' for Sarachnis, the
+// dagannoths' for Rex and Supreme, the giants' for Obor and Bryophyta (the
+// moss giant's swing for her), the scorpions' for Scorpia, Vet'ion's own for
+// Calvar'ion, the grim giant's for the Corporeal Beast (none of its own is
+// named), and an ice spell and the female hit and death for the Ice Queen. Its
 // enemies are what lives underground on the other maps,
 // by "map:enemy" in worlds.json, weakest first. Played on a fresh start of
 // its own (save.ts's profiles), open from the start (the user asked: at
