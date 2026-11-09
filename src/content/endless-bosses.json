@@ -10,7 +10,7 @@
     "scale": 0.55,
     "size": 5,
     "anims": { "idle": 90, "walk": 4635, "attack": 80, "death": 92 },
-    "sounds": { "attack": 918, "hit": 923, "death": 922 },
+    "sounds": { "attack": 408, "hit": 410, "death": 409 },
     "boss": true
   },
   {
@@ -24,7 +24,7 @@
     "scale": 0.6,
     "size": 4,
     "anims": { "idle": 90, "walk": 79, "attack": 80, "death": 92 },
-    "sounds": { "attack": 918, "hit": 923, "death": 922 },
+    "sounds": { "attack": 3750, "hit": 410, "death": 3751 },
     "boss": true
   },
   {
@@ -38,7 +38,7 @@
     "scale": 0.6,
     "size": 4,
     "anims": { "idle": 1829, "walk": 1828, "attack": 3847, "death": 3849 },
-    "sounds": { "attack": 534, "hit": 536, "death": 535 },
+    "sounds": { "attack": 414, "hit": 416, "death": 415 },
     "boss": true
   },
   {
@@ -52,7 +52,7 @@
     "scale": 0.8,
     "size": 3,
     "anims": { "idle": 3309, "walk": 3313, "attack": 3312, "death": 3310 },
-    "sounds": { "attack": 710, "hit": 713, "death": 711 },
+    "sounds": { "attack": 1642, "hit": 1646, "death": 1645 },
     "boss": true
   },
   {
@@ -66,7 +66,7 @@
     "scale": 0.55,
     "size": 5,
     "anims": { "idle": 4484, "walk": 4488, "attack": 4491, "death": 4495 },
-    "sounds": { "attack": 710, "hit": 713, "death": 711 },
+    "sounds": { "attack": 6904, "hit": 6928, "death": 6952 },
     "boss": true
   },
   {

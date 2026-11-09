@@ -292,8 +292,13 @@ function tierScale(w: WorldJson): { hp: number; damage: number } {
 // ENDLESS_BOSSES bosses of its own in it each run, far apart, and loot of
 // every tier. The bosses are OSRS's cave and lair bosses, none of them met
 // on another map (endless-bosses.json: their clips found with Run Escape's
-// find-npc-seqs.ts and classify-npc-seqs.ts, their sounds borrowed from
-// like enemies). Its enemies are what lives underground on the other maps,
+// find-npc-seqs.ts and classify-npc-seqs.ts). Their sounds are OSRS's, by
+// the OSRS Wiki's list of sound ids (the server sends an NPC's, so the cache
+// doesn't tie them to it): the Giant Mole's own (mole_attack, _hit, _death),
+// the dragons' for the King Black Dragon, Elvarg's breath and scream from
+// Dragon Slayer, the dust devils' for the smoke devil, the hellhounds' bark,
+// snarl and death for Cerberus, and the big spiders' for Sarachnis. Its
+// enemies are what lives underground on the other maps,
 // by "map:enemy" in worlds.json, weakest first. Played on a fresh start of
 // its own (save.ts's profiles), open from the start (the user asked: at
 // first it took beating the last regular map), one star at first and a

@@ -199,7 +199,11 @@ Endless (title screen, maps screen or the starter screen) brings the regular pro
 it was. Both ride in the one save, so the account keeps both. In Endless only Endless can be
 played: five bosses a run, picked from six cave and lair bosses met nowhere else
 (endless-bosses.json: King Black Dragon, Elvarg, Thermonuclear smoke devil, Giant Mole,
-Cerberus, Sarachnis, exported with their own idle, walk, attack and death clips), each placed
+Cerberus, Sarachnis, exported with their own idle, walk, attack and death clips, and OSRS's
+sounds by the OSRS Wiki's list of sound ids: the Giant Mole's own, the dragon set for the King
+Black Dragon, Dragon Slayer's breath and scream for Elvarg, the dust devils' for the smoke
+devil, the hellhounds' bark, snarl and death for Cerberus, the big spiders' for Sarachnis;
+the cache's animations carry none of them, since the server sends an NPC's), each placed
 as far from the others and the start as can be found, each with a golden chest; loot rolls
 every tier, one to five. It starts at depth 1 (one star enemies and bosses, as a starter kit
 can manage) and goes a star deeper for each escape with a boss slain, to 5. No pets drop
