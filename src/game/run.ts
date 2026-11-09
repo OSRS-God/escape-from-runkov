@@ -734,6 +734,8 @@ const NIGHT_FOG: [number, number] = [12, 34];
 // The caves' dark (the Depths), and how far off it starts and closes in
 const CAVE_DARK = 0x000000;
 const CAVE_FOG: [number, number] = [22, 48];
+// The caves' rock on the minimap and the full map
+const CAVE_ROCK_MAP = "#120d08";
 const NIGHT_AGGRO = 0.6;
 // How often a night run gives new things in the scene the torchlight
 const TORCH_SWEEP = 0.5;
@@ -1340,9 +1342,23 @@ export class Run {
         const image = this.minimap?.image ?? document.createElement("canvas");
         image.width = side;
         image.height = side;
-        image
-            .getContext("2d")!
-            .drawImage(canvas, (canvas.width - side) / 2, (canvas.height - side) / 2, side, side, 0, 0, side, side);
+        const imageCtx = image.getContext("2d")!;
+        imageCtx.drawImage(canvas, (canvas.width - side) / 2, (canvas.height - side) / 2, side, side, 0, 0, side, side);
+        // A cave's rock (the Depths) is drawn dark, as OSRS's cave maps
+        // have it: from above its top is the floor's own brown, so the map
+        // showed rooms far bigger than they are and ways through that
+        // aren't there, as the user found
+        if (this.world.caves) {
+            const ppt = side / tiles;
+            imageCtx.fillStyle = CAVE_ROCK_MAP;
+            for (let y = 0; y < g.sizeY; y++) {
+                for (let x = 0; x < g.sizeX; x++) {
+                    if (!g.isOpenTile(g.baseX + x, g.baseY + y)) {
+                        imageCtx.fillRect(x * ppt, (tiles - 1 - y) * ppt, ppt + 0.5, ppt + 0.5);
+                    }
+                }
+            }
+        }
         this.minimap = { image, pxPerTile: side / tiles };
         if (!this.fog) {
             // Fog over all of it, cleared as the map is walked
