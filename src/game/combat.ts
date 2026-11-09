@@ -19,6 +19,23 @@ export function playerHit(stats: GearStats, roll: number): number {
     return Math.max(1, Math.round(stats.damage * (0.6 + roll * 0.4)));
 }
 
+// Accuracy (version 150, as the user asked for a harder game): a hit lands
+// this often with a weapon of the map's own tier, this much more often for
+// each tier the weapon's above it and this much less for each it's below,
+// within these bounds; a boss dodges this much more. A special always
+// lands (run.ts), and a miss is a blue 0.
+export const HIT_CHANCE = 0.92;
+const HIT_PER_TIER_ABOVE = 0.03;
+const HIT_PER_TIER_BELOW = 0.12;
+const HIT_BOUNDS: [number, number] = [0.5, 0.98];
+const BOSS_DODGE = 0.06;
+
+export function hitChance(weaponTier: number, mapTier: number, boss = false): number {
+    const gap = Math.max(1, weaponTier) - mapTier;
+    const chance = HIT_CHANCE + (gap >= 0 ? gap * HIT_PER_TIER_ABOVE : gap * HIT_PER_TIER_BELOW) - (boss ? BOSS_DODGE : 0);
+    return Math.min(HIT_BOUNDS[1], Math.max(HIT_BOUNDS[0], chance));
+}
+
 // What an enemy hits the player for: 50% to 100% of its max, less the soak
 // (only the defence counts, so a co-op host can roll for a guest from theirs).
 // A boss's roll leans low (version 57): the lower of two rolls, so its big

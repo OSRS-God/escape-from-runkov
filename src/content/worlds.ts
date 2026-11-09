@@ -2,7 +2,7 @@
 // the enemies that live there in Run Escape and a boss, from worlds.json
 // (made by Run-Escape/scripts/cache/make-game-worlds.ts). Chests and the
 // boss are scattered about; the way out is where you came in.
-import { EnemyDef } from "./enemies";
+import { EnemyDef, SECOND_FORM_SHARE } from "./enemies";
 import worldsJson from "./worlds.json";
 
 type WorldEnemyJson = {
@@ -207,7 +207,12 @@ function convertEnemy(
 ): EnemyDef {
     const boss = !!e.boss;
     const shooter = SHOOTERS[e.id];
-    const hp = boss ? Math.round(TIER_BOSS_HP[world.tier] * (BOSS_HP_SCALE[world.id] ?? 1)) : Math.max(8, Math.round(e.hp * scale.hp));
+    const moves: Moves = { ...(boss ? defaultMoves(world.tier, !!shooter) : {}), ...(MOVES[e.id] ?? {}) };
+    // A boss with a second form has its hitpoints split between the two
+    // (version 150: before, it had its tier's and 60% more, the hardest of
+    // its tier by far)
+    const bossHp = TIER_BOSS_HP[world.tier] * (BOSS_HP_SCALE[world.id] ?? 1) / (moves.secondForm ? 1 + SECOND_FORM_SHARE : 1);
+    const hp = boss ? Math.round(bossHp) : Math.max(8, Math.round(e.hp * scale.hp));
     const damage = boss ? TIER_BOSS_DAMAGE[world.tier] : Math.max(2, Math.round(e.damage * scale.damage));
     // Per kill; a crowded map gives forty or more kills a run, so a kill pays
     // little next to the boss
@@ -234,8 +239,7 @@ function convertEnemy(
         shoots: shooter
             ? { style: shooter.style, cast: shooter.cast, projectile: shooter.projectile, impact: shooter.impact }
             : undefined,
-        ...(boss ? defaultMoves(world.tier, !!shooter) : {}),
-        ...(MOVES[e.id] ?? {}),
+        ...moves,
     };
 }
 

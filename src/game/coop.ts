@@ -147,6 +147,8 @@ export type GameStart = {
     heroes: { id: string; name: string; characterId: string; loadout: Loadout }[];
     // The room's loot rule as the host started it (version 115)
     loot?: LootRule;
+    // The host's threat level for the map (version 150), everyone's
+    threat?: number;
 };
 
 export type GoneReason = "left" | "kicked" | "disbanded" | "hostLeft" | "idle";

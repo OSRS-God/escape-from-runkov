@@ -260,8 +260,9 @@ const ANCIENT: Record<AncientFamily, Record<AncientElement, AncientRow>> = {
     },
 };
 
-// OSRS's freezes: 4.8, 9.6, 14.4 and 19.2 seconds
-const FREEZE_SECONDS: Record<AncientFamily, number> = { rush: 4.8, burst: 9.6, blitz: 14.4, barrage: 19.2 };
+// Half OSRS's freezes (version 150: a cast every two seconds kept a whole
+// room held for good at OSRS's 4.8 to 19.2), and run.ts's FREEZE_IMMUNE after
+const FREEZE_SECONDS: Record<AncientFamily, number> = { rush: 2.4, burst: 4.8, blitz: 7.2, barrage: 9.6 };
 
 function ancientEffect(family: AncientFamily, element: AncientElement): SpellEffect {
     const strong = family === "blitz" || family === "barrage";

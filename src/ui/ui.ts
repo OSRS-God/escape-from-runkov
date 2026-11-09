@@ -1,7 +1,8 @@
 // The screens: menu, stash, shop, character, settings, the in-run HUD and
 // the run's summary. Plain DOM on top of the canvas, which shows the
 // character in the world behind every screen but the HUD (menu.ts).
-import { WORLDS, WORLD_BY_ID, getWorld, mapBefore, mapUnlocked, tierUnlocked } from "../content/worlds";
+import { MAX_THREAT, threatName, threatOpen, threatText } from "../content/threat";
+import { WORLDS, WORLD_BY_ID, WorldDef, getWorld, mapBefore, mapUnlocked, tierUnlocked } from "../content/worlds";
 import {
     AMMO_LIMITS,
     COINS,
@@ -64,7 +65,7 @@ import { isKept, restoreCrownPets } from "../game/kit";
 import { STARTER_KITS, StarterKit, applyStarter } from "../game/starter";
 import { Chat } from "./chat";
 import { FullMap } from "./fullmap";
-import { REGEN_DELAY, soak } from "../game/combat";
+import { REGEN_DELAY, hitChance, soak } from "../game/combat";
 import { FriendStatus, FriendView, GAME_BUILD, GameStart, Loadout, LootRule, MemberView, Presence, RoomView, Session } from "../game/coop";
 import { DEFAULT_NAME_COLOR, NAME_COLORS, crownByAlt, crownIcon, crownKey, crownVerified, nameColorOf } from "../game/crown";
 import { Contract, contractProgress, contractResetsIn, todaysContract } from "../game/contract";
@@ -1696,7 +1697,13 @@ export class UI {
                     party ? `Gather a party for ${last.name}` : `Descend into ${last.name}`,
                 )
               : h("button", { class: "go", onclick: () => this.showMaps() }, "Choose your first map");
-        const play = h("div", { class: "osrs-play" }, this.contractPanel(false), h("div", { class: "osrs-go" }, this.session.room ? null : seg, go));
+        const play = h(
+            "div",
+            { class: "osrs-play" },
+            this.contractPanel(false),
+            last && !this.session.room ? this.threatPicker(last) : null,
+            h("div", { class: "osrs-go" }, this.session.room ? null : seg, go),
+        );
         const live = this.session.view.live;
         return h(
             "div",
@@ -1743,6 +1750,46 @@ export class UI {
     private setPlayMode(mode: "solo" | "party"): void {
         this.playMode = mode;
         this.showMenu();
+    }
+
+    // The threat level the next run on a map goes at (content/threat.ts,
+    // version 150): the one picked, no higher than the map's open to
+    threatFor(mapId: string): number {
+        const open = threatOpen(this.save.stats.bestThreat, this.save.stats.mapsBeaten, mapId);
+        return Math.min(this.save.threat?.[mapId] ?? 0, open);
+    }
+
+    // Down and up a level for the map about to be played, its effects on
+    // hover, and the map's best (or what opens the next)
+    private threatPicker(world: WorldDef): HTMLElement {
+        const open = threatOpen(this.save.stats.bestThreat, this.save.stats.mapsBeaten, world.id);
+        const level = this.threatFor(world.id);
+        const best = this.save.stats.bestThreat?.[world.id];
+        const set = (n: number) => {
+            this.save.threat = { ...this.save.threat, [world.id]: n };
+            writeSave(this.save);
+            this.showMenu();
+        };
+        const note =
+            open === 0
+                ? `Beat ${world.name} to open threat levels`
+                : level === open && open < MAX_THREAT
+                  ? `Beat it at threat ${level} to open ${level + 1}`
+                  : best !== undefined
+                    ? `Best: threat ${best}`
+                    : "";
+        return h(
+            "div",
+            { class: "osrs-threat", title: threatText(level) },
+            h(
+                "div",
+                { class: "seg" },
+                h("button", { disabled: level <= 0, title: "Easier", onclick: () => set(level - 1) }, "−"),
+                h("button", { class: level > 0 ? "on" : "", title: threatText(level) }, threatName(level)),
+                h("button", { disabled: level >= open, title: "Harder, for better loot", onclick: () => set(level + 1) }, "+"),
+            ),
+            note ? h("span", { class: "muted small-text" }, note) : null,
+        );
     }
 
     // A private party of this player's own on a map, gathered in the war
@@ -2464,7 +2511,15 @@ export class UI {
             characterId: m.characterId,
             loadout: m.loadout ?? { ...fallback, character: { ...fallback.character, name: "Adventurer" } },
         }));
-        this.session.start({ seed: (Date.now() ^ (world.tier * 7919)) >>> 0, mapId: world.id, endless: false, hard: false, heroes, loot: room.loot ?? "keep" });
+        this.session.start({
+            seed: (Date.now() ^ (world.tier * 7919)) >>> 0,
+            mapId: world.id,
+            endless: false,
+            hard: false,
+            heroes,
+            loot: room.loot ?? "keep",
+            threat: this.threatFor(world.id),
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -2780,7 +2835,12 @@ export class UI {
             h(
                 "div",
                 { class: "item-list" },
-                line("Max hit", String(s.damage), "every hit lands for 60% to 100% of it"),
+                line("Max hit", String(s.damage), "a hit that lands is 60% to 100% of it"),
+                line(
+                    "Accuracy",
+                    `${Math.round(hitChance(s.weapon?.tier ?? 1, run.world.tier) * 100)}%`,
+                    `how often a hit lands on this map (a boss dodges a little more, a special always lands); a weapon below the map's tier misses far more`,
+                ),
                 line("Swing", `${s.speed}s`, `one attack every ${s.speed}s: about ${perSecond} damage a second`),
                 line(
                     s.ranged ? "Range" : "Reach",
@@ -3951,7 +4011,7 @@ export class UI {
                         h(
                             "div",
                             { class: "muted small-text" },
-                            `Food ${FOOD_LIMIT} pieces at most, arrows ${AMMO_LIMITS.arrows} of every kind together, ${AMMO_LIMITS.runes} of each kind of rune and ${THROWN_LIMIT} thrown weapons of every kind together. A click puts ${this.quantityWord() === "all" ? "a stack" : this.quantityWord()} back in the vault.`,
+                            `Food and brews ${FOOD_LIMIT} at most together, arrows ${AMMO_LIMITS.arrows} of every kind together, ${AMMO_LIMITS.runes} of each kind of rune and ${THROWN_LIMIT} thrown weapons of every kind together. A click puts ${this.quantityWord() === "all" ? "a stack" : this.quantityWord()} back in the vault.`,
                         ),
                         packNote,
                         h("button", { class: "wide", disabled: save.backpack.length === 0, onclick: () => depositPack.click() }, "Empty pack into vault"),

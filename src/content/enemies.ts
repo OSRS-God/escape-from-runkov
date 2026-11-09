@@ -7,6 +7,11 @@
 // gear a map's chests give beats the map after it with some food, and its
 // boss falls to one tier better than that.
 
+// A second form rises with this share of the first's hitpoints; since
+// version 150 the two together are what the boss's tier gives it, not
+// that and this much again
+export const SECOND_FORM_SHARE = 0.6;
+
 export type EnemyDef = {
     id: string;
     npcId: number;
@@ -41,6 +46,7 @@ export type EnemyDef = {
     // floor that marks tiles round the player before it bursts
     alternates?: boolean;
     pierce?: boolean;
+    // (SECOND_FORM_SHARE)
     secondForm?: boolean;
     floor?: boolean;
     // Minds its own business (version 93: chickens and imps): it never

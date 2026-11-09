@@ -2,6 +2,7 @@
 // and who the character is.
 import { ITEM_BY_ID, Slot, getItem, rollShopStock } from "../content/items";
 import { Book, SPELL_BY_ID } from "../content/spells";
+import { clampThreat } from "../content/threat";
 import { DEFAULT_COLORS, DEFAULT_KITS } from "./player";
 
 export type ItemStack = { id: number; count: number };
@@ -82,6 +83,8 @@ export type SaveData = {
     // Whether the save has had version 146's thrown weapons sorted out
     // (parseSave): true for any save made since
     thrownBundles?: boolean;
+    // The threat level picked for each map (content/threat.ts, version 150)
+    threat?: Record<string, number>;
 };
 
 export type Friend = { code: string; name: string };
@@ -134,6 +137,8 @@ export type Stats = {
     // 115): how fast a run eats food, for the vault's word on the pack
     damageTaken: number;
     secondsPlayed: number;
+    // The highest threat level each map's been beaten at (version 150)
+    bestThreat?: Record<string, number>;
 };
 
 const KEY = "dungeon-extraction-save";
@@ -288,6 +293,19 @@ export function parseSave(raw: string): SaveData | undefined {
         if (save.spellbook !== undefined && save.spellbook !== "standard" && save.spellbook !== "ancient") {
             delete save.spellbook;
         }
+        // Threat levels (version 150): numbers by map, or none
+        const levels = (record: unknown): Record<string, number> | undefined => {
+            if (!record || typeof record !== "object") {
+                return undefined;
+            }
+            const out: Record<string, number> = {};
+            for (const [map, level] of Object.entries(record)) {
+                out[map] = clampThreat(level);
+            }
+            return out;
+        };
+        save.threat = levels(save.threat);
+        save.stats.bestThreat = levels(save.stats.bestThreat);
         // Empty stacks (a deposit that went wrong before version 39) go, and
         // so does anything the game no longer has (the Santa hat, say)
         const whole = (list: ItemStack[]) => list.filter((s) => s && typeof s.id === "number" && s.count > 0 && ITEM_BY_ID.has(s.id));

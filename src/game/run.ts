@@ -5,7 +5,7 @@ import * as THREE from "three";
 
 import { PLAYER_SOUND_NPC } from "../content/bodies";
 import { TORCHES, addTorchTo, flicker, setTorch, setTorchNight, torchesOut } from "./torch";
-import { EnemyDef } from "../content/enemies";
+import { EnemyDef, SECOND_FORM_SHARE } from "../content/enemies";
 import {
     BOLT,
     BOSS_KEY,
@@ -49,6 +49,7 @@ import {
     spellScale,
     staffCasts,
 } from "../content/spells";
+import { Threat, threatName, threatOf, threatText } from "../content/threat";
 import { WorldDef } from "../content/worlds";
 import { GameStart, LootRule } from "./coop";
 import { Hero, Mate } from "./mates";
@@ -102,7 +103,7 @@ import {
     tint,
 } from "./assets";
 import { assetUrl } from "./paths";
-import { REGEN_DELAY, REGEN_PER_SECOND, ammoScale, enemyHit, playerHit } from "./combat";
+import { REGEN_DELAY, REGEN_PER_SECOND, ammoScale, enemyHit, hitChance, playerHit } from "./combat";
 import { Rng, makeRng } from "./dungeon";
 import {
     BASE_HP,
@@ -151,6 +152,9 @@ export type RunCarry = {
     // (standard or Ancient Magicks, version 107)
     autocast?: string;
     spellbook?: Book;
+    // The run's threat level (content/threat.ts, version 150): the host's
+    // for a party
+    threat?: number;
 };
 
 // A style to protect from: enemies hit with it do half while the prayer
@@ -279,8 +283,10 @@ type Enemy = {
     // red for an enraged boss
     tint: THREE.Color;
     enraged?: boolean;
-    // A boss's ground slam, and burning floor: seconds to the next
+    // A boss's ground slam, its marked strike, and burning floor: seconds
+    // to the next
     slamIn: number;
+    strikeIn: number;
     floorIn: number;
     // Seconds of crawling, from Ahrim's set
     slow: number;
@@ -288,8 +294,10 @@ type Enemy = {
     riled: number;
     // Ancient Magicks (version 107): seconds frozen in place (ice); a share
     // off its hits and for how long (shadow); poison (smoke): what each
-    // hit of it does, how many are left, seconds to the next, and whose
+    // hit of it does, how many are left, seconds to the next, and whose;
+    // and, thawed, seconds before ice can hold it again (FREEZE_IMMUNE)
     frozen: number;
+    thawed: number;
     weak: number;
     weakLeft: number;
     poisonHit: number;
@@ -440,6 +448,9 @@ type Projectile = {
     scale?: number;
     // A spell's sound where it lands (version 108), anyone's
     hitSound?: number;
+    // A healing special's shot: this share of what it deals comes back
+    // (version 150)
+    heal?: number;
 };
 
 type Effect ={ actor: Actor; left: number };
@@ -483,7 +494,9 @@ const AIM_SECONDS = 0.45;
 const RILE_FROM = 3;
 const RILE_SPEED = 1.6;
 const RILE_SECONDS = 4;
-// A melee boss gives up much sooner, and only notices you from a little
+// Thawed, an enemy can't be frozen again for this long (version 150; OSRS
+// has its own few seconds of the same)
+const FREEZE_IMMUNE = 5;// A melee boss gives up much sooner, and only notices you from a little
 // nearer than that (so it doesn't rouse and give up by turns at the edge)
 const BOSS_GIVE_UP_MELEE = 8;
 const BOSS_NOTICE_SHARE = 0.75;
@@ -586,14 +599,26 @@ const POISON: EnemyDef = {
     coins: [0, 0],
     foodChance: 0,
 };
-// One enemy in twenty is a champion, with this much over the usual
-// hitpoints and damage
-const CHAMPION_CHANCE = 0.05;
+// One enemy in twenty is a champion (more at a threat level: Threat's
+// champion), with this much over the usual hitpoints and damage
 const CHAMPION_HP = 2.5;
 const CHAMPION_DAMAGE = 2;
-// An enraged boss slams the ground this often, hurting anyone this close
+// A boss in a fight slams the ground this often (this often enraged),
+// hurting anyone this close this many times a hit when the ring's done
+// (version 150: from the fight's start, not only enraged, and hard enough
+// to step out of)
 const SLAM_SECONDS = 7;
+const SLAM_ENRAGED = 4.5;
 const SLAM_RANGE = 3;
+const SLAM_HIT = 2.5;
+// And a boss with no burning floor marks where whoever it's after stands,
+// when they're out of the slam's reach, this often: a ring this wide and
+// this long, then this many times a hit (version 150), so a bow or a staff
+// has something to step out of too
+const STRIKE_SECONDS = 6;
+const STRIKE_RADIUS = 1.4;
+const STRIKE_WARN = 1.3;
+const STRIKE_HIT = 2;
 // Each piece of gear in the pack slows you by this much, up to the cap
 const WEIGHT_PER_PIECE = 0.015;
 const WEIGHT_MAX = 0.3;
@@ -662,7 +687,7 @@ type HitEffects = { slow?: boolean; stall?: boolean; freeze?: number; weaken?: n
 
 // How a shot looks: the spot animation flying, and the one where it lands;
 // and, cast, the spell and its max hit (an Ancient spell's area and effect)
-type Look = { projectile?: number; impact?: number; spell?: SpellDef; maxHit?: number };
+type Look = { projectile?: number; impact?: number; spell?: SpellDef; maxHit?: number; heal?: number };
 // A kill drops a prayer potion this often, and a clue scroll this often
 // (one a run); the scroll's spot is this many steps off, and digging works
 // this close to it
@@ -769,6 +794,30 @@ function partyWorld(world: WorldDef, players: number): WorldDef {
         ...world,
         enemies: world.enemies.map((e) => ({ def: tougher(e.def, PARTY_ENEMY_HP), weight: e.weight })),
         boss: tougher(world.boss, PARTY_BOSS_HP),
+    };
+}
+
+// The map at a threat level (version 150): its enemies tougher and harder
+// hitting, less food on them, and from level 3 every boss's floor burning
+function threatWorld(world: WorldDef, threat: Threat): WorldDef {
+    if (threat.level === 0) {
+        return world;
+    }
+    const enemy = (def: EnemyDef): EnemyDef => ({
+        ...def,
+        hp: Math.round(def.hp * threat.enemyHp),
+        damage: Math.round(def.damage * threat.enemyDamage),
+        foodChance: def.foodChance * threat.food,
+    });
+    return {
+        ...world,
+        enemies: world.enemies.map((e) => ({ def: enemy(e.def), weight: e.weight })),
+        boss: {
+            ...world.boss,
+            hp: Math.round(world.boss.hp * threat.bossHp),
+            damage: Math.round(world.boss.damage * threat.bossDamage),
+            floor: world.boss.floor || threat.bossFloor || undefined,
+        },
     };
 }
 
@@ -910,10 +959,13 @@ export class Run {
     private clueDropped = false;
     // Whether the first charge (RILE_SPEED) has been called out
     private toldRiled = false;
+    private toldStrike = false;
     private pet?: Pet;
     // What the pet that came along does for you (pets.ts)
     private readonly petBuff?: PetBuff;
     private readonly carry: RunCarry;
+    // The run's threat level and what it does (content/threat.ts)
+    readonly threat: Threat;
     // A night run: the map's materials are darkened in place (the model is
     // shared with the menu), and put back when the run stops
     readonly night: boolean;
@@ -1026,6 +1078,7 @@ export class Run {
     ) {
         this.rng = makeRng(seed);
         this.carry = carry;
+        this.threat = threatOf(carry.threat ?? 0);
         this.autocast = carry.autocast && SPELL_BY_ID.has(carry.autocast) ? carry.autocast : undefined;
         this.spellbook = carry.spellbook === "ancient" ? "ancient" : "standard";
         this.coop = coop;
@@ -1090,6 +1143,8 @@ export class Run {
         if (coop?.role === "host" && coop.heroes.length > 1) {
             world = partyWorld(world, coop.heroes.length);
         }
+        // And more again at a threat level (version 150)
+        world = threatWorld(world, threatOf(carry.threat ?? 0));
         const run = new Run(renderer, world, region, carry, character, seed, hooks, coop);
         // The map comes in a square at a time, the ones round the spawn
         // first: the run starts on those, and the rest join as they arrive
@@ -1706,14 +1761,14 @@ export class Run {
             }
             const tile = region.randomTile(this.rng, reach, 8, taken);
             if (tile) {
-                const champion: boolean = this.rng() < CHAMPION_CHANCE || (i === enemyCount - 1 && !anyChampion);
+                const champion: boolean = this.rng() < this.threat.champion || (i === enemyCount - 1 && !anyChampion);
                 anyChampion = anyChampion || champion;
                 // Some of the walkers patrol a round instead of standing
                 const route =
                     !champion && !def.shoots && this.rng() < PATROL_CHANCE ? this.patrolRoute(tile, reach) : undefined;
                 // Now and then an elite, with a trait of its own
                 const traits = Object.keys(TRAITS) as Trait[];
-                const trait = !champion && this.rng() < 1 / ELITE_ONE_IN ? traits[Math.floor(this.rng() * traits.length)] : undefined;
+                const trait = !champion && this.rng() < this.threat.elite / ELITE_ONE_IN ? traits[Math.floor(this.rng() * traits.length)] : undefined;
                 jobs.push(
                     this.spawnEnemy(champion ? this.champion(def) : def, tile, trait).then((e) => {
                         e.route = route;
@@ -1871,10 +1926,12 @@ export class Run {
             flash: 0,
             tint: colour,
             slamIn: SLAM_SECONDS,
+            strikeIn: STRIKE_SECONDS,
             floorIn: FLOOR_SECONDS,
             slow: 0,
             riled: 0,
             frozen: 0,
+            thawed: 0,
             weak: 0,
             weakLeft: 0,
             poisonHit: 0,
@@ -2102,6 +2159,9 @@ export class Run {
         this.reveal();
         playMusic(assetUrl(`assets/music/${this.world.id}.ogg`));
         const coop = this.coop;
+        if (this.threat.level > 0) {
+            this.hooks.onMessage(`${threatName(this.threat.level)}. ${threatText(this.threat.level)}`);
+        }
         if (coop?.role === "guest") {
             const host = coop.heroes.find((h) => h.id !== coop.me)?.name ?? "the host";
             this.hooks.onMessage(
@@ -2221,7 +2281,7 @@ export class Run {
     // the square root of the area for a bigger one
     private closeSeconds(): number {
         const area = this.region.sizeX * this.region.sizeY;
-        return Math.round((CLOSE_SECONDS * Math.sqrt(area / (CLOSE_SECONDS_SIDE * CLOSE_SECONDS_SIDE))) / 30) * 30;
+        return Math.round((CLOSE_SECONDS * this.threat.clock * Math.sqrt(area / (CLOSE_SECONDS_SIDE * CLOSE_SECONDS_SIDE))) / 30) * 30;
     }
 
     // Whether this player's part of the run is over while the party plays
@@ -2392,7 +2452,7 @@ export class Run {
         if (this.coop?.role === "guest") {
             return;
         }
-        if (!this.awake && this.time >= WAKE_SECONDS) {
+        if (!this.awake && this.time >= WAKE_SECONDS * this.threat.clock) {
             this.awake = true;
             this.announce("The map wakes. Everything here knows you're about now, and nothing heals on its own.");
         }
@@ -2798,7 +2858,7 @@ export class Run {
         }
         this.hooks.onEnd({
             kind,
-            carry: { inventory: this.inventory, equipment: this.equipment, coins: this.coins, hp: this.hp, wear: this.wear },
+            carry: { inventory: this.inventory, equipment: this.equipment, coins: this.coins, hp: this.hp, wear: this.wear, threat: this.threat.level },
             world: this.world,
             report: {
                 seconds: this.time,
@@ -3588,6 +3648,12 @@ export class Run {
         }
     }
 
+    // Whether this swing or shot finds an enemy (combat.ts's hitChance):
+    // a special always does
+    private lands(e: Enemy, special: boolean): boolean {
+        return special || this.rng() < hitChance(this.stats.weapon?.tier ?? 1, this.world.tier, !!e.def.boss);
+    }
+
     private landSwing(): void {
         this.swingIn = -1;
         const stats = this.stats;
@@ -3656,13 +3722,17 @@ export class Run {
                         this.hooks.onChanged();
                     }
                 }
-                const shot = () => Math.max(1, Math.round(roll() * scale));
+                // A shot that misses (version 150) flies all the same, for a 0
+                const shot = () => (this.lands(target, !!special) ? Math.max(1, Math.round(roll() * scale)) : 0);
+                // A healing special heals when its shot lands (version 150)
+                const specLook = special?.heal ? { ...look, heal: special.heal } : look;
                 for (let i = 0; i < hits; i++) {
-                    void this.shoot(target, shot(), look);
+                    void this.shoot(target, shot(), specLook);
                 }
                 // Karil's bolts: one in three hits again at half
                 if (set === "karil" && this.rng() < 1 / 3) {
-                    void this.shoot(target, Math.max(1, Math.round(shot() / 2)), look);
+                    const again = shot();
+                    void this.shoot(target, again > 0 ? Math.max(1, Math.round(again / 2)) : 0, look);
                 }
             }
             return;
@@ -3682,7 +3752,7 @@ export class Run {
             diff = diff > Math.PI ? Math.PI * 2 - diff : diff;
             if (diff <= Math.PI * 0.45 || e === this.swingTarget) {
                 for (let i = 0; i < hits && e.hp > 0; i++) {
-                    const damage = roll();
+                    const damage = this.lands(e, !!special) ? roll() : 0;
                     dealt += Math.min(damage, e.hp);
                     this.damageEnemy(e, damage);
                 }
@@ -3745,10 +3815,12 @@ export class Run {
                 }
                 ctx.closePath();
             };
-            ctx.fillStyle = poison ? "#0a3a0a" : "#4a0000";
+            // A miss is a blue 0, as in OSRS (version 150)
+            const miss = value === 0 && !poison;
+            ctx.fillStyle = poison ? "#0a3a0a" : miss ? "#06143a" : "#4a0000";
             outline(1.08);
             ctx.fill();
-            ctx.fillStyle = poison ? "#2a9a1a" : "#c01010";
+            ctx.fillStyle = poison ? "#2a9a1a" : miss ? "#2050c8" : "#c01010";
             outline(1);
             ctx.fill();
             for (const [dx, dy, r] of [
@@ -3813,6 +3885,7 @@ export class Run {
             spell: look.spell,
             maxHit: look.maxHit,
             hitSound: look.spell?.hitSound,
+            heal: look.heal,
         });
     }
 
@@ -3882,6 +3955,7 @@ export class Run {
             maxHit?: number;
             scale?: number;
             hitSound?: number;
+            heal?: number;
         },
     ): Promise<void> {
         if (at.cast !== undefined) {
@@ -3924,6 +3998,7 @@ export class Run {
             maxHit: at.maxHit,
             scale: at.scale,
             hitSound: at.hitSound,
+            heal: at.heal,
         });
     }
 
@@ -3934,6 +4009,11 @@ export class Run {
     private damageEnemy(e: Enemy, damage: number, by: Hero = this.self, effects: HitEffects = {}): void {
         if (by.me && !effects.poisoned) {
             effects = { ...effects, stall: this.stats.set === "torag" };
+        }
+        // A miss (version 150) does nothing but rouse it: no freeze, no
+        // poison, no slow, as a splashed spell in OSRS
+        if (damage <= 0) {
+            effects = {};
         }
         if (this.coop?.role === "guest") {
             this.coop.send({
@@ -3949,7 +4029,7 @@ export class Run {
             e.myHitAt = this.time;
         }
         // An armoured elite shrugs off some of it
-        if (e.trait === "armoured") {
+        if (e.trait === "armoured" && damage > 0) {
             damage = Math.max(1, Math.round(damage * 0.6));
         }
         e.hp = Math.max(0, e.hp - damage);
@@ -3981,9 +4061,11 @@ export class Run {
         }
         // Ancient Magicks (version 107): ice holds it (a boss shrugs that
         // off), shadow weakens its hits, smoke poisons it (a fresh poison
-        // only if it's stronger than what's in it)
-        if (effects.freeze && !e.def.boss) {
-            e.frozen = Math.max(e.frozen, effects.freeze);
+        // only if it's stronger than what's in it). Version 150: a freeze
+        // isn't topped up while it holds, nor laid again until FREEZE_IMMUNE
+        // after it thaws, so ice can't hold one for good
+        if (effects.freeze && !e.def.boss && e.frozen <= 0 && e.thawed <= 0) {
+            e.frozen = effects.freeze;
         }
         if (effects.weaken) {
             e.weak = Math.max(e.weakLeft > 0 ? e.weak : 0, effects.weaken);
@@ -4017,7 +4099,7 @@ export class Run {
         // A second form: up again, quicker, greener, with most of its health
         if (e.def.secondForm && !e.reborn) {
             e.reborn = true;
-            e.hp = Math.round(e.def.hp * 0.6);
+            e.hp = Math.round(e.def.hp * SECOND_FORM_SHARE);
             e.interval = e.def.attackInterval * 0.7;
             e.tint = new THREE.Color(0.8, 1.25, 0.8);
             tint(e.actor, e.tint);
@@ -4051,7 +4133,9 @@ export class Run {
         // An elite was worth twice the coins; an ordinary enemy only
         // sometimes carried any
         // (and a pet's share, for whoever walks over them)
-        const coins = Math.round(randInt(this.rng, e.def.coins[0], e.def.coins[1]) * (e.trait ? 2 : 1) * (1 + (this.petBuff?.coins ?? 0)));
+        const coins = Math.round(
+            randInt(this.rng, e.def.coins[0], e.def.coins[1]) * (e.trait ? 2 : 1) * (1 + (this.petBuff?.coins ?? 0)) * this.threat.coins,
+        );
         if (e.def.boss || e.def.champion || this.rng() < COIN_DROP_CHANCE) {
             this.dropPickup(COINS, coins, e.x, e.z);
         }
@@ -4128,7 +4212,8 @@ export class Run {
                 break;
             }
         }
-        const item = rollGear(this.rng, pick, prizes);
+        // A threat level's better odds at a prize (version 150)
+        const item = rollGear(this.rng, pick, Math.min(1, prizes * this.threat.prizes));
         if (item) {
             // A thrown weapon comes as a bundle (version 146)
             this.dropPickup(item.id, item.thrown ? randInt(this.rng, THROWN_FOUND[0], THROWN_FOUND[1]) : 1, x, z, scatter);
@@ -4178,6 +4263,11 @@ export class Run {
             // wear off, and a poison hits every few seconds until it's done
             if (e.frozen > 0) {
                 e.frozen -= dt;
+                if (e.frozen <= 0) {
+                    e.thawed = FREEZE_IMMUNE;
+                }
+            } else if (e.thawed > 0) {
+                e.thawed -= dt;
             }
             if (e.weakLeft > 0) {
                 e.weakLeft -= dt;
@@ -4303,7 +4393,7 @@ export class Run {
             }
 
             if (e.def.boss) {
-                this.updateBoss(e, dt);
+                this.updateBoss(e, t, dt);
             }
             if (e.def.floor && e.state !== "idle" && t) {
                 this.updateFloor(e, t, dt);
@@ -4468,9 +4558,10 @@ export class Run {
         play(e.actor, "walk");
     }
 
-    // Half way down, a boss is enraged: quicker, redder, with company, and
-    // slamming the ground now and then, a ring on the ground warning where
-    private updateBoss(e: Enemy, dt: number): void {
+    // Half way down, a boss is enraged: quicker, redder, with company. In a
+    // fight it slams the ground now and then, a ring on the ground warning
+    // where, and marks where whoever it's after stands when they're off
+    private updateBoss(e: Enemy, t: Hero | undefined, dt: number): void {
         // Left alone too long, an enraged boss gets some of its health back
         if (e.enraged && e.state !== "idle" && this.time - e.lastHurtAt > BOSS_IDLE_HEAL_SECONDS && e.hp < e.def.hp) {
             e.lastHurtAt = this.time;
@@ -4499,23 +4590,37 @@ export class Run {
                 }
             }
         }
-        if (!e.enraged || e.state === "idle") {
+        if (e.state === "idle") {
             return;
         }
         e.slamIn -= dt;
         if (e.slamIn <= 0) {
-            e.slamIn = SLAM_SECONDS;
+            e.slamIn = e.enraged ? SLAM_ENRAGED : SLAM_SECONDS;
             this.hazard(
                 e.x,
                 e.z,
                 SLAM_RANGE,
                 1.2,
-                (hero) => this.hurtHero(hero, e.def, 1.5 * this.weakScale(e), "melee", e.def.pierce),
+                (hero) => this.hurtHero(hero, e.def, SLAM_HIT * this.weakScale(e), "melee", e.def.pierce),
                 () => {
                     play(e.actor, "attack", { once: true });
                     e.attacks++;
                 },
             );
+        }
+        // The marked strike, for a boss without burning floor
+        if (e.def.floor || !t) {
+            return;
+        }
+        e.strikeIn -= dt;
+        if (e.strikeIn <= 0 && Math.hypot(t.x - e.x, t.z - e.z) > SLAM_RANGE + 1) {
+            e.strikeIn = STRIKE_SECONDS;
+            const style: ProtectStyle = e.def.alternates ? (e.style ?? styleOf(e.def)) : styleOf(e.def);
+            this.hazard(t.x, t.z, STRIKE_RADIUS, STRIKE_WARN, (hero) => this.hurtHero(hero, e.def, STRIKE_HIT * this.weakScale(e), style, e.def.pierce));
+            if (!this.toldStrike) {
+                this.toldStrike = true;
+                this.tell(t, `${e.def.name} marks where you stand: step out of the ring!`);
+            }
         }
     }
 
@@ -4787,6 +4892,12 @@ export class Run {
         if (!fixed) {
             this.wearArmour();
         }
+        // A hit (not poison's) at the way out starts the escape over
+        // (version 150): what's come running has to be dealt with first
+        if (this.extracting > 0 && by !== POISON.name) {
+            this.extracting = 0;
+            this.hooks.onMessage("The hit throws you off your escape. Start it again.");
+        }
         this.damageTaken += Math.min(hit, Math.max(0, this.hp));
         this.hp -= hit;
         this.hitsTaken++;
@@ -4950,7 +5061,10 @@ export class Run {
         let dealt = 0;
         for (const e of hit) {
             // The others roll their own hit, from a little under the target's
-            const damage = e === target ? p.damage : Math.max(1, Math.round(p.damage * (0.75 + this.rng() * 0.25)));
+            // (version 150: and whether it lands, from about the usual hit
+            // when the target's was a miss)
+            const base = p.damage > 0 ? p.damage : Math.round((p.maxHit ?? 1) * 0.8);
+            const damage = e === target ? p.damage : this.lands(e, false) ? Math.max(1, Math.round(base * (0.75 + this.rng() * 0.25))) : 0;
             dealt += Math.min(damage, e.hp);
             this.damageEnemy(e, damage, this.self, effects);
             if (e !== target) {
@@ -4985,13 +5099,19 @@ export class Run {
                     } else if (p.target) {
                         // Ahrim's: what a spell hits crawls
                         const slow = this.stats.set === "ahrim" && this.stats.weapon?.uses === "runes";
+                        const before = p.target.hp;
                         if (p.spell) {
                             this.landSpell(p, p.target, slow);
                         } else {
                             this.damageEnemy(p.target, p.damage, this.self, { slow });
                         }
+                        // A healing special's shot (version 150): a share of
+                        // what it took off its target
+                        if (p.heal && before > p.target.hp) {
+                            this.hp = Math.min(this.maxHp, this.hp + Math.round((before - p.target.hp) * p.heal));
+                        }
                         // A chinchompa: everything beside what it hit takes half
-                        if (p.splash) {
+                        if (p.splash && p.damage > 0) {
                             for (const e of this.enemies) {
                                 if (e !== p.target && e.state !== "dead" && Math.hypot(e.x - tx, e.z - tz) <= SPLASH_TILES) {
                                     this.damageEnemy(e, Math.max(1, Math.round(p.damage / 2)), this.self);
@@ -5332,7 +5452,7 @@ export class Run {
             } else {
                 this.extracting = 0;
                 this.extractWoke = false;
-                this.prompt = "Hold E to escape: ten seconds, and everything near will hear it";
+                this.prompt = "Hold E to escape: ten seconds unhurt, and everything near will hear it";
             }
             return;
         }
@@ -5497,7 +5617,7 @@ export class Run {
         const drop = (id: number, count: number) => this.dropPickup(id, count, chest.tile.x, chest.tile.z, 0);
         const gear = (tiers: { tier: number; weight: number }[], prizes = 0) =>
             this.dropGear(tiers, chest.tile.x, chest.tile.z, prizes, 0);
-        const purse = (min: number, max: number) => Math.round(randInt(this.rng, min, max) * Math.pow(2.2, tier - 1));
+        const purse = (min: number, max: number) => Math.round(randInt(this.rng, min, max) * Math.pow(2.2, tier - 1) * this.threat.coins);
         const potion = () => SHOP_POTIONS[Math.floor(this.rng() * SHOP_POTIONS.length)];
         // Nothing on a map is better than the map: the vault, the golden
         // chest and the caskets give the map's own tier, their chance of its
@@ -5666,7 +5786,7 @@ export class Run {
         for (let i = 0; i < 2; i++) {
             this.dropGear([{ tier, weight: 1 }], ...scatter(), PRIZE_CASKET);
         }
-        this.dropPickup(COINS, Math.round(randInt(this.rng, 40, 80) * Math.pow(2.2, tier - 1)), ...scatter());
+        this.dropPickup(COINS, Math.round(randInt(this.rng, 40, 80) * Math.pow(2.2, tier - 1) * this.threat.coins), ...scatter());
     }
 
     // -----------------------------------------------------------------------
@@ -6496,8 +6616,23 @@ export class Run {
 
     drink(id: number): void {
         const item = getItem(id);
-        if (!item.potion || this.dead || !removeItem(this.inventory, id, 1)) {
+        if (!item.potion || this.dead) {
             return;
+        }
+        // A brew is a bite like any food (version 150): it waits out
+        // EAT_DELAY, and starts it, so brews can't be gulped one on another
+        if (item.potion === "brew" && this.eatIn > 0) {
+            if (this.time - this.fullMessageAt > 1.5) {
+                this.hooks.onMessage("You're still chewing.");
+                this.fullMessageAt = this.time;
+            }
+            return;
+        }
+        if (!removeItem(this.inventory, id, 1)) {
+            return;
+        }
+        if (item.potion === "brew") {
+            this.eatIn = EAT_DELAY;
         }
         if (item.potion === "prayer") {
             // Straight onto the bar, nothing to wear off

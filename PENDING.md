@@ -35,6 +35,41 @@ ranged earth strike: shooters are now 11% of Lumbridge's enemies and 18–57% of
 map's (were 0% on five maps). Tested: a zombie hit from 6 tiles went 1.8 → 2.88 for 4s, from
 1 tile not at all; a Lumbridge skeleton shot every 2.2s for 4–7.
 
+Version 150 (not yet deployed): fixes from a Codex review the user passed on. Healing specials
+on ranged and magic weapons (Toxic siphon, Sanguine, Invocate, Blood surge) healed nothing, as
+only a melee swing added up what it dealt: a special's shot now carries `heal` on its
+projectile, and what it takes off its target heals that share on landing (tested: a 40 hit at
+50% healed 20, a spell's 30 at 30% healed 9). The Barrows pet's floor was a third of the max,
+under a hit's own 60% lowest roll, so it never did anything: now 80% (about 6% more on
+average). Saradomin brews skipped the eating delay and the food limit, so a stack of them at
+300 coins each was a bottomless heal: a brew now waits out EAT_DELAY and starts it, counts
+towards FOOD_LIMIT with food (`isFood` in inventory.ts), and costs 1500. Ice spells froze for
+OSRS's 4.8–19.2 seconds and every cast topped it up, so a melee enemy could be held for good:
+freezes are halved (2.4–9.6s), aren't topped up while they hold, and a thawed enemy can't be
+frozen again for 5 seconds (`FREEZE_IMMUNE`, `thawed`). And a boss with a second form had its
+tier's hitpoints and 60% more again (balance.ts never played the second form): now the two
+forms share them (`SECOND_FORM_SHARE` in enemies.ts), so the Kalphite Queen has 861 + 517,
+Skotizo 1406 + 844 and K'ril 2500 + 1500. The review's last finding, magic weak on bosses (a
+staff's damage a second about half the best melee or bow's at every tier), the user chose to
+leave as it is: magic's part is groups and freezes.
+
+Version 151 (not yet deployed): a harder game, as the user asked (suggestions 1, 2, 3 and 5).
+Threat levels (`content/threat.ts`): picked on the title screen per map (`save.threat`), 0 to
+5, each +12% enemy hitpoints, +10% enemy damage (boss +10%/+8%), −15% kill food, +2 champions
+in a hundred, +30% elites, a 6% quicker clock, every boss burning floor from 3, and +20% coins
+and +30% prize chance; a map opens a level each time it's beaten at its highest open
+(`stats.bestThreat`); the host's goes for a party (`GameStart.threat`, which the relay passes
+through as it is). `threatWorld` in run.ts scales the defs as `partyWorld` does. Bosses: the
+slam (now `SLAM_HIT` 2.5 times a hit, not 1.5) comes from a fight's start, every 7s and 4.5s
+enraged, not only enraged; and a boss without burning floor marks its target's spot every 6s
+when they're out of the slam's reach (`STRIKE_*`: 1.4 tiles, 1.3s, twice a hit). Escaping: a
+hit taken (not poison) starts the 10 seconds over. Accuracy (`hitChance` in combat.ts): 92% at
+the map's tier, +3% a tier above, −12% a tier below, bosses −6%; specials always land; a miss
+is a blue 0 with no spell effect, and an area spell's others roll their own. Tested in the
+seed tab: threat 5 made an imp 13 hp (8), the boss 900 (600) with floor, 31 champions; the
+strike ringed the player every 6s with the slam at the boss every 7s; a hit at the way out
+reset 2.0s to 0, poison didn't; 90 misses in 1000 bronze sword swings on Lumbridge.
+
 Version 146 (deployed 8 November 2026 as Version 2026.11.08, `GAME_BUILD` "2026.11.08"): ammunition, as the user asked, for thrown weapons
 that never ran out and enough shots for a whole run with a bow or staff, and speeds. Thrown
 weapons stack (`thrown` on ItemDef): one held, each throw takes another of the same from the

@@ -213,7 +213,7 @@ export const PRAYER_RESTORE = 40;
 export const POTION_EFFECT: Record<Potion, string> = {
     strength: "hits a quarter harder for a while",
     defence: "20 more defence for a while",
-    brew: "heals 40, and 15 more hitpoints for a while",
+    brew: "heals 40 like a bite of food, and 15 more hitpoints for a while",
     prayer: `puts ${PRAYER_RESTORE} back on the prayer bar`,
 };
 
@@ -1428,7 +1428,8 @@ export const ITEMS: ItemDef[] = [
     // defence, 3 for a brew, 4 for prayer, during a run
     potion(119, "Strength potion", "strength", 240),
     potion(137, "Defence potion", "defence", 200),
-    potion(6691, "Saradomin brew", "brew", 300),
+    // Version 150: a brew is priced near a lobster, as it heals near one
+    potion(6691, "Saradomin brew", "brew", 1500),
     potion(2434, "Prayer potion", "prayer", 220),
     { id: 995, name: "Coins", tier: 0, value: 1, stackable: true },
     { id: 526, name: "Bones", tier: 0, value: 2, stackable: true },

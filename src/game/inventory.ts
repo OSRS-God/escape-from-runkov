@@ -4,14 +4,20 @@ import { Equipment, ItemStack } from "./save";
 
 export const INVENTORY_SIZE = 28;
 
+// Whether something counts towards FOOD_LIMIT: food, and (version 150)
+// Saradomin brews, which heal too
+export function isFood(item: ItemDef): boolean {
+    return !!item.heal || item.potion === "brew";
+}
+
 // Whether a pack can take this many more of something, by what it's
-// carrying already: food is FOOD_LIMIT pieces in all, ammunition
+// carrying already: food and brews are FOOD_LIMIT in all, ammunition
 // AMMO_LIMITS arrows in all and runes of each kind (AMMO_PER_ITEM), thrown
 // weapons THROWN_LIMIT in all; everything else is only the slots
 export function canCarry(list: ItemStack[], id: number, count = 1): boolean {
     const item = getItem(id);
-    if (item.heal) {
-        const food = list.reduce((n, s) => n + (getItem(s.id).heal ? s.count : 0), 0);
+    if (isFood(item)) {
+        const food = list.reduce((n, s) => n + (isFood(getItem(s.id)) ? s.count : 0), 0);
         return food + count <= FOOD_LIMIT;
     }
     if (item.thrown) {
@@ -39,8 +45,8 @@ export function roomFor(list: ItemStack[], id: number, wanted: number): number {
 // Why canCarry said no, in a word
 export function carryLimitText(id: number): string {
     const item = getItem(id);
-    if (item.heal) {
-        return `You can't carry more than ${FOOD_LIMIT} pieces of food.`;
+    if (isFood(item)) {
+        return `You can't carry more than ${FOOD_LIMIT} pieces of food and brews together.`;
     }
     if (item.thrown) {
         return `You can't carry more than ${THROWN_LIMIT} thrown weapons of every kind together.`;

@@ -60,8 +60,9 @@ export type PetBuff = {
 export const PET_BUFFS: Record<string, PetBuff> = {
     // The Wise Old Man: prayer
     lumbridge: { text: "+6 prayer bonus", prayer: 6 },
-    // Verac: hits that always find their mark
-    barrows: { text: "your hits never roll below a third of the max", floor: 1 / 3 },
+    // Verac: hits that always find their mark (version 150: four fifths, as
+    // a hit already rolls 60% to 100% of the max, so a third did nothing)
+    barrows: { text: "your hits never roll below 80% of the max", floor: 0.8 },
     // The Chaos Fanatic: special attacks
     wilderness: { text: "the special bar fills 20% faster", spec: 0.2 },
     // The Kalphite Queen: a hard shell

@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 import { COINS, ITEMS, PRIZES, SLOTS, rollGear, rollShopStock } from "./content/items";
 import { TASKS } from "./content/tasks";
+import { clampThreat, threatOpen } from "./content/threat";
 import { WORLD_BY_ID, WorldDef, getWorld, mapUnlocked } from "./content/worlds";
 import { Account } from "./game/account";
 import { recordAttempt } from "./game/contract";
@@ -96,6 +97,8 @@ function packUp(worldId: string): RunCarry {
         wear: { ...save.wear },
         autocast: save.autocast,
         spellbook: save.spellbook,
+        // The level picked for the map, no higher than it's open to
+        threat: Math.min(save.threat?.[worldId] ?? 0, threatOpen(save.stats.bestThreat, save.stats.mapsBeaten, worldId)),
     };
 }
 
@@ -130,7 +133,8 @@ function startParty(game: GameStart): void {
         loot: game.loot,
     };
     launching = { ups: [], downs: [] };
-    void launchWorld(world, packUp(world.id), game.seed, coop).then(() => {
+    // The host's threat level goes for the whole party (version 150)
+    void launchWorld(world, { ...packUp(world.id), threat: clampThreat(game.threat) }, game.seed, coop).then(() => {
         const pending = launching;
         launching = undefined;
         for (const [from, message] of pending?.ups ?? []) {
@@ -277,6 +281,11 @@ async function onRunEnd(result: RunResult): Promise<void> {
         // Out with the boss slain: the map is beaten, and the next opens
         if (report.bossKills > 0 && !stats.mapsBeaten.includes(result.world.id)) {
             stats.mapsBeaten.push(result.world.id);
+        }
+        // And beaten at its threat level: the next level opens (version 150)
+        if (report.bossKills > 0) {
+            const level = result.carry.threat ?? 0;
+            stats.bestThreat = { ...stats.bestThreat, [result.world.id]: Math.max(stats.bestThreat?.[result.world.id] ?? 0, level) };
         }
         stats.bestHaul = Math.max(stats.bestHaul, result.carry.coins - broughtCoins);
         // A wish from the genie isn't a run to the way out, so it's no

@@ -1027,6 +1027,15 @@ button.github:hover {
     padding: 8px 14px;
 }
 
+/* The threat level for the next run (version 150) */
+.osrs-threat {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+    margin-bottom: 8px;
+}
+
 .contract {
     padding: 12px 16px 10px;
     border-radius: 12px;

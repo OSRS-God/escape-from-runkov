@@ -95,6 +95,21 @@ browsers.
   cache has them. Water stops a body but not sight: arrows, spells and a look still go across
   it, and a pond is never taken for a tree. Three tiles of land, cut off by water, went with
   it (one on Fremennik, two on Varlamore).
+- **Threat levels** (version 151; `content/threat.ts`): the title screen picks a level, 0 to 5,
+  for the map about to be played (`save.threat`, by map). Each level gives enemies 12% more
+  hitpoints and 10% harder hits (the boss 10% and 8%), 15% less food from kills, two more
+  champions in a hundred and 30% more elites, and a clock 6% quicker (the map waking and the
+  ways out closing); from level 3 every boss has burning floor. In return coins from kills,
+  chests, the vault and caskets come 20% fuller a level, and the chance at a prize 30% better.
+  A map opens one level at a time: beat it (escape with its boss slain) at the highest open to
+  open the next (`stats.bestThreat`, the map's record; a map beaten before levels came counts as
+  beaten at 0). In a party the host's level goes for everyone (`threat` on `GameStart`).
+- **Accuracy** (version 151; `hitChance` in `combat.ts`): a hit can miss, a blue 0. With a
+  weapon of the map's own tier 92% land, 3% more for each tier above (98% at most) and 12% fewer
+  for each below (50% at least); a boss dodges 6% more. A special always lands, and a miss
+  carries no freeze, poison or slow. The run's Stats panel shows it.
+- Escaping takes ten seconds holding E at a way out, and the first moment wakes everything idle
+  within fifteen tiles; since version 151 a hit taken (not poison) starts the ten seconds over.
 - One enemy in twenty is a champion: gilded, a third bigger, two and a half times the hitpoints,
   twice the damage, four times the coins, and always carrying a piece of gear. On four and five
   star maps champions come in pairs. One enemy in twelve is an elite, shown by its tint (`TRAITS`
@@ -102,17 +117,22 @@ browsers.
   your hits do six tenths), venomous (green, its hits poison you for four ticks of 3% of your
   hitpoints; any food settles it) or regenerating (pink, heals 2% a second once left alone for
   three seconds). An elite is worth twice the coins.
-- A boss below sixty percent is enraged: redder, attacking a third faster, with a few of the
-  map's commonest enemy at its side, and every seven seconds it slams the ground, a red ring on
-  the ground warning where a second ahead; stand in it and the hit is half again as hard. An
-  enraged boss left alone for ten seconds catches its breath and heals a tenth, so it can't be
+- A boss in a fight slams the ground every seven seconds, a red ring round it warning where a
+  second ahead; stand in it and the hit is two and a half times as hard (`SLAM_HIT`). A boss
+  with no burning floor also marks where whoever it's after stands, when they're out of the
+  slam's reach, every six seconds: a ring 1.4 tiles round them, then twice a hit 1.3 seconds
+  later (`STRIKE_*`), so a bow or a staff has something to step out of too. Below sixty
+  percent a boss is enraged: redder, attacking a third faster, slamming every four and a half
+  seconds, with a few of the map's commonest enemy at its side. An enraged boss left alone for ten seconds catches its breath and heals a tenth, so it can't be
   waited out at range. Every boss has a move by its map's tier (`defaultMoves` in `worlds.ts`):
   none at one star; hits through armour and protection at two; burning floor at three; a second
   form (or, for a shooter, swapping styles) at four; both at five. A few have their own instead
   (`MOVES`): both Jads swap between fire and arrows every cast and say which is coming, so
   protection has to swap with them; Verac's hits go through armour and protection; the Kalphite
   Queen sheds her shell and rises again at most of her health, quicker; the Hunllef marks tiles
-  round you every eight seconds that burst for a share of your hitpoints a moment later.
+  round you every eight seconds that burst for a share of your hitpoints a moment later. A
+  second form rises with 60% of the first's hitpoints, and the two together have what the
+  boss's tier gives it (`SECOND_FORM_SHARE`), so it's no tougher in all than its tier's others.
 - One chest in fifteen is a mimic: open it and a champion of the map's enemies is there
   instead. One in five of the rest is watched: opening it brings everything idle within twelve
   tiles running.
@@ -198,7 +218,8 @@ browsers.
   laid down by the host, so everyone sees it.
 - **F** eats, picking the food that fills the gap best. **1**, **2** and **3** drink a strength
   potion (hits a quarter harder), a defence potion (20 more defence) or a Saradomin brew (heals
-  40, and 15 more hitpoints), each for 90 seconds; **4** drinks a prayer potion, which puts 40
+  40, and 15 more hitpoints), each for 90 seconds. A brew counts as a bite: it waits out the eating
+  delay and starts it, and brews count towards the 15 pieces of food a pack can hold; **4** drinks a prayer potion, which puts 40
   back on the prayer bar at once. The hotbar at the bottom shows what each key would use and how
   long a potion has left. Enemies drop prayer potions one kill in twenty-five, and the shop and
   chests have them.
@@ -224,7 +245,7 @@ browsers.
   in the courtyard, and is yours whatever happens out there. The Tasks screen lists them and
   picks which one comes along (`pets.ts`). A boss drops no second pet. The pet that follows
   gives one small gift of its boss's (`PET_BUFFS`, applied by `run.ts`): the Wise Old Man's +6
-  prayer bonus, Verac's hits that never roll below a third of the max, the Chaos Fanatic's
+  prayer bonus, Verac's hits that never roll below 80% of the max, the Chaos Fanatic's
   special bar 20% faster, the Kalphite Queen's 6% more defence, Dagannoth Prime's one shot in
   five taking no ammunition, TzTok-Jad's 8 hitpoints, Skotizo's 1 off every hit taken, the
   Javelin Colossus's 5% faster walking, Sotetseg's breath caught twice as fast, K'ril's hits 5%
@@ -340,8 +361,9 @@ browsers.
   with no flight, as in OSRS. Smoke poisons (five green hits of 15% of the max, 17% for blitz
   and barrage, three seconds apart), shadow takes 10% off the target's hits for 30 seconds (15%
   for blitz and barrage; `weakScale`), blood heals the caster a quarter of what it dealt, and
-  ice freezes the target in place for OSRS's 4.8, 9.6, 14.4 or 19.2 seconds (a boss shrugs it
-  off; a frozen enemy still swings at what's beside it). Soul runes (566, tier 4) are new for
+  ice freezes the target in place for 2.4, 4.8, 7.2 or 9.6 seconds, half OSRS's (a boss shrugs it
+  off; a frozen enemy still swings at what's beside it). A freeze isn't topped up while it holds,
+  and once it thaws the enemy can't be frozen again for 5 seconds, so ice can't hold it for good. Soul runes (566, tier 4) are new for
   the shadow spells and Blood Barrage; tier 3 and up maps also drop chaos runes, and tier 4 and
   up death and soul runes, beside their own catalyst. In co-op a guest's spell effects go up
   with the hit (`frz`, `wk`, `psn`).
