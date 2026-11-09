@@ -4401,6 +4401,14 @@ export class Run {
         scatter?: number,
         from?: "boss" | "crystal",
     ): void {
+        // Away from a boss's chest the tiers past FOUND_TIER_MAX are left out
+        // of the roll (the rest keep their weights to each other), or it's
+        // FOUND_TIER_MAX itself where that leaves none (a four or five star
+        // map's)
+        if (from !== "boss") {
+            const allowed = tiers.filter((t) => t.tier <= FOUND_TIER_MAX);
+            tiers = allowed.length > 0 ? allowed : [{ tier: FOUND_TIER_MAX, weight: 1 }];
+        }
         let roll = this.rng() * tiers.reduce((n, t) => n + t.weight, 0);
         let pick = tiers[tiers.length - 1].tier;
         for (const t of tiers) {
@@ -4412,8 +4420,6 @@ export class Run {
         }
         if (from === "crystal" && this.rng() < CRYSTAL_PURPLE_CHANCE) {
             pick = FOUND_TIER_MAX + 1;
-        } else if (from !== "boss") {
-            pick = Math.min(pick, FOUND_TIER_MAX);
         }
         // A threat level's better odds at a prize (version 150)
         const item = rollGear(this.rng, pick, Math.min(1, prizes * this.threat.prizes));
