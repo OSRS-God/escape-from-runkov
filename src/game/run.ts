@@ -137,7 +137,7 @@ import { playMusic } from "./music";
 import { PlayerLook, RUN_CLIP_SPEED } from "./player";
 import { isKept } from "./kit";
 import { starterKit } from "./starter";
-import { MERC_CUT, MERC_DEFS, MercDef, MercKind, mercGear, mercScale } from "./mercs";
+import { MERC_CUT, MERC_DEFS, MercDef, MercKind, mercScale, mercWears } from "./mercs";
 import { Region, Tile, TileSet, loadRegion } from "./region";
 import { CASTLE_ROOMS, CAVE_ROOMS, CaveLayout, layoutCave } from "./caves";
 import {
@@ -220,8 +220,9 @@ export type RunCarry = {
     threat?: number;
     // The character's starter class (starter.ts, version 171), for its perk
     perk?: string;
-    // The mercenary hired for a solo run (mercs.ts, version 173)
-    merc?: { kind: MercKind; name: string; level: number };
+    // The mercenary hired for a solo run (mercs.ts, version 173), with what
+    // they've been given to wear and eat (version 175)
+    merc?: { kind: MercKind; name: string; level: number; gear?: Equipment; food?: ItemStack[] };
 };
 
 // The starter classes' perks (version 171, as the user asked; starter.ts
@@ -408,7 +409,8 @@ export type RunReport = {
     kingSlain?: boolean;
     // Version 173: whether the mercenary lived (and so whether their kind
     // goes up a level or starts again), and the coins they took
-    merc?: { kind: MercKind; survived: boolean };
+    // (and what they wear and carry of yours now: version 175)
+    merc?: { kind: MercKind; survived: boolean; gear: Equipment; food: ItemStack[] };
     mercCut?: number;
 };
 
@@ -4798,14 +4800,23 @@ export class Run {
     // as a player in their kind's gear, walking and fighting as a freed
     // prisoner does, a medic patching you up as they go
 
+    // (version 175: their gear's numbers, as a player's are, what you've
+    // given them of it, the food you've given them, and which build of their
+    // look is the latest)
     private merc?: {
+        kind: MercKind;
         def: MercDef;
         name: string;
         level: number;
         hero: Hero;
         look?: PlayerLook;
+        looks: number;
         attackClip: string;
         bar: HealthBar;
+        stats: GearStats;
+        gear: Equipment;
+        food: ItemStack[];
+        eatIn: number;
         x: number;
         z: number;
         facing: number;
@@ -4817,19 +4828,19 @@ export class Run {
         deadFor: number;
         gone: boolean;
     };
+    // What you've put down for them to take (dropItem's), and what they've
+    // looked at and left
+    private readonly givenUids = new Set<number>();
+    private readonly mercLeft = new Set<number>();
 
     // The mercenary, beside you where you came in, at their kind's numbers
-    // for the map's tier and their level
+    // for the map's tier and their level, and their gear's
     private async makeMerc(): Promise<void> {
         const hired = this.carry.merc;
         if (!hired || this.coop) {
             return;
         }
         const def = MERC_DEFS[hired.kind];
-        const tier = this.world.tier;
-        const scale = mercScale(hired.level);
-        const maxHp = Math.round((def.hp + def.hpTier * tier) * scale);
-        const defence = def.defenceTier * tier;
         let x = this.px;
         let z = this.pz;
         for (const [ox, oz] of [
@@ -4844,18 +4855,22 @@ export class Run {
                 break;
             }
         }
-        const hero: Hero = { id: "merc", name: hired.name, x, z, facing: 0, hp: maxHp, maxHp, dead: false, defenceVs: [defence, defence, defence], protect: "none", me: false };
+        const hero: Hero = { id: "merc", name: hired.name, x, z, facing: 0, hp: 1, maxHp: 1, dead: false, defenceVs: [0, 0, 0], protect: "none", me: false };
         const bar = this.makeHealthBar();
         this.scene.add(bar.group);
-        const equipment = mercGear(hired.kind, hired.level);
-        const weapon = equipment.weapon !== undefined ? getItem(equipment.weapon) : undefined;
         this.merc = {
+            kind: hired.kind,
             def,
             name: hired.name,
             level: hired.level,
             hero,
-            attackClip: weapon?.attackClip ?? "attack",
+            looks: 0,
+            attackClip: "attack",
             bar,
+            stats: gearStats({}),
+            gear: { ...(hired.gear ?? {}) },
+            food: (hired.food ?? []).map((s) => ({ ...s })),
+            eatIn: 0,
             x,
             z,
             facing: 0,
@@ -4867,17 +4882,92 @@ export class Run {
             deadFor: 0,
             gone: false,
         };
-        const character: Character = { ...this.character, name: hired.name, colors: this.character.colors.map((c, i) => def.colors[i] ?? c) };
-        const look = await PlayerLook.create(character, equipment);
-        if (this.ended || !this.merc) {
+        this.mercStats(true);
+        await this.dressMerc();
+    }
+
+    // Their numbers from what they wear, as a player's are (inventory.ts
+    // gearStats): its hitpoints on their kind's own for the map's tier and
+    // their level, its defence on their kind's, its weapon's swing and reach
+    private mercStats(whole = false): void {
+        const m = this.merc!;
+        const tier = this.world.tier;
+        const stats = gearStats(mercWears(m.kind, { level: m.level, gear: m.gear }));
+        m.stats = stats;
+        const maxHp = Math.round((m.def.hp + m.def.hpTier * tier) * mercScale(m.level)) + stats.hp;
+        m.hero.hp = whole ? maxHp : Math.min(maxHp, m.hero.hp + Math.max(0, maxHp - m.hero.maxHp));
+        m.hero.maxHp = maxHp;
+        const own = m.def.defenceTier * tier;
+        m.hero.defenceVs = [stats.defenceVs.melee + own, stats.defenceVs.ranged + own, stats.defenceVs.magic + own];
+        m.attackClip = stats.weapon?.attackClip ?? "attack";
+    }
+
+    // Their look in what they wear, built again whenever it changes (the
+    // latest build kept, where they stand)
+    private async dressMerc(): Promise<void> {
+        const m = this.merc;
+        if (!m) {
             return;
         }
-        look.stance = weapon?.stance;
+        const build = ++m.looks;
+        const character: Character = { ...this.character, name: m.name, colors: this.character.colors.map((c, i) => m.def.colors[i] ?? c) };
+        const look = await PlayerLook.create(character, mercWears(m.kind, { level: m.level, gear: m.gear }));
+        if (this.ended || this.merc !== m || build !== m.looks || m.gone) {
+            return;
+        }
+        const old = m.look;
+        if (old) {
+            this.scene.remove(old.root);
+        }
+        look.stance = m.stats.weapon?.stance;
         look.root.scale.setScalar(this.character.size);
-        look.root.position.set(x, this.groundY(x, z), z);
-        look.play("idle");
+        look.root.position.set(m.x, this.groundY(m.x, m.z), m.z);
+        look.root.rotation.y = m.facing;
+        look.play(m.hero.dead ? "death" : "idle", { once: m.hero.dead });
         this.scene.add(look.root);
-        this.merc.look = look;
+        m.look = look;
+    }
+
+    // Something you put down, taken up: gear goes on (what it replaces of
+    // yours goes down where they stand, their own kit's they keep to
+    // themselves), food into their pack; anything else they leave
+    private mercTakes(p: Pickup): void {
+        const m = this.merc!;
+        const item = getItem(p.id);
+        const name = item.name.toLowerCase();
+        if (item.heal) {
+            this.removePickup(p);
+            const have = m.food.find((s) => s.id === p.id);
+            if (have) {
+                have.count += p.count;
+            } else {
+                m.food.push({ id: p.id, count: p.count });
+            }
+            this.hooks.onMessage(`${m.name} packs the ${name}, to eat when they're hurt.`);
+            return;
+        }
+        const slot = item.slot;
+        const weapon = m.stats.weapon;
+        if (!slot || (slot === "shield" && weapon?.twoHanded)) {
+            this.mercLeft.add(p.uid);
+            this.hooks.onMessage(slot ? `${m.name} can't hold a shield with a two-handed weapon.` : `${m.name} has no use for the ${name}.`);
+            return;
+        }
+        this.removePickup(p);
+        const giveBack = (id: number | undefined) => {
+            if (id !== undefined) {
+                this.dropPickup(id, 1, m.x, m.z, 0.4);
+            }
+        };
+        giveBack(m.gear[slot]);
+        m.gear[slot] = p.id;
+        if (slot === "weapon" && item.twoHanded) {
+            giveBack(m.gear.shield);
+            delete m.gear.shield;
+        }
+        this.mercStats();
+        void this.dressMerc();
+        this.hooks.onMessage(slot === "weapon" || slot === "shield" ? `${m.name} takes up the ${name}.` : `${m.name} takes the ${name} and puts it on.`);
     }
 
     // A hit on the mercenary (hurtHero's), their armour off it; at none
@@ -4917,9 +5007,19 @@ export class Run {
             return;
         }
         const scale = mercScale(m.level);
-        const tier = this.world.tier;
         m.busy -= dt;
         m.swingIn -= dt;
+        // Hurt, they eat what you gave them (version 175)
+        m.eatIn -= dt;
+        if (m.eatIn <= 0 && m.hero.hp < m.hero.maxHp * 0.5 && m.food.length > 0) {
+            const bite = m.food.reduce((a, b) => ((getItem(b.id).heal ?? 0) > (getItem(a.id).heal ?? 0) ? b : a));
+            m.hero.hp = Math.min(m.hero.maxHp, m.hero.hp + (getItem(bite.id).heal ?? 0));
+            bite.count--;
+            if (bite.count <= 0) {
+                m.food.splice(m.food.indexOf(bite), 1);
+            }
+            m.eatIn = EAT_DELAY;
+        }
         if (m.def.heal && !this.dead && !this.done) {
             m.healIn -= dt;
             if (m.healIn <= 0) {
@@ -4930,8 +5030,11 @@ export class Run {
                 }
             }
         }
+        // (a bow's or a staff's reach since version 175: their weapon's, as a
+        // player's; no arrows or runes asked of them)
+        const reach = m.stats.ranged ? m.stats.range : 0;
         let target: Enemy | undefined;
-        let best = ALLY_REACH + m.def.reach;
+        let best = ALLY_REACH + reach;
         for (const e of this.enemies) {
             if (e.state === "dead" || e.def.passive || (e.burrowed !== undefined && e.burrowed > 0) || Math.hypot(e.x - this.px, e.z - this.pz) > ALLY_REACH * 1.5) {
                 continue;
@@ -4942,12 +5045,29 @@ export class Run {
                 target = e;
             }
         }
-        const gx = target ? target.x : this.px;
-        const gz = target ? target.z : this.pz;
-        const stop = target ? (m.def.reach > 0 ? m.def.reach : target.def.radius + 0.8) : ALLY_FOLLOW;
+        // Nothing to fight: what you've put down for them, if it's near
+        let fetch: Pickup | undefined;
+        if (!target) {
+            let near = ALLY_REACH;
+            for (const p of this.pickups) {
+                if (!this.givenUids.has(p.uid) || this.mercLeft.has(p.uid)) {
+                    continue;
+                }
+                const d = Math.hypot(p.x - m.x, p.z - m.z);
+                if (d < near) {
+                    near = d;
+                    fetch = p;
+                }
+            }
+        }
+        const gx = target ? target.x : fetch ? fetch.x : this.px;
+        const gz = target ? target.z : fetch ? fetch.z : this.pz;
+        const stop = target ? (reach > 0 ? reach : target.def.radius + 0.8) : fetch ? 0.6 : ALLY_FOLLOW;
         const d = Math.hypot(gx - m.x, gz - m.z);
         m.walking = false;
-        if ((!target && d > 20) || m.stuck > ALLY_STUCK) {
+        if (fetch && d <= stop) {
+            this.mercTakes(fetch);
+        } else if ((!target && !fetch && d > 20) || m.stuck > ALLY_STUCK) {
             this.allyCatchUp(m, this.self);
         } else if (d > stop) {
             this.allyStep(m, gx, gz, this.self, dt);
@@ -4957,10 +5077,13 @@ export class Run {
         } else if (target) {
             m.facing = Math.atan2(gx - m.x, gz - m.z);
             if (m.swingIn <= 0) {
-                m.swingIn = m.def.every;
+                // Their weapon's swing and hit, as a player's (version 175),
+                // their kind's share of it and their level's on top
+                m.swingIn = Math.max(0.6, m.stats.speed);
                 m.busy = 0.9;
                 m.look?.play(m.attackClip, { once: true });
-                this.damageEnemy(target, randInt(this.rng, 0, Math.round((ALLY_HIT + ALLY_HIT_TIER * tier) * m.def.hit * scale)), this.self);
+                const lands = this.rng() < hitChance(m.stats.weapon?.tier ?? 1, this.world.tier, !!target.def.boss);
+                this.damageEnemy(target, lands ? Math.max(1, Math.round(playerHit(m.stats, this.rng()) * m.def.hit * scale)) : 0, this.self);
             } else if (m.busy <= 0) {
                 m.look?.play("idle");
             }
@@ -6242,7 +6365,10 @@ export class Run {
                 balloons: this.balloonsBurst,
                 contract: this.contract?.done,
                 kingSlain: this.kingSlain,
-                merc: this.carry.merc && !this.coop ? { kind: this.carry.merc.kind, survived: mercAlive } : undefined,
+                merc:
+                    this.carry.merc && !this.coop
+                        ? { kind: this.carry.merc.kind, survived: mercAlive, gear: { ...(this.merc?.gear ?? this.carry.merc.gear ?? {}) }, food: (this.merc?.food ?? this.carry.merc.food ?? []).map((s) => ({ ...s })) }
+                        : undefined,
                 mercCut,
             },
         });
@@ -11349,7 +11475,12 @@ export class Run {
         if (this.coop?.role === "guest") {
             this.coop.send({ k: "drop", i: id, n: count, x: round2(dx), z: round2(dz) } satisfies UpMessage);
         } else {
-            this.dropPickup(id, count, dx, dz, 0);
+            // (marked for a mercenary to take up: version 175)
+            const uid = this.nextUid++;
+            this.dropPickup(id, count, dx, dz, 0, uid);
+            if (this.merc && !this.merc.hero.dead) {
+                this.givenUids.add(uid);
+            }
         }
         this.hooks.onMessage(`You drop ${count > 1 ? count + " " : ""}${item.name}.`);
         this.hooks.onChanged();

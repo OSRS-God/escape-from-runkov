@@ -5,7 +5,7 @@
 // till let go, a fall costing only that run, and MERC_CUT of the coins found
 // taken at the end of every run. run.ts moves them.
 import { AttackStyle, GEAR_BY_TIER, ItemDef, PRIZES, Slot } from "../content/items";
-import type { Equipment } from "./save";
+import type { Equipment, ItemStack } from "./save";
 
 export type MercKind = "sellsword" | "bowman" | "mage" | "medic";
 export const MERC_KINDS: MercKind[] = ["sellsword", "bowman", "mage", "medic"];
@@ -128,15 +128,25 @@ export function mercPrice(kind: MercKind, level: number): number {
     return Math.round(MERC_DEFS[kind].price * (1 + MERC_LEVEL_FEE * (level - 1)));
 }
 
-// What a mercenary's kind and level does to his numbers
+// What a mercenary's kind and level does to their numbers
 export function mercScale(level: number): number {
     return 1 + MERC_LEVEL_UP * (Math.max(1, level) - 1);
 }
 
-// What he wears: his kind's gear of his level's tier (the first item of each
-// slot there is, so it's the same every time), and his weapon's style's
+// The hall's record of one (version 175: and what you've given them to wear
+// and eat, theirs till they're let go, when it comes back to your bank)
+export type MercRecord = { name: string; level: number; gear?: Equipment; food?: ItemStack[] };
+
+// What they wear: what you've given them over their own kit
+export function mercWears(kind: MercKind, record: Pick<MercRecord, "level" | "gear">): Equipment {
+    return { ...mercGear(kind, record.level), ...(record.gear ?? {}) };
+}
+
+// Their own kit: their kind's gear of their level's tier (a tier every two
+// levels since version 175, as their gear's what they hit with now: the
+// first item of each slot there is, so it's the same every time)
 export function mercGear(kind: MercKind, level: number): Equipment {
-    const tier = Math.min(5, Math.max(1, level));
+    const tier = Math.min(5, Math.max(1, Math.ceil(level / 2)));
     const def = MERC_DEFS[kind];
     const pieces = (GEAR_BY_TIER.get(tier) ?? []).filter((i) => !PRIZES.has(i.id) && !i.exclusive && !i.reward);
     const kindOf = (i: ItemDef) => (i.slot === "weapon" ? (i.uses === "runes" ? "magic" : i.ranged ? "ranged" : "melee") : (i.style ?? "melee"));

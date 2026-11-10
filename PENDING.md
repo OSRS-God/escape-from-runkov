@@ -189,6 +189,26 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 175 (not yet deployed), as the user asked: mercenaries wear and wield what you give
+them, as a player would.
+- Drop an item on a solo run while your mercenary stands: with no foe near they walk to it
+  (within ALLY_REACH) and take it. Armour and weapons go on (run.ts `mercTakes`), and what it
+  replaces of yours is dropped at their feet; a two-handed weapon drops your shield, and a
+  shield won't go on while they hold one. Food is packed and eaten below half health (best
+  first, EAT_DELAY apart). Anything else they leave lying.
+- Their stats are a player's from gear (`gearStats(mercWears(...))`): gear hp and defence on
+  top of their own, the weapon's speed, reach (bows and staves need no ammo or runes) and hit
+  (`playerHit` times their kind's share and level), landing by the weapon's tier against the
+  world's. Their own kit is now a tier every two levels (mercs.ts `mercGear`).
+- Their model is rebuilt with each new piece (`dressMerc`, PlayerLook with the worn gear).
+- What you gave them stays on them between runs (save.ts MercRecord `gear` and `food`) and
+  comes back to your stash when you let them go, or with "Take back gear" in the hall, whose
+  rows mark your pieces "(yours)".
+- Tested: a sellsword given rune armour, scimitar, an anti-dragon shield and lobsters took
+  each, her look changed, max hit 6 to 30, defence 25 to 75; the gear stayed after the run and
+  came back with Take back gear.
+- The balance sim (`MERC=`) still models their own kit only, not gear given.
+
 Version 174 (not yet deployed), as the user asked: mercenaries are yours for good, and every
 starter class can afford one.
 - Hired once for the fee, a mercenary comes on every solo run till let go (save.ts `hired`

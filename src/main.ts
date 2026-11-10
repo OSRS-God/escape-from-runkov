@@ -657,6 +657,9 @@ function settleMerc(result: RunResult): MercGain | undefined {
         return undefined;
     }
     const title = MERC_DEFS[went.kind].title.toLowerCase();
+    // What you've given them they keep, whatever happened (version 175)
+    record.gear = went.gear;
+    record.food = went.food;
     const cut = result.report.mercCut ?? 0;
     const paid = cut > 0 ? ` Their share: ${cut.toLocaleString()} coins.` : "";
     if (!went.survived) {

@@ -77,7 +77,7 @@ import {
 import { TASKS, Task } from "../content/tasks";
 import { isKept, restoreCrownPets } from "../game/kit";
 import { STARTER_COINS, STARTER_KITS, StarterKit, applyStarter, pickClass } from "../game/starter";
-import { MERC_DEFS, MERC_MAX_LEVEL, MercGain, MercKind, mercPrice, mercsOffered } from "../game/mercs";
+import { MERC_DEFS, MERC_MAX_LEVEL, MercGain, MercKind, mercPrice, mercWears, mercsOffered } from "../game/mercs";
 import { Chat } from "./chat";
 import { FullMap } from "./fullmap";
 import { REGEN_DELAY, hitChance, soak } from "../game/combat";
@@ -5379,10 +5379,37 @@ export class UI {
             this.message(`${record.name} the ${def.title.toLowerCase()} is yours now, and comes on every solo run.`);
             this.showMercs();
         };
-        // Let go: no fee back, but they keep their level for another day
+        // What you've given one comes back to your bank (version 175)
+        const takeBack = (kind: MercKind) => {
+            const record = save.mercs?.[kind];
+            if (!record) {
+                return;
+            }
+            for (const id of Object.values(record.gear ?? {})) {
+                if (id !== undefined) {
+                    addItem(save.stash, id, 1);
+                }
+            }
+            for (const s of record.food ?? []) {
+                addItem(save.stash, s.id, s.count);
+            }
+            record.gear = undefined;
+            record.food = undefined;
+        };
+        // Let go: no fee back, but they keep their level for another day, and
+        // what you gave them comes back to you
         const dismiss = () => {
+            if (save.hired) {
+                takeBack(save.hired);
+            }
             save.hired = undefined;
             this.persist();
+            this.showMercs();
+        };
+        const reclaim = (kind: MercKind) => {
+            takeBack(kind);
+            this.persist();
+            this.message("What you gave them is back in your bank.");
             this.showMercs();
         };
         const rows = offered.map((kind) => {
@@ -5392,6 +5419,16 @@ export class UI {
             const price = mercPrice(kind, level);
             const hired = save.hired === kind;
             const who = record ? `${record.name}, level ${level}${level >= MERC_MAX_LEVEL ? " (the best there is)" : ""}` : "a new hand, level 1";
+            // What they wear (yours given them marked), and their pack
+            const given = new Set(Object.values(record?.gear ?? {}));
+            const wears = Object.values(mercWears(kind, { level, gear: record?.gear })).filter((id): id is number => id !== undefined);
+            const gear = h(
+                "span",
+                { class: "starter-gear" },
+                ...wears.map((id) => h("span", { class: "starter-item" + (given.has(id) ? " given" : ""), title: `${getItem(id).name}${given.has(id) ? " (yours)" : ""}` }, this.itemIcon(id))),
+                ...(record?.food ?? []).map((s) => h("span", { class: "starter-item given", title: `${s.count} ${getItem(s.id).name} (yours)` }, this.itemIcon(s.id))),
+            );
+            const hasGiven = given.size > 0 || (record?.food?.length ?? 0) > 0;
             return h(
                 "div",
                 { class: "item-row map-row" + (hired ? " done" : "") },
@@ -5400,7 +5437,9 @@ export class UI {
                     { class: "name" },
                     h("div", { class: "map-name" }, def.title, h("span", { class: "beaten" }, ` ${who}`)),
                     h("div", { class: "stats" }, def.blurb),
+                    gear,
                 ),
+                hasGiven ? h("button", { onclick: () => reclaim(kind) }, "Take back gear") : null,
                 hired
                     ? h("button", { onclick: dismiss }, "Let go")
                     : h(

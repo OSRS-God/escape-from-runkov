@@ -4,7 +4,7 @@ import { FOUND_TIER_MAX, ITEM_BY_ID, Slot, getItem, rollShopStock } from "../con
 import { Book, SPELL_BY_ID } from "../content/spells";
 import { clampThreat } from "../content/threat";
 import { DEFAULT_COLORS, DEFAULT_KITS } from "./player";
-import type { MercKind } from "./mercs";
+import type { MercKind, MercRecord } from "./mercs";
 
 export type ItemStack = { id: number; count: number };
 export type Equipment = Partial<Record<Slot, number>>;
@@ -91,7 +91,7 @@ export type SaveData = {
     starterClass?: string;
     // Version 173: the Mercenaries' Hall's (mercs.ts) men by kind, each his
     // name and level, and the one hired for the next solo run (paid for)
-    mercs?: Partial<Record<MercKind, { name: string; level: number }>>;
+    mercs?: Partial<Record<MercKind, MercRecord>>;
     hired?: MercKind;
     // Whether the save has had version 146's thrown weapons sorted out
     // (parseSave): true for any save made since
