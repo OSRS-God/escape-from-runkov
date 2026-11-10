@@ -11,6 +11,12 @@
 //   GET  /api/save         (Bearer token)            -> { name, save, rev }
 //   PUT  /api/save         { save, rev }             -> { rev }, or 409 with the newer
 //   POST /api/logout       (Bearer token)
+//   GET  /api/daily?day=   the day's daily cave board -> { day, top: [{ name, score }] }
+//   POST /api/daily        { day, score } (Bearer token) -> { best, rank }
+//
+// The daily cave (version 161): the Depths' cave of the day, the same for
+// everyone; each account's best haul escaped from it that day, today's or
+// yesterday's only.
 //
 // Passwords are kept only as PBKDF2 hashes, a device's token only as its
 // SHA-256. Wrong passwords and sign-ups are limited per name and address.
@@ -19,6 +25,7 @@ type Row = Record<string, unknown>;
 interface D1Statement {
     bind(...values: unknown[]): D1Statement;
     first<T = Row>(): Promise<T | null>;
+    all<T = Row>(): Promise<{ results?: T[] }>;
     run(): Promise<unknown>;
 }
 interface D1Database {
@@ -57,7 +64,17 @@ const SCHEMA = [
     "CREATE TABLE IF NOT EXISTS attempts (key TEXT NOT NULL, at INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS attempts_key ON attempts (key, at)",
     "CREATE INDEX IF NOT EXISTS sessions_account ON sessions (account)",
+    "CREATE TABLE IF NOT EXISTS daily (day INTEGER NOT NULL, account INTEGER NOT NULL, name TEXT NOT NULL, score INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (day, account))",
+    "CREATE INDEX IF NOT EXISTS daily_board ON daily (day, score DESC)",
 ];
+// The board's length, and the most a haul out of one cave can be worth
+const DAILY_TOP = 20;
+const DAILY_MAX_SCORE = 5_000_000_000;
+
+// Days since 1970, by UTC: the daily cave's number
+function today(): number {
+    return Math.floor(Date.now() / 86_400_000);
+}
 let tablesMade: Promise<unknown> | undefined;
 
 const CORS = {
@@ -345,6 +362,42 @@ export async function onRequest(context: Context): Promise<Response> {
                 }
                 return json(200, { rev: done.rev });
             }
+        }
+        if (route === "daily" && request.method === "GET") {
+            const asked = Number(url.searchParams.get("day"));
+            const day = Number.isInteger(asked) && Math.abs(asked - today()) <= 1 ? asked : today();
+            const rows = await db
+                .prepare("SELECT name, score FROM daily WHERE day = ? ORDER BY score DESC, at ASC LIMIT ?")
+                .bind(day, DAILY_TOP)
+                .all<{ name: string; score: number }>();
+            return json(200, { day, top: rows.results ?? [] });
+        }
+        if (route === "daily" && request.method === "POST") {
+            const account = await signedIn(db, request);
+            if (!account) {
+                return fail(401, "Log in to go on the daily board.");
+            }
+            const body = await readJson(request);
+            const day = Number(body?.day);
+            const score = Math.floor(Number(body?.score));
+            if (!Number.isInteger(day) || Math.abs(day - today()) > 1) {
+                return fail(400, "That day's cave is closed.");
+            }
+            if (!Number.isFinite(score) || score < 0 || score > DAILY_MAX_SCORE) {
+                return fail(400, "That isn't a haul.");
+            }
+            await db
+                .prepare(
+                    "INSERT INTO daily (day, account, name, score, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (day, account) DO UPDATE SET score = excluded.score, name = excluded.name, at = excluded.at WHERE excluded.score > daily.score",
+                )
+                .bind(day, account.id, account.name, score, Date.now())
+                .run();
+            const best = await db.prepare("SELECT score FROM daily WHERE day = ? AND account = ?").bind(day, account.id).first<{ score: number }>();
+            const above = await db
+                .prepare("SELECT COUNT(*) AS n FROM daily WHERE day = ? AND score > ?")
+                .bind(day, best?.score ?? score)
+                .first<{ n: number }>();
+            return json(200, { best: best?.score ?? score, rank: (above?.n ?? 0) + 1 });
         }
         if (route === "logout" && request.method === "POST") {
             const token = /^Bearer ([0-9a-f]{64})$/.exec(request.headers.get("Authorization") ?? "")?.[1];

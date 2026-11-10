@@ -107,6 +107,7 @@ import { applyMusicVolume } from "../game/music";
 import { PET_ONE_IN, isBossPet, petBuff, petFrom, petName } from "../game/pets";
 import { BODY_PART_NAMES, COLOR_GROUP_NAMES, loadColorTables, loadKits } from "../game/player";
 import { AIM_SLOW, Run, RunResult, TRADER_MARKUP } from "../game/run";
+import { DEPTH_TITLES, DepthsGain, dailyDay, dailyDepth, dailyLeft } from "../game/depths";
 import {
     CHARACTER_SLOTS,
     Equipment,
@@ -114,11 +115,14 @@ import {
     Loadout as SaveLoadout,
     MAX_BANK_TABS,
     MAX_FRIENDS,
+    DEPTHS_UPGRADES,
+    DepthsUpgradeKey,
     MAX_LOADOUTS,
     Mode,
     SaveData,
     UPGRADES,
     Upgrades,
+    depthsOf,
     loadedSlot,
     modeOf,
     restartProfile,
@@ -156,6 +160,9 @@ type Child = Node | string | null | undefined | false;
 // The elemental runes, which the shop sells by the hundred (spells take
 // several a cast; version 106)
 const ELEMENTAL_RUNES = [AIR_RUNE, WATER, EARTH, FIRE];
+// What the shop sells besides in the Depths (version 161): the bullseye
+// lantern, and oil for it
+const DEPTHS_SHOP = [4550, 277];
 
 type HotSlot = {
     kind: "food" | Potion;
@@ -276,6 +283,18 @@ function describe(item: ItemDef): string {
     }
     if (item.clue) {
         parts.push("names a spot to dig");
+    }
+    if (item.brimstone) {
+        parts.push("opens the Depths' brimstone chest");
+    }
+    if (item.lantern) {
+        parts.push("lights more of the Depths' dark round you while there's oil in the pack");
+    }
+    if (item.oil) {
+        parts.push("keeps a bullseye lantern lit two minutes a can");
+    }
+    if (item.reward === "depths") {
+        parts.push("the Depths' own: escape depth 5 with a boss slain; your hits land a tenth harder down there");
     }
     if (item.slot) {
         parts.push(item.slot);
@@ -532,6 +551,8 @@ function itemRow(item: ItemDef, count: number, ...buttons: HTMLElement[]): HTMLE
 
 export type UIHooks = {
     startRun(worldId: string): void;
+    // The Depths' daily cave (version 161): today's, the same for everyone
+    startDaily(): void;
 };
 
 export class UI {
@@ -1730,6 +1751,8 @@ export class UI {
             "div",
             { class: "card-sub" },
             crown ? `${crown.word} · ` : "",
+            // The Depths' title, for the deepest depth cleared (version 161)
+            modeOf(save) === "endless" && save.depths?.title ? h("span", { class: "orange" }, `${save.depths.title} · `) : "",
             "combat ",
             h("span", { class: "green" }, String(combatLevel(save.equipment))),
         );
@@ -3081,6 +3104,43 @@ export class UI {
         if (endlessAt >= 0 && !endlessMode) {
             rows.splice(endlessAt, 0, h("div", { class: "map-mode" }, "The Depths"));
         }
+        // The daily cave (version 161): today's, the same for everyone, and
+        // its board of the day's best hauls
+        if (endlessMode) {
+            const progress = depthsOf(this.save);
+            const day = dailyDay();
+            const mine = progress.daily?.day === day ? progress.daily.best : 0;
+            const board = h("div", { class: "stats daily-board" }, "Loading the board...");
+            void this.account?.dailyBoard(day).then((result) => {
+                board.replaceChildren(
+                    ...(result.ok
+                        ? result.data.top.length > 0
+                            ? result.data.top.map((row, i) => h("div", {}, `${i + 1}. ${row.name}: ${formatCoins(row.score)}`))
+                            : [h("div", {}, "Nobody's got out of today's cave yet.")]
+                        : [h("div", {}, "The board can't be reached right now.")]),
+                );
+            });
+            rows.push(
+                h("div", { class: "map-mode" }, "The daily cave"),
+                h(
+                    "div",
+                    { class: "item-row map-row" },
+                    h(
+                        "div",
+                        { class: "name" },
+                        h("div", { class: "map-name" }, "Today's cave ", h("span", { class: "beaten" }, ` depth ${dailyDepth(day)}, ${dailyLeft()} left`)),
+                        h(
+                            "div",
+                            { class: "stats" },
+                            "The same cave for everyone today, dug from the day's own seed. What you get out over what you took in is your haul: the best go on the board (an account's, logged in). It doesn't take you a depth deeper.",
+                        ),
+                        h("div", { class: "stats" }, mine > 0 ? `Your best today: ${formatCoins(mine)}.` : "You haven't got out of today's cave yet."),
+                        board,
+                    ),
+                    h("button", { class: "primary", onclick: () => this.hooks.startDaily() }, "Go"),
+                ),
+            );
+        }
         this.show(
             h(
                 "div",
@@ -3090,7 +3150,7 @@ export class UI {
                     "div",
                     { class: "subtitle" },
                     endlessMode
-                        ? "Your Depths profile: its own stash and gear, and the caves alone. Slay a boss and escape to go a depth deeper. Leave the Depths from here or the title screen to go back to your regular maps."
+                        ? `Your Depths profile: its own stash and gear, and the caves alone. Slay a boss and escape to go a depth deeper, and to clear that depth: ${DEPTH_TITLES.map((t, i) => `${i + 1} ${t}${depthsOf(this.save).cleared.includes(i + 1) ? " ✓" : ""}`).join(", ")}; the fifth also gives the Slayer cape. Leave the Depths from here or the title screen to go back to your regular maps.`
                         : "The maps open in order: slay a map's boss and escape in the same run, and the next opens. Stars are how hard a map is and how good its chests are; the guild's starter kit is good for one star.",
                 ),
                 h("div", { class: "panel maps" }, h("div", { class: "item-list" }, ...rows)),
@@ -4199,7 +4259,8 @@ export class UI {
             this.persist();
             render();
         };
-        const food = [...SHOP_FOOD, ...SHOP_POTIONS].map((id) => {
+        // (and in the Depths, the bullseye lantern and its oil: version 161)
+        const food = [...SHOP_FOOD, ...SHOP_POTIONS, ...(modeOf(save) === "endless" ? DEPTHS_SHOP : [])].map((id) => {
             const item = getItem(id);
             const cost = price(item);
             return itemRow(
@@ -4272,6 +4333,38 @@ export class UI {
                       ),
             );
         });
+        // The Depths' delvers' upgrades (version 161), bought with cave
+        // shards, which every Depths run earns
+        const depthsMode = modeOf(save) === "endless";
+        const progress = depthsMode ? depthsOf(save) : undefined;
+        const delvers = progress
+            ? (Object.keys(DEPTHS_UPGRADES) as DepthsUpgradeKey[]).map((key) => {
+                  const def = DEPTHS_UPGRADES[key];
+                  const level = progress.upgrades[key];
+                  const cost = def.costs[level];
+                  return h(
+                      "div",
+                      { class: "item-row" },
+                      h("span", { class: "name" }, `${def.name} ${level > 0 ? `(${level}/${def.costs.length})` : ""}`),
+                      h("span", { class: "stats" }, def.effect),
+                      cost === undefined
+                          ? h("span", { class: "stats" }, "done")
+                          : h(
+                                "button",
+                                {
+                                    disabled: progress.shards < cost,
+                                    onclick: () => {
+                                        progress.shards -= cost;
+                                        progress.upgrades[key]++;
+                                        this.persist();
+                                        render();
+                                    },
+                                },
+                                `${cost} shards`,
+                            ),
+                  );
+              })
+            : [];
         const selling = save.stash
             .slice()
             .sort((a, b) => price(getItem(b.id)) - price(getItem(a.id)))
@@ -4331,6 +4424,15 @@ export class UI {
                         h("h2", {}, "The guild"),
                         h("div", { class: "subtitle" }, "Coins into the guild itself, for every run after."),
                         h("div", { class: "item-list" }, ...upgrades),
+                        progress ? h("h2", {}, "The delvers") : null,
+                        progress
+                            ? h(
+                                  "div",
+                                  { class: "subtitle" },
+                                  `${progress.shards.toLocaleString()} cave shards. Every Depths run earns them, a death too: more for champions, superiors and bosses, more the deeper, half again for getting out.`,
+                              )
+                            : null,
+                        progress ? h("div", { class: "item-list" }, ...delvers) : null,
                     ),
                 ),
                 h("button", { onclick: () => this.back() }, "Back"),
@@ -4694,10 +4796,13 @@ export class UI {
         }
         hud.coins.textContent = `${formatCoins(run.coins)} coins · pack ${run.inventory.length}/${run.slots}` + ammoText;
         const left = run.timeLeft;
-        hud.clock.textContent = run.closed
-            ? "Way out closed"
-            : `Way out closes in ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`;
-        hud.clock.classList.toggle("urgent", run.closed || left < 60);
+        // (and in the Depths, the boss hunting you, which way and how far:
+        // version 161)
+        const hunt = run.huntWord;
+        hud.clock.textContent =
+            (run.closed ? "Way out closed" : `Way out closes in ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`) +
+            (hunt ? ` · ${hunt.text}` : "");
+        hud.clock.classList.toggle("urgent", run.closed || left < 60 || !!hunt?.near);
         hud.boss.hidden = !run.boss;
         if (run.boss) {
             hud.bossFill.style.width = `${(100 * run.boss.hp) / run.boss.maxHp}%`;
@@ -5097,7 +5202,7 @@ export class UI {
     showSummary(
         result: RunResult,
         kept: ItemStack[],
-        extras: { tasks: Task[]; insured?: number; grave?: boolean; graveHalved?: boolean; pet?: string; contract?: Contract },
+        extras: { tasks: Task[]; insured?: number; grave?: boolean; graveHalved?: boolean; pet?: string; contract?: Contract; depths?: DepthsGain },
     ): void {
         const extracted = result.kind === "extracted";
         const report = result.report;
@@ -5178,6 +5283,31 @@ export class UI {
                   `Daily contract done: ${formatCoins(extras.contract.reward)} coins and a clue scroll, both in the bank.`,
               )
             : null;
+        // The Depths' own (version 161): the run's cave shards, a depth
+        // cleared and its title, the Slayer cape, the daily cave's haul
+        const gain = extras.depths;
+        const depthsLines = gain
+            ? [
+                  h(
+                      "div",
+                      { class: "subtitle contract-paid" },
+                      `+${gain.shards.toLocaleString()} cave shards (${depthsOf(this.save).shards.toLocaleString()} in all), for the delvers' upgrades in the shop.`,
+                  ),
+                  gain.title ? h("div", { class: "subtitle pet" }, `Depth cleared! You're a ${gain.title} now: the title shows by your name.`) : null,
+                  gain.cape
+                      ? h("div", { class: "subtitle pet" }, "The guild hands you the Slayer cape for clearing the fifth depth. It's in your bank, and nothing else in the game gives one.")
+                      : null,
+                  gain.daily
+                      ? h(
+                            "div",
+                            { class: "subtitle" },
+                            gain.daily.haul > 0
+                                ? `The daily cave: a haul of ${formatCoins(gain.daily.haul)} over what you took in.${this.account?.state ? "" : " Log in to an account to go on the board."}`
+                                : "The daily cave: no haul goes on the board without getting out.",
+                        )
+                      : null,
+              ]
+            : [];
         const list = h(
             "div",
             { class: "summary-list" },
@@ -5219,6 +5349,7 @@ export class UI {
                 grave,
                 pet,
                 contract,
+                ...depthsLines,
                 recap,
                 tasks,
                 this.session.room

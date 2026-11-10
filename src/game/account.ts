@@ -200,6 +200,18 @@ export class Account {
         return this.dirty ? this.send(save) : true;
     }
 
+    // The daily cave's board (version 161), and this account's haul onto it
+    dailyBoard(day: number): Promise<ApiResult<{ day: number; top: { name: string; score: number }[] }>> {
+        return call("GET", `daily?day=${day}`);
+    }
+
+    submitDaily(day: number, score: number): Promise<ApiResult<{ best: number; rank: number }>> {
+        if (!this.state) {
+            return Promise.resolve({ ok: false, status: 401, error: "Log in to go on the daily board." });
+        }
+        return call("POST", "daily", { day, score }, this.state.token);
+    }
+
     // Logged out on purpose: nobody's told this device was logged out
     async logOut(): Promise<void> {
         const token = this.state?.token;

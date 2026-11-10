@@ -189,7 +189,59 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 160 (not yet deployed), as the user asked: the Depths' tiny ones drop tier 1 only,
+Version 161 (not yet deployed): nine of the suggestions for the Depths, as the user asked, and
+the Slayer cape as depth 5's reward:
+- Light: a bullseye lantern (4550) in the pack burns an oil can (277) every two minutes and
+  sees four tiles further in the dark (run.ts updateLantern, LANTERN_SIGHT). A Depths fresh
+  start gets one and three cans (starter.ts); a Depths chest's purse is oil half the time; the
+  shop sells both in the Depths.
+- Cave shards (depths.ts shardsFor): every Depths run, a death too, earns a shard a kill, 2 a
+  champion, 8 a superior, 30 a boss, a quarter more a depth deeper, half again for getting out.
+  They buy the delvers' upgrades in the shop (save.ts DEPTHS_UPGRADES, three levels each):
+  Provisions (two of the depth's food packed a level), Steady prayer (a tenth slower drain),
+  Keen eyes (a tile more sight), Hardiness (five hitpoints). Kept in the Depths profile's
+  `depths`.
+- The hunter: on both maps wherever it is, and on the HUD by the clock with an arrow, how far
+  and which way (run.ts huntWord); the ground shakes, its sound with it, as it comes inside 60,
+  30 and 15 tiles. Co-op: `boost` says which is hunting.
+- The fourteen bosses' own moves (SIGNATURES): the King Black Dragon's fire, poison and ice
+  breaths; Elvarg's line of fire; the smoke devil's prayer-choking cloud; the Giant Mole
+  burrowing at each quarter and coming up elsewhere; Cerberus's three souls; Sarachnis's
+  spawn; Rex's stomp; Supreme's volley; Obor's club that throws you back; Bryophyta's
+  growthlings and Scorpia's guardians and Corp's dark core, which mend their boss while they
+  live; Calvar'ion's lightning; the Ice Queen's frost that holds you.
+- Lair themes (LAIR_THEMES): each lair's floor tinted and its dark its own colour, and lava
+  (the dragons, Cerberus), spores (the moss giants), webs (Sarachnis, Scorpia), ice (the Ice
+  Queen) and sea water (the Dagannoths) slow or burst; smoke drains prayer; Corp's and
+  Calvar'ion's dark is deeper, the Mole's dusty.
+- Special rooms (placeRooms): an altar that fills the prayer bar once a run; a trapped
+  treasure room's ornate chest (two pieces at a champion's prize odds and a purse; the floor
+  round it gives way); a brimstone chest the first superior's brimstone key (23083) opens (two
+  pieces as the crystal chest gives them); two dead adventurers' camps with food, oil and a
+  potion. Co-op: the world message carries them.
+- Cave events from two minutes in, every two and a half: a room flooded shut for a minute
+  (its doorways blocked under water), a pocket of gas that drains prayer, a swarm of every tiny
+  one within 40 tiles. Co-op `flood` and `gas`.
+- Rewards: a title for each depth cleared (escaped with a boss slain; depths.ts DEPTH_TITLES:
+  Delver, Tunneller, Deep delver, Abyss walker, Slayer of the Depths), shown by the name; each
+  Depths boss can leave its own pet, one in 20 (pets.ts, a gift each); and the fifth depth
+  gives the Slayer cape (9786; its icon and worn model exported, `reward` keeps it out of every
+  chest, drop and the shop): tier 5, 14 defence, 10 hitpoints, +4 prayer, a tenth harder hits
+  in the Depths.
+- The daily cave: today's seed and depth (one to three in turn) for everyone, from the maps
+  screen; the haul out over what went in goes on a board (functions/api's `daily` table: GET
+  /api/daily, POST it logged in, each account's best a day, today's or yesterday's only). It
+  takes nobody a depth deeper.
+Tested in runs on the dev server: the lantern lit (11 tiles), the altar, both room chests, two
+camps and five tinted lairs placed; the King Black Dragon's lair sealed and it breathed fire
+then poison; killed, the Ice Queen hunted ("← Ice Queen hunts you: 275 tiles west"); Cerberus's
+souls rose at 66%; the Mole went under and came up elsewhere; a flood blocked 24 tiles and
+drained; gas took 13 prayer in two seconds; the ornate chest gave two pieces and seven rings, the
+brimstone chest took the key; a death gave 64 shards; escaping depth 5 with a boss gave the
+title and the cape, which shows worn; the board's endpoints on a local server (best kept,
+unauthorised and old days refused). Not tried: a party, the swarm, lava and spores bursting.
+
+Version 160 (deployed to the playtest 10 November 2026 as 2026.11.10.1), as the user asked: the Depths' tiny ones drop tier 1 only,
 whatever the depth: gear (champions' prizes too), food, arrows and runes (worlds.ts
 DEPTHS_TINY: guanic and giant bats, giant crypt rats, crypt spiders, cave bugs, crawling hands,
 cave crawlers, cave slimes, rockslugs; EnemyDef's `tiny`; run.ts killEnemy's TINY_LOOT).

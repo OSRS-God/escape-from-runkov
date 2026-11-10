@@ -6,7 +6,8 @@
 import * as THREE from "three";
 
 import { CROWN_PETS } from "../content/crownpets";
-import { getWorld } from "../content/worlds";
+import { EnemyDef } from "../content/enemies";
+import { ENDLESS_ID, endlessWorld, getWorld } from "../content/worlds";
 import { Actor, createActor, play, tint } from "./assets";
 import { GearStats } from "./inventory";
 import { addShadow } from "./shadows";
@@ -18,13 +19,22 @@ const PET_HEIGHT = 0.9;
 
 export { isBossPet } from "../content/crownpets";
 
+// A Depths boss's pet (version 161, as the user asked): kept by the boss's
+// own id ("endless:cerberus"), as the Depths' bosses change every run
+const DEPTHS_PET_PREFIX = `${ENDLESS_ID}:`;
+
+function depthsBoss(id: string): EnemyDef | undefined {
+    return id.startsWith(DEPTHS_PET_PREFIX) ? endlessWorld(1).bosses?.find((b) => b.id === id) : undefined;
+}
+
 export function petName(worldId: string): string {
-    return CROWN_PETS[worldId]?.name ?? `Little ${getWorld(worldId).boss.name.toLowerCase()}`;
+    const boss = depthsBoss(worldId);
+    return CROWN_PETS[worldId]?.name ?? `Little ${(boss ?? getWorld(worldId).boss).name.toLowerCase()}`;
 }
 
 // Where a pet's from, for the Tasks screen
 export function petFrom(id: string): string {
-    return CROWN_PETS[id] ? CROWN_PETS[id].from : `from ${getWorld(id).name}`;
+    return CROWN_PETS[id] ? CROWN_PETS[id].from : depthsBoss(id) ? "from the Depths" : `from ${getWorld(id).name}`;
 }
 
 // What a pet does for you while it follows, one small thing each, after
@@ -85,7 +95,28 @@ export const PET_BUFFS: Record<string, PetBuff> = {
     inferno: { text: "a boss's burning floor does you half", burn: 0.5 },
 };
 
+// The Depths' bosses' pets, one small gift each after its boss
+const DEPTHS_PET_BUFFS: Record<string, PetBuff> = {
+    king_black_dragon: { text: "your hits land 5% harder", damage: 0.05 },
+    elvarg: { text: "a boss's burning floor does you half", burn: 0.5 },
+    thermonuclear_smoke_devil: { text: "+6 prayer bonus", prayer: 6 },
+    giant_mole: { text: "you walk 5% faster", speed: 0.05 },
+    cerberus: { text: "every hit on you does 1 less", soak: 1 },
+    sarachnis: { text: "your hits never roll below 80% of the max", floor: 0.8 },
+    dagannoth_rex: { text: "6% more defence", defence: 0.06 },
+    dagannoth_supreme: { text: "one shot in five takes no arrow or rune", ammoSave: 0.2 },
+    obor: { text: "8 more hitpoints", hp: 8 },
+    bryophyta: { text: "you catch your breath twice as fast", regen: 2 },
+    scorpia: { text: "the special bar fills 20% faster", spec: 0.2 },
+    calvarion: { text: "kills drop 15% more coins", coins: 0.15 },
+    corporeal_beast: { text: "10 more hitpoints", hp: 10 },
+    ice_queen: { text: "6% more defence", defence: 0.06 },
+};
+
 export function petBuff(worldId: string | undefined): PetBuff | undefined {
+    if (worldId?.startsWith(DEPTHS_PET_PREFIX)) {
+        return DEPTHS_PET_BUFFS[worldId.slice(DEPTHS_PET_PREFIX.length)];
+    }
     return worldId !== undefined ? (PET_BUFFS[worldId] ?? CROWN_PETS[worldId]?.buff) : undefined;
 }
 
@@ -110,7 +141,7 @@ export function applyPetStats(stats: GearStats, buff: PetBuff | undefined): void
 
 // The boss's own model (or a crown pet's own), shrunk to a pet, standing idle
 export async function createPet(worldId: string): Promise<Actor> {
-    const actor = await createActor("npcs", CROWN_PETS[worldId]?.npcId ?? getWorld(worldId).boss.npcId);
+    const actor = await createActor("npcs", CROWN_PETS[worldId]?.npcId ?? depthsBoss(worldId)?.npcId ?? getWorld(worldId).boss.npcId);
     const scale = petScale(actor);
     actor.root.scale.setScalar(scale);
     tint(actor, new THREE.Color(1, 1, 1));

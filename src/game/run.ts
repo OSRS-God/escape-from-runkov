@@ -23,6 +23,7 @@ import {
     Special,
     TIER_COLOURS,
     VAULT_KEY,
+    BRIMSTONE_KEY,
     ammoOfTier,
     getItem,
     iconUrl,
@@ -133,10 +134,13 @@ import { PlayerLook, RUN_CLIP_SPEED } from "./player";
 import { isKept } from "./kit";
 import { Region, Tile, TileSet, loadRegion } from "./region";
 import { CaveLayout, layoutCave } from "./caves";
-import { Character, Equipment, Grave, ItemStack } from "./save";
+import { Character, DepthsUpgradeKey, Equipment, Grave, ItemStack } from "./save";
 import { ZOOM_MAX, ZOOM_MIN, saveSettings, settings } from "./settings";
 
 export type RunCarry = {
+    // The Depths' delvers' upgrades (save.ts DEPTHS_UPGRADES, version 161),
+    // and the day, if it's that day's daily cave (depths.ts)
+    depths?: { upgrades: Record<DepthsUpgradeKey, number>; daily?: number };
     inventory: ItemStack[];
     equipment: Equipment;
     coins: number;
@@ -188,6 +192,8 @@ export type RunReport = {
     kills: number;
     bossKills: number;
     championKills: number;
+    // The Depths' superiors slain (version 161)
+    superiorKills: number;
     rangedKills: number;
     ate: number;
     packItems: number;
@@ -313,6 +319,19 @@ type Enemy = {
     style?: "magic" | "ranged";
     // A second form, once it's fallen the first time
     reborn?: boolean;
+    // The Depths' boss hunting you (empowerBosses): on the maps wherever it
+    // is, and on the HUD with how far and which way
+    hunting?: boolean;
+    // A Depths boss's signature move (SIGNATURES, version 161): seconds to
+    // the next, which turn of it is next, the shares of its health whose
+    // moves are done, seconds still under the ground (the Giant Mole), the
+    // adds it's brought, and (on an add) the boss it mends while it lives
+    sigIn?: number;
+    sigStep?: number;
+    sigMarks?: number[];
+    burrowed?: number;
+    adds?: Enemy[];
+    mends?: Enemy;
     // A patrol: the tiles it walks between while idle, which it's heading
     // for, and how long it's been getting nowhere
     route?: Tile[];
@@ -472,6 +491,10 @@ type Chest = {
     ambush?: boolean;
     // The map's vault: locked, with gear from two tiers up inside
     vault?: boolean;
+    // A Depths room's own (version 161): the trapped treasure room's
+    // ornate chest, whose floor gives way, or the brimstone chest a
+    // superior's key opens
+    room?: "trap" | "brimstone";
 };
 
 const PLAYER_RADIUS = 0.35;
@@ -527,7 +550,7 @@ const GUEST_REACH = 2 + GUEST_LAG;
 const GUEST_SHOT_REACH = 14 + GUEST_LAG;
 const GUEST_HIT_SCALE = 5;
 const GUEST_HIT_MIN = 20;
-const HELD_BY_HOST = new Set([VAULT_KEY, BOSS_KEY, CLUE_SCROLL]);
+const HELD_BY_HOST = new Set([VAULT_KEY, BOSS_KEY, CLUE_SCROLL, BRIMSTONE_KEY]);
 // A guest's copies of the enemies don't know who they're after: one roused
 // this near counts as after it, for its breath and (a boss) its prayer
 const GUEST_CHASED_NEAR = 6;
@@ -739,6 +762,258 @@ const NIGHT_FOG: [number, number] = [12, 34];
 const CAVE_DARK = 0x000000;
 const CAVE_FOG: [number, number] = [22, 48];
 const CAVE_SIGHT = 7;
+// A lit bullseye lantern sees this many tiles further, and a can of oil
+// keeps it lit this long (version 161); the Hardiness upgrade's hitpoints
+// a level
+const LANTERN_SIGHT = 4;
+const OIL_SECONDS = 120;
+const OIL_CAN = 277;
+// A Depths chest's purse is lantern oil instead this often
+const CHEST_OIL = 0.5;
+const HARDINESS_HP = 5;
+// The Depths' reward for depth 5 (version 161, as the user asked), and how
+// much harder its wearer hits down there
+const SLAYER_CAPE = 9786;
+const SLAYER_CAPE_DAMAGE = 1.1;
+// One Depths boss in this many leaves its pet
+const DEPTHS_PET_ONE_IN = 20;
+// The ground shakes as the hunter comes inside each of these, in tiles
+const HUNT_RUMBLES = [60, 30, 15];
+// The Depths' cave events (version 161, as the user asked): the first this
+// far in and then every so often, one of a flood that shuts a room's
+// doorways for a while, a pocket of gas that chokes the prayer out of
+// whoever stands in it (so much a second), and a swarm, every tiny one this
+// near anyone coming for them at once
+const EVENT_FIRST = 120;
+const EVENT_EVERY = 150;
+const FLOOD_SECONDS = 60;
+const GAS_RADIUS = 4;
+const GAS_SECONDS = 20;
+const GAS_DRAIN = 8;
+const SWARM_REACH = 40;
+// The Depths' special rooms (placeRooms): the altar's model, how many dead
+// adventurers' camps, the bones that mark one, the ornate chest's floor
+// (rings round it, each this share of your hitpoints) and how far its fall
+// is heard
+const ALTAR_LOC = 409;
+const CAMPS = 2;
+const REMAINS = 526;
+const TRAP_RINGS = 6;
+const TRAP_HIT = 0.15;
+const TRAP_ROUSE = 14;
+
+// The Depths' bosses' own moves (version 161, as the user asked: each of
+// the fourteen fights like itself, after its OSRS fight), by the boss's id
+// in endless-bosses.json: a move every so many seconds while it's up (`move`,
+// its turn counting from 0), and one at each share of its health (`marks`).
+// Rings burst for a share of the hitpoints of whoever's still in them.
+// An add that mends its boss heals it MEND_RATE of its hitpoints a second.
+const MEND_RATE = 0.01;
+type Signature = {
+    every?: number;
+    move?: (run: Run, e: Enemy, t: Hero, step: number) => void;
+    marks?: number[];
+    atMark?: (run: Run, e: Enemy, t: Hero | undefined) => void;
+};
+const GREEN = new THREE.Color(0.7, 1.3, 0.6);
+
+// Each Depths boss's lair has its own look and its own trouble (version 161,
+// as the user asked): its room's floor tinted (`floor`), the dark round you
+// its colour (`glow`, the dark's own at the edge), and while you're in it
+// slower going (`pace`: ice, webs, water), the floor bursting about you every
+// LAIR_HAZARD_EVERY seconds while its boss lives (`hazard`: lava, spores),
+// prayer seeping away (`drain` a second) or a closer dark (`sight` tiles).
+// `word` is said the first time you walk in.
+type LairTheme = {
+    word: string;
+    floor: THREE.Color;
+    glow: [number, number, number];
+    pace?: number;
+    hazard?: "lava" | "spores";
+    drain?: number;
+    sight?: number;
+};
+const LAIR_HAZARD_EVERY = 9;
+const FIRE: LairTheme = {
+    word: "The air in here is scorching, and lava seeps up through the floor.",
+    floor: new THREE.Color(1.3, 0.8, 0.6),
+    glow: [45, 8, 0],
+    hazard: "lava",
+};
+const MOSS: LairTheme = {
+    word: "Moss carpets everything here, and it puffs out spores.",
+    floor: new THREE.Color(0.8, 1.15, 0.72),
+    glow: [6, 22, 4],
+    hazard: "spores",
+};
+const WEB: LairTheme = { word: "Webs hang thick in here: every step drags.", floor: new THREE.Color(0.9, 0.88, 0.86), glow: [16, 14, 12], pace: 0.7 };
+const SHADOW: LairTheme = { word: "The dark in here is deeper still.", floor: new THREE.Color(0.85, 0.72, 1.05), glow: [16, 0, 26], sight: -2 };
+const WATER: LairTheme = { word: "The lair's floor is ankle-deep in cold sea water.", floor: new THREE.Color(0.75, 0.9, 1.15), glow: [0, 10, 26], pace: 0.85 };
+const LAIR_THEMES: Record<string, LairTheme> = {
+    king_black_dragon: FIRE,
+    elvarg: FIRE,
+    cerberus: FIRE,
+    ice_queen: { word: "The floor here is solid ice: you can barely keep your feet.", floor: new THREE.Color(0.8, 0.95, 1.35), glow: [0, 14, 34], pace: 0.75 },
+    sarachnis: WEB,
+    scorpia: WEB,
+    thermonuclear_smoke_devil: {
+        word: "Smoke chokes the air here: your prayer drains away while you stay.",
+        floor: new THREE.Color(0.88, 0.95, 0.8),
+        glow: [14, 18, 10],
+        drain: 1.5,
+    },
+    bryophyta: MOSS,
+    obor: MOSS,
+    corporeal_beast: SHADOW,
+    calvarion: SHADOW,
+    dagannoth_rex: WATER,
+    dagannoth_supreme: WATER,
+    giant_mole: { word: "Dust hangs in the air of the Mole's warren.", floor: new THREE.Color(1.1, 0.95, 0.75), glow: [24, 14, 4], sight: -1 },
+};
+
+function baseId(def: EnemyDef): string {
+    return def.id.slice(def.id.indexOf(":") + 1);
+}
+const SIGNATURES: Record<string, Signature> = {
+    // Three breaths in turn: fire, poison and ice that holds you
+    king_black_dragon: {
+        every: 6,
+        move: (run, e, t, step) => {
+            const kind = step % 3;
+            run.sigSay(`${e.def.name} breathes ${["fire", "poison", "ice"][kind]}!`);
+            run.sigRing(e, t.x, t.z, 1.6, 1.1, kind === 0 ? 0.2 : 0.1, (hero) => {
+                if (kind === 1) {
+                    run.sigPoison(hero);
+                } else if (kind === 2) {
+                    run.sigRoot(hero, 2);
+                }
+            });
+        },
+    },
+    // A line of flame from her to you and past
+    elvarg: {
+        every: 7,
+        move: (run, e, t) => {
+            const dx = t.x - e.x;
+            const dz = t.z - e.z;
+            const len = Math.max(0.01, Math.hypot(dx, dz));
+            for (let k = 1; k <= 5; k++) {
+                const along = Math.min(len + 2, k * Math.max(1.5, (len + 2) / 5));
+                run.sigRing(e, e.x + (dx / len) * along, e.z + (dz / len) * along, 1.3, 1.2, 0.18);
+            }
+            run.sigSay("Elvarg rears back and breathes a line of fire!");
+        },
+    },
+    // A cloud of smoke that chokes the prayer out of you
+    thermonuclear_smoke_devil: {
+        every: 8,
+        move: (run, e, t) => {
+            run.sigSay("A cloud of thick smoke billows out: it'll choke your prayer!");
+            run.sigRing(e, t.x, t.z, 2.8, 1.5, 0.1, (hero) => run.sigDrainPrayer(hero, 30));
+        },
+    },
+    // Down into the earth at each quarter lost, and up elsewhere in the lair
+    giant_mole: {
+        marks: [0.75, 0.5, 0.25],
+        atMark: (run, e) => run.sigBurrow(e, 3),
+    },
+    // Its three souls, a third of the way down and two thirds
+    cerberus: {
+        marks: [0.66, 0.33],
+        atMark: (run, e) => {
+            run.sigSay("Cerberus howls, and its souls rise to fight for it!");
+            run.sigAdds(e, "ghost", "Summoned soul", 3, { scale: 0.9, tint: new THREE.Color(0.7, 0.85, 1.4) });
+        },
+    },
+    // Spiderlings out of her nest
+    sarachnis: {
+        marks: [0.66, 0.33],
+        atMark: (run, e) => {
+            run.sigSay("Sarachnis's spawn swarm out of the nest!");
+            run.sigAdds(e, "crypt_spider", "Spawn of Sarachnis", 3, { scale: 0.6, hp: 0.5 });
+        },
+    },
+    // A stomp round him that nothing turns aside
+    dagannoth_rex: {
+        every: 8,
+        move: (run, e) => {
+            run.sigSay("Dagannoth Rex rears up to stomp!");
+            run.sigRing(e, e.x, e.z, 2.6, 1.2, 0.22);
+        },
+    },
+    // A volley of arrows, one after the other where you stand
+    dagannoth_supreme: {
+        every: 7,
+        move: (run, e, t) => {
+            run.sigSay("Dagannoth Supreme looses a volley!");
+            [0.8, 1.2, 1.6].forEach((warning, i) => run.sigRing(e, t.x + (i - 1) * 0.6, t.z, 1.2, warning, 0.1));
+        },
+    },
+    // A swing of the club that throws you back, if you're close
+    obor: {
+        every: 7,
+        move: (run, e, t) => {
+            if (Math.hypot(t.x - e.x, t.z - e.z) > 3.5) {
+                return;
+            }
+            run.sigSay("Obor swings his club wide!");
+            run.sigRing(e, e.x, e.z, 3, 0.9, 0.18, (hero) => {
+                run.sigKnock(e, hero, 3);
+                run.sigRoot(hero, 0.8);
+            });
+        },
+    },
+    // Growthlings that mend her while they live, at each quarter lost
+    bryophyta: {
+        marks: [0.75, 0.5, 0.25],
+        atMark: (run, e) => {
+            run.sigSay("Growthlings sprout round Bryophyta, and her moss knits back: kill them!");
+            run.sigAdds(e, "cave_slime", "Growthling", 2, { tint: GREEN, mend: true });
+        },
+    },
+    // Her guardians mend her, half way down
+    scorpia: {
+        marks: [0.5],
+        atMark: (run, e) => {
+            run.sigSay("Scorpia's guardians scuttle in to mend her: kill them!");
+            run.sigAdds(e, "crypt_spider", "Scorpia's guardian", 2, { scale: 0.75, tint: new THREE.Color(1.4, 1.2, 0.6), mend: true });
+        },
+    },
+    // Lightning about you
+    calvarion: {
+        every: 6,
+        move: (run, e, t) => {
+            run.sigSay("Lightning crackles round you!");
+            for (let i = 0; i < 5; i++) {
+                const spread = i === 0 ? 0 : 3;
+                run.sigRing(e, t.x + (Math.random() - 0.5) * 2 * spread, t.z + (Math.random() - 0.5) * 2 * spread, 1, 1.1, 0.14);
+            }
+        },
+    },
+    // A dark core that mends it, half way down; and a stomp if you're under it
+    corporeal_beast: {
+        every: 7,
+        move: (run, e, t) => {
+            if (Math.hypot(t.x - e.x, t.z - e.z) < 2.5) {
+                run.sigSay("The Corporeal Beast stomps!");
+                run.sigRing(e, e.x, e.z, 2.5, 0.8, 0.2);
+            }
+        },
+        marks: [0.5],
+        atMark: (run, e) => {
+            run.sigSay("A dark energy core splits off the Corporeal Beast and feeds it: kill the core!");
+            run.sigAdds(e, "jelly", "Dark energy core", 1, { scale: 0.5, tint: new THREE.Color(0.35, 0.25, 0.5), mend: true });
+        },
+    },
+    // Frost that holds you where you stand
+    ice_queen: {
+        every: 8,
+        move: (run, e, t) => {
+            run.sigSay("The Ice Queen's frost closes on you!");
+            run.sigRing(e, t.x, t.z, 1.8, 1.3, 0.12, (hero) => run.sigRoot(hero, 2.5));
+        },
+    },
+};
 // The caves' rock on the minimap and the full map
 const CAVE_ROCK_MAP = "#120d08";
 const NIGHT_AGGRO = 0.6;
@@ -1027,8 +1302,14 @@ export class Run {
     kills = 0;
     bossKills = 0;
     championKills = 0;
-    // The Depths' superiors risen this run (SUPERIOR_MAX)
+    // Seconds held in place by a boss's move, and the pace the ground under
+    // you allows (a lair's ice or webs: version 161)
+    private rooted = 0;
+    private groundPace = 1;
+    // The Depths' superiors risen this run (SUPERIOR_MAX), and slain by
+    // this player (cave shards: main.ts)
     private superiorsRisen = 0;
+    superiorKills = 0;
     // The Depths' cave, and the lair shut now (LAIR_SEAL_IN): its cell, its
     // boss, the tiles blocked and the boulders on them
     private cave?: CaveLayout;
@@ -1210,6 +1491,7 @@ export class Run {
         this.petBuff = petBuff(carry.pet);
         this.stats = gearStats(this.equipment, this.wear);
         applyPetStats(this.stats, this.petBuff);
+        this.applyDepthsStats(this.stats);
         this.maxHp = BASE_HP + this.stats.hp;
         this.hp = Math.min(this.maxHp, carry.hp ?? this.maxHp);
         this.packSize = carry.packSize ?? INVENTORY_SIZE;
@@ -1275,7 +1557,12 @@ export class Run {
         const map = new THREE.Group();
         run.map = map;
         run.scene.add(map);
-        const onPart = (part: THREE.Object3D) => {
+        const onPart = (part: THREE.Object3D, cell?: number) => {
+            // A Depths room, by its cell, for a lair's tint (version 161)
+            if (cell !== undefined) {
+                run.caveParts.set(cell, part);
+                run.tintLair(cell);
+            }
             part.traverse((o) => {
                 const mesh = o as THREE.Mesh;
                 if (mesh.isMesh) {
@@ -1575,7 +1862,7 @@ export class Run {
             dot(this.trader.x, this.trader.z, "#40e8ff", 3);
         }
         for (const e of this.enemies) {
-            if (e.state !== "dead" && this.isExplored(e.x, e.z)) {
+            if (e.state !== "dead" && (this.isExplored(e.x, e.z) || e.hunting)) {
                 dot(e.x, e.z, e.def.boss ? "#ff0000" : e.def.superior ? "#ff8c00" : "#ffff00", e.def.boss ? 4 : e.def.superior ? 3 : 2);
             }
         }
@@ -1675,7 +1962,7 @@ export class Run {
             dot(this.trader.x, this.trader.z, "#40e8ff", 1.1);
         }
         for (const e of this.enemies) {
-            if (e.state !== "dead" && this.isExplored(e.x, e.z)) {
+            if (e.state !== "dead" && (this.isExplored(e.x, e.z) || e.hunting)) {
                 dot(e.x, e.z, e.def.boss ? "#ff0000" : e.def.superior ? "#ff8c00" : "#ffff00", e.def.boss ? 1.4 : e.def.superior ? 1 : 0.6);
             }
         }
@@ -1967,6 +2254,9 @@ export class Run {
                 }
             }
         }
+        if (this.cave) {
+            this.placeRooms(reach, taken, jobs, bossTiles);
+        }
         bossTiles.forEach((tile, i) => {
             jobs.push(this.spawnEnemy(bossDefs[i], tile).then(() => undefined));
             // The Depths' bosses each have champions standing guard about
@@ -1993,6 +2283,84 @@ export class Run {
         });
     }
 
+    // The Depths' special rooms (version 161, as the user asked), each in a
+    // room of its own away from where you arrive and the lairs: an altar that
+    // fills the prayer bar once a run, a trapped treasure room's ornate chest
+    // (rich, and its floor gives way), a brimstone chest that only a
+    // superior's key opens, and dead adventurers' camps with a few supplies
+    private altars: { x: number; z: number; used: boolean }[] = [];
+    private camps: { x: number; z: number; seen: boolean }[] = [];
+    private brimstoneDropped = false;
+
+    private placeRooms(reach: Int16Array, taken: Set<number>, jobs: Promise<void>[], bossTiles: Tile[]): void {
+        const cave = this.cave!;
+        const g = this.region;
+        const busy = new Set([cave.cellAt(this.px, this.pz), ...bossTiles.map((t) => cave.cellAt(t.x, t.z))]);
+        const cells = cave.cells
+            .map((name, cell) => ({ name, cell, roll: this.rng() }))
+            .filter((c) => c.name !== "cave_0_rock" && !busy.has(c.cell))
+            .sort((a, b) => a.roll - b.roll)
+            .map((c) => c.cell);
+        // An open, reachable tile well inside a room
+        const tileIn = (cell: number | undefined): Tile | undefined => {
+            if (cell === undefined) {
+                return undefined;
+            }
+            const ox = g.baseX + (cell % 6) * 64;
+            const oy = g.baseY + Math.floor(cell / 6) * 64;
+            for (let tries = 0; tries < 80; tries++) {
+                const x = ox + 12 + Math.floor(this.rng() * 40) + 0.5;
+                const z = -(oy + 12 + Math.floor(this.rng() * 40) + 0.5);
+                const i = g.tileX(x) - g.baseX + (g.tileY(z) - g.baseY) * g.sizeX;
+                if (g.flowAt(reach, x, z) >= 0 && !taken.has(i) && g.fits(x, z, 0.7)) {
+                    taken.add(i);
+                    return { x, z };
+                }
+            }
+            return undefined;
+        };
+        const altar = tileIn(cells.shift());
+        if (altar) {
+            this.altars.push({ ...altar, used: false });
+            jobs.push(this.loadAltar(altar));
+        }
+        for (const room of ["trap", "brimstone"] as const) {
+            const tile = tileIn(cells.shift());
+            if (tile) {
+                const chest: Chest = { tile, opened: false, boss: false, room };
+                this.chests.push(chest);
+                jobs.push(this.loadChest(chest));
+            }
+        }
+        for (let i = 0; i < CAMPS; i++) {
+            const tile = tileIn(cells.shift());
+            if (tile) {
+                this.camps.push({ ...tile, seen: false });
+            }
+        }
+    }
+
+    private loadAltar(at: Tile): Promise<void> {
+        return createActor("locs", ALTAR_LOC).then((actor) => {
+            if (!this.ended) {
+                this.placeActor(actor, at.x, at.z);
+                addShadow(actor.root, 0.9);
+            }
+        });
+    }
+
+    // A camp's supplies, left where its owner fell (the host's, sent once the
+    // map's gone out, so a party sees them too)
+    private stockCamps(): void {
+        const tier = this.world.tier;
+        for (const camp of this.camps) {
+            this.dropPickup(FOOD_BY_TIER[Math.min(FOOD_BY_TIER.length - 1, tier - 1)], 2, camp.x, camp.z, 1.2);
+            this.dropPickup(OIL_CAN, 1, camp.x, camp.z, 1.2);
+            this.dropPickup(SHOP_POTIONS[Math.floor(this.rng() * SHOP_POTIONS.length)], 1, camp.x, camp.z, 1.2);
+            this.dropPickup(REMAINS, 1, camp.x, camp.z, 0);
+        }
+    }
+
     // A chest's model on its tile (gilded for the boss's; the crystal chest
     // for the vault), unless it's been opened while the model loaded
     private loadChest(chest: Chest): Promise<void> {
@@ -2004,6 +2372,10 @@ export class Run {
             addShadow(actor.root, 0.7);
             if (chest.boss) {
                 tint(actor, new THREE.Color(1.2, 1.1, 0.7));
+            }
+            // The ornate chest bright, the brimstone chest burnt dark
+            if (chest.room) {
+                tint(actor, chest.room === "trap" ? new THREE.Color(1.4, 1.0, 0.6) : new THREE.Color(0.85, 0.45, 0.4));
             }
             chest.actor = actor;
         });
@@ -2203,6 +2575,9 @@ export class Run {
             seenAttacks: 0,
         };
         this.enemies.push(enemy);
+        if (def.boss) {
+            this.noteLair(enemy);
+        }
         return enemy;
     }
 
@@ -2222,6 +2597,8 @@ export class Run {
                 boss: def.boss ? 1 : undefined,
                 champion: def.champion ? 1 : undefined,
                 shoots: def.shoots?.style,
+                id: def.boss || def.superior ? def.id : undefined,
+                superior: def.superior ? 1 : undefined,
             });
         }
         return code;
@@ -2430,6 +2807,10 @@ export class Run {
         if (this.night) {
             this.hooks.onMessage("Night has fallen. You see less, and so do they.");
         }
+        // The Depths' camps' supplies, now the map's gone out to any party
+        if (coop?.role !== "guest") {
+            this.stockCamps();
+        }
         // A clue scroll brought in (the daily contract pays one, version 115)
         // names its spot as one picked up here would
         const scrolls = this.inventory.reduce((n, s) => n + (s.id === CLUE_SCROLL ? s.count : 0), 0);
@@ -2581,7 +2962,9 @@ export class Run {
     // without that, as the war room says it)
     speed(aimed = true): number {
         const aim = aimed && this.aiming > 0 ? AIM_SLOW : 1;
-        return PLAYER_SPEED * (1 - this.weight()) * (1 + (this.petBuff?.speed ?? 0)) * aim;
+        // Held by a boss's move, or slowed by a lair's ground (version 161)
+        const held = aimed && this.rooted > 0 ? 0 : 1;
+        return PLAYER_SPEED * (1 - this.weight()) * (1 + (this.petBuff?.speed ?? 0)) * aim * held * (aimed ? this.groundPace : 1);
     }
 
     // How many of a thing the pack holds
@@ -3139,7 +3522,7 @@ export class Run {
         if (kind === "extracted") {
             this.inventory = this.inventory.filter((s) => {
                 const item = getItem(s.id);
-                return !item.clue && !item.key && !item.bossKey;
+                return !item.clue && !item.key && !item.bossKey && !item.brimstone;
             });
         }
         this.hooks.onEnd({
@@ -3151,6 +3534,7 @@ export class Run {
                 kills: this.kills,
                 bossKills: this.bossKills,
                 championKills: this.championKills,
+                superiorKills: this.superiorKills,
                 rangedKills: this.rangedKills,
                 ate: this.ate,
                 packItems: this.inventory.length,
@@ -3231,7 +3615,8 @@ export class Run {
                     e.state !== "dead" &&
                     (guest ? Math.hypot(e.x - this.px, e.z - this.pz) < GUEST_BOSS_NEAR : e.target === this.self),
             );
-            const depths = this.world.bosses ? DEPTHS_PRAYER_DRAIN : 1;
+            // (the Steady prayer upgrade a tenth off a level)
+            const depths = this.world.bosses ? DEPTHS_PRAYER_DRAIN * (1 - 0.1 * (this.carry.depths?.upgrades.prayer ?? 0)) : 1;
             this.prayer = Math.max(0, this.prayer - (PRAYER_DRAIN * (bossOnMe ? BOSS_PRAYER_DRAIN : 1) * depths * dt) / scale);
             if (this.prayer <= 0) {
                 this.protect = "none";
@@ -3528,6 +3913,13 @@ export class Run {
         this.updateClock();
         this.updateLairs();
         this.updateDepthsExits();
+        this.updateLantern(dt);
+        this.updateHunt();
+        this.updateLairThemes(dt);
+        this.updateCaveEvents(dt);
+        if (this.rooted > 0) {
+            this.rooted -= dt;
+        }
         this.updatePrayer(dt);
         this.updateAmbient(dt);
         this.updatePlayer(dt);
@@ -3639,6 +4031,62 @@ export class Run {
     // fog, which goes by depth into it, so the sides would stay lit.
     private caveDark?: HTMLDivElement;
 
+    // A lantern lit, and the seconds its oil has left (LANTERN_SIGHT); and
+    // the ring of sight as drawn
+    private sightShown = CAVE_SIGHT;
+    private lanternLit = false;
+    private oilLeft = 0;
+
+    // How far the dark lets you see: the caves' own, the Keen eyes upgrade's
+    // and a lit lantern's
+    private caveSight(): number {
+        const lair = this.themeAt(this.px, this.pz)?.theme.sight ?? 0;
+        return Math.max(3, CAVE_SIGHT + (this.carry.depths?.upgrades.sight ?? 0) + (this.lanternLit ? LANTERN_SIGHT : 0) + lair);
+    }
+
+    // The Depths' own on the gear's numbers: the Hardiness upgrade's
+    // hitpoints, and the Slayer cape's harder hits
+    private applyDepthsStats(stats: GearStats): void {
+        if (!this.world.caves) {
+            return;
+        }
+        stats.hp += HARDINESS_HP * (this.carry.depths?.upgrades.hardiness ?? 0);
+        if (this.equipment.cape === SLAYER_CAPE) {
+            stats.damage = Math.round(stats.damage * SLAYER_CAPE_DAMAGE);
+        }
+    }
+
+    // A bullseye lantern in the pack burns a can of oil every OIL_SECONDS:
+    // lit as soon as there's oil to burn, out when there's none left
+    private updateLantern(dt: number): void {
+        if (!this.world.caves || this.dead) {
+            return;
+        }
+        const has = (key: "lantern" | "oil") => this.inventory.some((s) => getItem(s.id)[key]);
+        if (!has("lantern")) {
+            this.lanternLit = false;
+            return;
+        }
+        if (this.lanternLit) {
+            this.oilLeft -= dt;
+            if (this.oilLeft > 0) {
+                return;
+            }
+        }
+        const oil = this.inventory.find((s) => getItem(s.id).oil);
+        if (oil && removeItem(this.inventory, oil.id, 1)) {
+            this.oilLeft = OIL_SECONDS;
+            if (!this.lanternLit) {
+                this.hooks.onMessage("You light your bullseye lantern: it pushes the dark back.");
+            }
+            this.lanternLit = true;
+            this.hooks.onChanged();
+        } else if (this.lanternLit) {
+            this.lanternLit = false;
+            this.hooks.onMessage("Your lantern burns the last of its oil and gutters out.");
+        }
+    }
+
     private placeCaveDark(x: number, y: number, z: number): void {
         if (!this.world.caves) {
             return;
@@ -3651,13 +4099,18 @@ export class Run {
         const canvas = this.renderer.domElement;
         const at = new THREE.Vector3(x, y, z).project(this.camera);
         const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
-        const edge = new THREE.Vector3(x, y, z).addScaledVector(right, CAVE_SIGHT).project(this.camera);
+        // Eased toward what's seen now, so a lantern lighting opens it out
+        this.sightShown += (this.caveSight() - this.sightShown) * 0.08;
+        const edge = new THREE.Vector3(x, y, z).addScaledVector(right, this.sightShown).project(this.camera);
         const w = canvas.clientWidth;
         const h = canvas.clientHeight;
         const sx = ((at.x + 1) / 2) * w;
         const sy = ((1 - at.y) / 2) * h;
         const radius = Math.hypot(((edge.x - at.x) / 2) * w, ((edge.y - at.y) / 2) * h);
-        this.caveDark.style.background = `radial-gradient(circle at ${sx.toFixed(0)}px ${sy.toFixed(0)}px, rgba(0, 0, 0, 0) ${(radius * 0.4).toFixed(0)}px, rgba(0, 0, 0, 0.7) ${(radius * 0.75).toFixed(0)}px, rgba(0, 0, 0, 0.97) ${radius.toFixed(0)}px)`;
+        // A lair's dark is its own colour (LAIR_THEMES' glow)
+        const [r, g, b] = this.themeAt(this.px, this.pz)?.theme.glow ?? [0, 0, 0];
+        const dark = (a: number) => `rgba(${r}, ${g}, ${b}, ${a})`;
+        this.caveDark.style.background = `radial-gradient(circle at ${sx.toFixed(0)}px ${sy.toFixed(0)}px, ${dark(r + g + b > 0 ? 0.12 : 0)} ${(radius * 0.4).toFixed(0)}px, ${dark(0.7)} ${(radius * 0.75).toFixed(0)}px, ${dark(0.97)} ${radius.toFixed(0)}px)`;
     }
 
     // This player as the enemies (and the snapshot) see them
@@ -4370,6 +4823,10 @@ export class Run {
         if (by.me && !effects.poisoned) {
             effects = { ...effects, stall: this.stats.set === "torag" };
         }
+        // Under the ground, nothing reaches it (a signature move)
+        if (e.burrowed !== undefined && e.burrowed > 0) {
+            return;
+        }
         // A miss (version 150) does nothing but rouse it: no freeze, no
         // poison, no slow, as a splashed spell in OSRS
         if (damage <= 0) {
@@ -4479,6 +4936,9 @@ export class Run {
             if (e.def.champion) {
                 this.championKills++;
             }
+            if (e.def.superior) {
+                this.superiorKills++;
+            }
             if (this.stats.ranged) {
                 this.rangedKills++;
             }
@@ -4541,6 +5001,12 @@ export class Run {
                 this.petFound = this.world.id;
                 this.hooks.onMessage(`Something small crawls out from under ${e.def.name}. It seems to like you.`);
             }
+            // A Depths boss's own pet (version 161), very rarely, by the
+            // boss's id: one of each of the fourteen to find
+            if (this.world.bosses && by.me && !pets.includes(e.def.id) && !this.petFound && this.rng() < 1 / DEPTHS_PET_ONE_IN) {
+                this.petFound = e.def.id;
+                this.hooks.onMessage(`Something small crawls out of ${e.def.name}'s lair after you. It seems to like you.`);
+            }
             return;
         }
         // Arrows or runes, for whoever shoots: one kill in four, what this
@@ -4561,10 +5027,15 @@ export class Run {
             this.clueDropped = true;
             this.dropPickup(CLUE_SCROLL, 1, e.x - 0.3, e.z + 0.3);
         }
-        // A superior carries two pieces of gear, a champion's prize each
+        // A superior carries two pieces of gear, a champion's prize each (and
+        // the first to fall, the brimstone chest's key: version 161)
         if (e.def.superior) {
             this.dropGear(this.world.lootTiers, e.x - 0.3, e.z - 0.3, PRIZE_FULL);
             this.dropGear(this.world.lootTiers, e.x + 0.3, e.z - 0.3, PRIZE_FULL);
+            if (!this.brimstoneDropped && this.chests.some((c) => c.room === "brimstone" && !c.opened)) {
+                this.brimstoneDropped = true;
+                this.dropPickup(BRIMSTONE_KEY, 1, e.x, e.z + 0.4);
+            }
             this.announce(`The ${e.def.name.toLowerCase()} falls, and leaves its hoard.`);
             return;
         }
@@ -4696,6 +5167,14 @@ export class Run {
             }
             if (e.state === "dead") {
                 this.fadeDead(e, dt);
+                continue;
+            }
+            // Under the ground (a signature move): nothing until it's up
+            if (e.burrowed !== undefined && e.burrowed > 0) {
+                e.burrowed -= dt;
+                if (e.burrowed <= 0) {
+                    this.emerge(e);
+                }
                 continue;
             }
             const t = this.targetFor(e, heroes);
@@ -4973,8 +5452,299 @@ export class Run {
         hunter.state = "chase";
         hunter.lastHurtAt = this.time;
         hunter.noIdleUntil = Infinity;
+        hunter.hunting = true;
+        this.huntWarned = Infinity;
+        if (this.coop?.role === "host") {
+            this.coop.send({ k: "boost", u: hunter.uid, hp: hunter.def.hp, d: hunter.def.damage, h: 1 } satisfies DownMessage);
+        }
         const others = left.length > 1 ? `the ${left.length} bosses left grow stronger` : `${hunter.def.name} grows stronger`;
         this.announce(`The Depths stir: ${others}, and ${hunter.def.name} is hunting you!`);
+    }
+
+    // The Depths' lairs (LAIR_THEMES): each boss by the cell it stands
+    // guard in, the cave's rooms' models by cell (for the floor's tint), the
+    // lairs walked into so far, and seconds to the floor's next burst
+    private lairs = new Map<number, Enemy>();
+    private caveParts = new Map<number, THREE.Object3D>();
+    private lairsSeen = new Set<number>();
+    private lairHazardIn = LAIR_HAZARD_EVERY;
+
+    private themeAt(x: number, z: number): { theme: LairTheme; boss: Enemy; cell: number } | undefined {
+        const cell = this.cave?.cellAt(x, z);
+        const boss = cell !== undefined ? this.lairs.get(cell) : undefined;
+        const theme = boss ? LAIR_THEMES[baseId(boss.def)] : undefined;
+        return theme && boss && cell !== undefined ? { theme, boss, cell } : undefined;
+    }
+
+    // A boss's lair noted where it stands (the host's and a guest's alike)
+    private noteLair(e: Enemy): void {
+        const cell = this.cave?.cellAt(e.homeX, e.homeZ);
+        if (cell === undefined || cell < 0) {
+            return;
+        }
+        this.lairs.set(cell, e);
+        this.tintLair(cell);
+    }
+
+    // A lair's room in its theme's colours, once both the room and its boss
+    // are in (its own copies of the materials: a room can be in the cave twice)
+    tintLair(cell: number | undefined): void {
+        if (cell === undefined) {
+            return;
+        }
+        const part = this.caveParts.get(cell);
+        const boss = this.lairs.get(cell);
+        const theme = boss ? LAIR_THEMES[baseId(boss.def)] : undefined;
+        if (!part || !theme || part.userData.lairTinted) {
+            return;
+        }
+        part.userData.lairTinted = true;
+        part.traverse((o) => {
+            const mesh = o as THREE.Mesh;
+            if (!mesh.isMesh) {
+                return;
+            }
+            const tinted = (m: THREE.Material) => {
+                const copy = m.clone() as THREE.MeshStandardMaterial;
+                copy.color?.multiply(theme.floor);
+                this.disposables.push(copy);
+                return copy;
+            };
+            mesh.material = Array.isArray(mesh.material) ? mesh.material.map(tinted) : tinted(mesh.material);
+        });
+    }
+
+    // In a lair: its word the first time, its ground's pace, its prayer
+    // drain; and (the host's, for everyone in one) its floor's bursts
+    private updateLairThemes(dt: number): void {
+        if (!this.cave) {
+            return;
+        }
+        const here = this.dead ? undefined : this.themeAt(this.px, this.pz);
+        this.groundPace = here?.theme.pace ?? 1;
+        // A dead adventurer's camp, the first time you come on it
+        for (const camp of this.camps) {
+            if (!camp.seen && Math.hypot(camp.x - this.px, camp.z - this.pz) < 5) {
+                camp.seen = true;
+                this.hooks.onMessage("A dead adventurer's camp: whatever they carried, they won't need it now.");
+            }
+        }
+        if (here && !this.lairsSeen.has(here.cell)) {
+            this.lairsSeen.add(here.cell);
+            this.hooks.onMessage(here.theme.word);
+        }
+        if (here?.theme.drain && this.protect !== "none") {
+            this.prayer = Math.max(0, this.prayer - here.theme.drain * dt);
+        }
+        if (this.coop?.role === "guest") {
+            return;
+        }
+        this.lairHazardIn -= dt;
+        if (this.lairHazardIn > 0) {
+            return;
+        }
+        this.lairHazardIn = LAIR_HAZARD_EVERY;
+        for (const hero of this.heroes()) {
+            const lair = this.themeAt(hero.x, hero.z);
+            if (!lair?.theme.hazard || lair.boss.state === "dead") {
+                continue;
+            }
+            for (let i = 0; i < 2; i++) {
+                const x = hero.x + (this.rng() - 0.5) * 5;
+                const z = hero.z + (this.rng() - 0.5) * 5;
+                if (this.region.fits(x, z, 0.1)) {
+                    const spores = lair.theme.hazard === "spores";
+                    this.sigRing(lair.boss, x, z, 1.2, 1.4, spores ? 0.05 : 0.08, spores ? (h) => this.sigPoison(h) : undefined);
+                }
+            }
+        }
+    }
+
+    // The Depths' cave events (EVENT_EVERY): the events so far, the rooms
+    // flooded now (their cell, blocked tiles, the water on them and seconds
+    // left) and the pockets of gas
+    private events = 0;
+    private floods: { cell: number; tiles: number[]; water: THREE.Mesh[]; left: number }[] = [];
+    private gas: { x: number; z: number; r: number; left: number; mesh: THREE.Mesh }[] = [];
+
+    private updateCaveEvents(dt: number): void {
+        if (!this.world.caves) {
+            return;
+        }
+        // Floods drain and gas thins, for everyone; a guest's floods drain
+        // when the host says
+        for (const flood of [...this.floods]) {
+            flood.left -= dt;
+            if (flood.left <= 0 && this.coop?.role !== "guest") {
+                this.drain(flood.cell);
+            }
+        }
+        for (const pocket of [...this.gas]) {
+            pocket.left -= dt;
+            (pocket.mesh.material as THREE.MeshBasicMaterial).opacity = 0.28 * Math.min(1, pocket.left / 3) + 0.04 * Math.sin(this.time * 3);
+            if (pocket.left <= 0) {
+                this.scene.remove(pocket.mesh);
+                (pocket.mesh.material as THREE.Material).dispose();
+                this.gas.splice(this.gas.indexOf(pocket), 1);
+            } else if (!this.dead && Math.hypot(this.px - pocket.x, this.pz - pocket.z) < pocket.r) {
+                this.prayer = Math.max(0, this.prayer - GAS_DRAIN * dt);
+            }
+        }
+        if (this.coop?.role === "guest" || this.time < EVENT_FIRST + EVENT_EVERY * this.events) {
+            return;
+        }
+        this.events++;
+        const heroes = this.heroes();
+        const hero = heroes[Math.floor(this.rng() * heroes.length)];
+        if (!hero) {
+            return;
+        }
+        const kind = Math.floor(this.rng() * 3);
+        if (kind === 0) {
+            this.floodSomewhere(heroes);
+        } else if (kind === 1) {
+            const x = hero.x + (this.rng() - 0.5) * 6;
+            const z = hero.z + (this.rng() - 0.5) * 6;
+            this.addGas(x, z, GAS_RADIUS, GAS_SECONDS);
+            if (this.coop?.role === "host") {
+                this.coop.send({ k: "gas", x: round2(x), z: round2(z), r: GAS_RADIUS, l: GAS_SECONDS } satisfies DownMessage);
+            }
+            this.announce("A pocket of gas hisses out of the rock: it'll choke your prayer while you stand in it.");
+        } else {
+            let woke = 0;
+            for (const e of this.enemies) {
+                if (e.def.tiny && e.state === "idle" && heroes.some((h) => Math.hypot(h.x - e.x, h.z - e.z) < SWARM_REACH)) {
+                    e.state = "chase";
+                    e.lastHurtAt = this.time;
+                    woke++;
+                }
+            }
+            this.announce(woke > 0 ? `The cave's vermin swarm: ${woke} of them come skittering out of the dark!` : "Something skitters in the walls, then goes quiet.");
+        }
+    }
+
+    // A room nobody's in, not a lair, flooded shut for FLOOD_SECONDS
+    private floodSomewhere(heroes: Hero[]): void {
+        const cave = this.cave!;
+        const inUse = new Set([...heroes.map((h) => cave.cellAt(h.x, h.z)), ...this.lairs.keys(), ...this.floods.map((f) => f.cell), this.sealed?.cell]);
+        const cells = cave.cells.map((name, cell) => ({ name, cell })).filter((c) => c.name !== "cave_0_rock" && !inUse.has(c.cell));
+        const pick = cells[Math.floor(this.rng() * cells.length)];
+        if (!pick) {
+            return;
+        }
+        this.flood(pick.cell);
+        if (this.coop?.role === "host") {
+            this.coop.send({ k: "flood", c: pick.cell, on: 1 } satisfies DownMessage);
+        }
+        const g = this.region;
+        const mid = g.centreOf(pick.cell % 6 * 64 + 32 + (Math.floor(pick.cell / 6) * 64 + 32) * g.sizeX);
+        this.announce(`Water roars through the tunnels: a cave to the ${this.compassTo(mid.x, mid.z)} is flooded shut for a minute.`);
+    }
+
+    private flood(cell: number): void {
+        const tiles = this.cave!.doorways(cell).filter((i) => this.region.isOpenTile(this.region.baseX + (i % this.region.sizeX), this.region.baseY + Math.floor(i / this.region.sizeX)));
+        const geometry = (this.waterTile ??= new THREE.PlaneGeometry(1, 1));
+        const material = (this.waterMaterial ??= new THREE.MeshBasicMaterial({ color: 0x2a6fa8, transparent: true, opacity: 0.75, depthWrite: false }));
+        const water: THREE.Mesh[] = [];
+        for (const i of tiles) {
+            this.region.setSolid(i, true);
+            const at = this.region.centreOf(i);
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.rotation.x = -Math.PI / 2;
+            mesh.position.set(at.x, this.region.topAt(at.x, at.z) + 0.15, at.z);
+            this.scene.add(mesh);
+            water.push(mesh);
+        }
+        this.floods.push({ cell, tiles, water, left: FLOOD_SECONDS });
+    }
+
+    private drain(cell: number): void {
+        const flood = this.floods.find((f) => f.cell === cell);
+        if (!flood) {
+            return;
+        }
+        this.floods.splice(this.floods.indexOf(flood), 1);
+        for (const i of flood.tiles) {
+            this.region.setSolid(i, false);
+        }
+        for (const mesh of flood.water) {
+            this.scene.remove(mesh);
+        }
+        if (this.coop?.role === "host") {
+            this.coop.send({ k: "flood", c: cell, on: 0 } satisfies DownMessage);
+        }
+        if (this.coop?.role !== "guest") {
+            this.announce("The floodwater drains away.");
+        }
+    }
+
+    private waterTile?: THREE.PlaneGeometry;
+    private waterMaterial?: THREE.MeshBasicMaterial;
+
+    private addGas(x: number, z: number, r: number, left: number): void {
+        const geometry = (this.gasDisc ??= new THREE.CircleGeometry(1, 40));
+        const material = new THREE.MeshBasicMaterial({ color: 0x7fbf3a, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.scale.setScalar(r);
+        mesh.position.set(x, this.groundY(x, z) + 0.08, z);
+        this.scene.add(mesh);
+        this.gas.push({ x, z, r, left, mesh });
+    }
+
+    private gasDisc?: THREE.CircleGeometry;
+
+    // The boss hunting you (empowerBosses), and the nearest of HUNT_RUMBLES
+    // it's been told inside of (version 161)
+    private huntWarned = Infinity;
+
+    private hunter(): Enemy | undefined {
+        for (const e of [...this.enemies, ...this.ghosts.values()]) {
+            if (e.hunting && e.state !== "dead") {
+                return e;
+            }
+        }
+        return undefined;
+    }
+
+    // For the HUD: who's hunting you, how far, and which way on the screen
+    get huntWord(): { text: string; near: boolean } | undefined {
+        const e = this.hunter();
+        if (!e || this.dead) {
+            return undefined;
+        }
+        const dx = e.x - this.px;
+        const dz = e.z - this.pz;
+        const dist = Math.round(Math.hypot(dx, dz));
+        // The screen's up and right on the ground, however the camera's turned
+        const up = [-Math.sin(this.cameraYaw), -Math.cos(this.cameraYaw)];
+        const right = [Math.cos(this.cameraYaw), -Math.sin(this.cameraYaw)];
+        const angle = Math.atan2(dx * right[0] + dz * right[1], dx * up[0] + dz * up[1]);
+        const arrow = ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"][(Math.round(angle / (Math.PI / 4)) + 8) % 8];
+        return { text: `${arrow} ${e.def.name} hunts you: ${dist} tiles ${this.compassTo(e.x, e.z)}`, near: dist < HUNT_RUMBLES[HUNT_RUMBLES.length - 1] };
+    }
+
+    // The ground shakes as the hunter closes in: told inside each of
+    // HUNT_RUMBLES, and again once it's dropped back past one
+    private updateHunt(): void {
+        const e = this.hunter();
+        if (!e || this.dead) {
+            return;
+        }
+        const dist = Math.hypot(e.x - this.px, e.z - this.pz);
+        const inside = HUNT_RUMBLES.filter((r) => dist < r);
+        const nearest = inside.length > 0 ? inside[inside.length - 1] : Infinity;
+        if (nearest < this.huntWarned) {
+            this.huntWarned = nearest;
+            playSound(npcSound(e.def.npcId, "attack"), nearest <= 15 ? 0.6 : 0.3);
+            this.hooks.onMessage(
+                nearest <= 15
+                    ? `${e.def.name} is almost on you!`
+                    : `The ground shakes: ${e.def.name} is ${Math.round(dist)} tiles off, to the ${this.compassTo(e.x, e.z)}.`,
+            );
+        } else if (nearest > this.huntWarned) {
+            this.huntWarned = nearest;
+        }
     }
 
     // The Depths' lairs (LAIR_SEAL_IN): one shuts once everyone in it is well
@@ -5087,10 +5857,148 @@ export class Run {
         this.announce(`${e.def.name} is left alone, and heals whole.`);
     }
 
+    // A Depths boss's own move (SIGNATURES, version 161, as the user asked:
+    // each of the fourteen fights like itself), on a timer while it's up and
+    // at shares of its health; and any adds that mend it, mending it
+    private updateSignature(e: Enemy, t: Hero | undefined, dt: number): void {
+        const sig = SIGNATURES[baseId(e.def)];
+        if (!sig || e.state === "idle" || e.state === "dead") {
+            return;
+        }
+        const menders = (e.adds ?? []).filter((a) => a.mends === e && a.state !== "dead").length;
+        if (menders > 0) {
+            const whole = e.reborn ? Math.round(e.def.hp * SECOND_FORM_SHARE) : e.def.hp;
+            e.hp = Math.min(whole, e.hp + e.def.hp * MEND_RATE * menders * dt);
+        }
+        for (const mark of sig.marks ?? []) {
+            if (e.hp <= e.def.hp * mark && !(e.sigMarks ?? []).includes(mark)) {
+                e.sigMarks = [...(e.sigMarks ?? []), mark];
+                sig.atMark?.(this, e, t);
+            }
+        }
+        if (!sig.every || !t) {
+            return;
+        }
+        e.sigIn ??= sig.every / 2;
+        e.sigIn -= dt;
+        if (e.sigIn <= 0) {
+            e.sigIn = sig.every;
+            e.sigStep = (e.sigStep ?? 0) + 1;
+            sig.move?.(this, e, t, e.sigStep - 1);
+        }
+    }
+
+    // The moves' pieces: a ring that bursts on whoever's in it, for a share
+    // of their hitpoints (through armour and prayer: it can be walked out of),
+    // with more on top
+    sigRing(e: Enemy, x: number, z: number, radius: number, warning: number, share: number, extra?: (hero: Hero) => void): void {
+        this.hazard(x, z, radius, warning, (hero) => {
+            if (e.state !== "dead") {
+                this.hurtHero(hero, e.def, 0, "magic", true, Math.max(1, Math.round(hero.maxHp * share)));
+                extra?.(hero);
+            }
+        });
+    }
+
+    sigSay(text: string): void {
+        this.announce(text);
+    }
+
+    sigPoison(hero: Hero): void {
+        if (hero.me) {
+            this.poison();
+        }
+    }
+
+    // Held in place (this player alone: a co-op mate's moves are its own)
+    sigRoot(hero: Hero, seconds: number): void {
+        if (hero.me) {
+            this.rooted = Math.max(this.rooted, seconds);
+            this.hooks.onMessage("You're held fast!");
+        }
+    }
+
+    // Thrown back from where the boss stands
+    sigKnock(e: Enemy, hero: Hero, tiles: number): void {
+        if (!hero.me) {
+            return;
+        }
+        const dx = this.px - e.x;
+        const dz = this.pz - e.z;
+        const len = Math.max(0.01, Math.hypot(dx, dz));
+        [this.px, this.pz] = this.moveCircle(this.px, this.pz, (dx / len) * tiles, (dz / len) * tiles, COLLISION_RADIUS);
+    }
+
+    sigDrainPrayer(hero: Hero, amount: number): void {
+        if (hero.me) {
+            this.prayer = Math.max(0, this.prayer - amount);
+        }
+    }
+
+    // Adds beside the boss, of one of the cave's own kinds, made smaller or
+    // tinted as said, after the nearest hero; mending the boss if `mend`
+    sigAdds(e: Enemy, kind: string, name: string, count: number, look: { scale?: number; tint?: THREE.Color; hp?: number; mend?: boolean }): void {
+        const base = this.world.enemies.find((x) => x.def.id.endsWith(`:${kind}`))?.def ?? this.world.enemies[0].def;
+        const def: EnemyDef = {
+            ...base,
+            id: `${base.id}:add`,
+            name,
+            hp: Math.max(1, Math.round(base.hp * (look.hp ?? 1))),
+            scale: (base.scale ?? 1) * (look.scale ?? 1),
+            foodChance: 0,
+            coins: [0, 0],
+        };
+        for (let i = 0; i < count; i++) {
+            const angle = (i / count) * Math.PI * 2 + this.rng();
+            const x = e.x + Math.cos(angle) * 2.2;
+            const z = e.z + Math.sin(angle) * 2.2;
+            if (!this.region.fits(x, z, COLLISION_RADIUS)) {
+                continue;
+            }
+            void this.spawnEnemy(def, { x, z }).then((add) => {
+                if (look.tint) {
+                    add.tint = look.tint.clone();
+                    tint(add.actor, add.tint);
+                }
+                if (look.mend) {
+                    add.mends = e;
+                }
+                e.adds = [...(e.adds ?? []), add];
+                this.rouse(add);
+            });
+        }
+    }
+
+    // Under the ground for a while (the Giant Mole): unseen and unhurt, then
+    // up somewhere else in its lair
+    sigBurrow(e: Enemy, seconds: number): void {
+        e.burrowed = seconds;
+        e.actor.root.visible = false;
+        this.announce(`${e.def.name} digs down into the ground!`);
+    }
+
+    private emerge(e: Enemy): void {
+        const cell = this.cave?.cellAt(e.homeX, e.homeZ);
+        for (let tries = 0; tries < 30; tries++) {
+            const x = e.homeX + (this.rng() - 0.5) * 20;
+            const z = e.homeZ + (this.rng() - 0.5) * 20;
+            if (this.region.fits(x, z, e.def.radius) && (cell === undefined || this.cave?.cellAt(x, z) === cell) && Math.hypot(x - this.px, z - this.pz) > 4) {
+                e.x = x;
+                e.z = z;
+                break;
+            }
+        }
+        e.actor.root.visible = true;
+        this.announce(`${e.def.name} bursts up out of the ground!`);
+    }
+
     // Half way down, a boss is enraged: quicker, redder, with company. In a
     // fight it slams the ground now and then, a ring on the ground warning
     // where, and marks where whoever it's after stands when they're off
     private updateBoss(e: Enemy, t: Hero | undefined, dt: number): void {
+        if (this.world.bosses) {
+            this.updateSignature(e, t, dt);
+        }
         // Left alone too long, an enraged boss gets some of its health back
         // (a second form no higher than it rose with, version 154: it healed
         // back past it to the first form's whole)
@@ -5830,6 +6738,13 @@ export class Run {
         } else if (id === VAULT_KEY) {
             this.vaultFound = true;
             this.hooks.onMessage(`You pick up the crystal key. The vault is ${this.vaultDirection()}.`);
+        } else if (id === BRIMSTONE_KEY) {
+            const chest = this.chests.find((c) => c.room === "brimstone" && !c.opened);
+            this.hooks.onMessage(
+                chest
+                    ? `You pick up a brimstone key. The brimstone chest is ${Math.round(Math.hypot(chest.tile.x - this.px, chest.tile.z - this.pz))} tiles to the ${this.compassTo(chest.tile.x, chest.tile.z)}.`
+                    : "You pick up a brimstone key.",
+            );
         } else if (id === BOSS_KEY) {
             const golden = this.chests.find((c) => c.boss && !c.opened);
             this.hooks.onMessage(
@@ -6090,6 +7005,25 @@ export class Run {
             }
         }
 
+        // The Depths' altar: the prayer bar full again, once a run
+        for (const altar of this.altars) {
+            if (!near(altar.x, altar.z)) {
+                continue;
+            }
+            if (altar.used) {
+                this.prompt = "You've prayed here already this run.";
+                return;
+            }
+            this.prompt = "Press E to pray at the altar: a full prayer bar, once a run";
+            if (pressed) {
+                altar.used = true;
+                this.prayer = 100;
+                this.keys.delete("KeyE");
+                this.hooks.onMessage("You pray at the altar, and your prayer is full again.");
+            }
+            return;
+        }
+
         // Chests, and the vault, which wants its key
         for (const chest of this.chests) {
             if (chest.opened || !near(chest.tile.x, chest.tile.z)) {
@@ -6097,6 +7031,17 @@ export class Run {
             }
             if (chest.vault && !this.inventory.some((s) => s.id === VAULT_KEY)) {
                 this.prompt = "The vault is locked. One of this map's champions carries the key.";
+                return;
+            }
+            if (chest.room === "brimstone" && !this.inventory.some((s) => s.id === BRIMSTONE_KEY)) {
+                this.prompt = "The brimstone chest is locked. The first superior to fall drops its key.";
+                return;
+            }
+            if (chest.room) {
+                this.prompt = chest.room === "trap" ? "Press E to open the ornate chest (the floor round it looks weak)" : "Press E to unlock the brimstone chest";
+                if (pressed) {
+                    this.openChest(chest);
+                }
                 return;
             }
             if (chest.boss && this.goldenSpent()) {
@@ -6147,6 +7092,9 @@ export class Run {
                 this.hooks.onChanged();
             } else if (chest.boss) {
                 removeItem(this.inventory, BOSS_KEY, 1);
+                this.hooks.onChanged();
+            } else if (chest.room === "brimstone") {
+                removeItem(this.inventory, BRIMSTONE_KEY, 1);
                 this.hooks.onChanged();
             }
             this.coop.send({ k: "open", c: index } satisfies UpMessage);
@@ -6208,6 +7156,37 @@ export class Run {
             this.hooks.onChanged();
             return;
         }
+        // The Depths' trapped treasure room: two pieces at a champion's
+        // prize odds and a fat purse, and the floor round it gives way
+        if (chest.room === "trap") {
+            gear(this.world.lootTiers, PRIZE_FULL);
+            gear(this.world.lootTiers, PRIZE_FULL);
+            drop(COINS, purse(200, 400));
+            const falling: EnemyDef = { ...this.world.enemies[0].def, name: "The falling floor" };
+            for (let i = 0; i < TRAP_RINGS; i++) {
+                const angle = (i / TRAP_RINGS) * Math.PI * 2;
+                const x = chest.tile.x + Math.cos(angle) * 1.6;
+                const z = chest.tile.z + Math.sin(angle) * 1.6;
+                this.hazard(x, z, 1.3, 1.0, (h) => this.hurtHero(h, falling, 0, "melee", true, Math.max(1, Math.round(h.maxHp * TRAP_HIT))));
+            }
+            this.hazard(chest.tile.x, chest.tile.z, 1.3, 1.0, (h) => this.hurtHero(h, falling, 0, "melee", true, Math.max(1, Math.round(h.maxHp * TRAP_HIT))));
+            this.wakeNear(chest.tile.x, chest.tile.z, TRAP_ROUSE);
+            this.announce("The ornate chest swings open, and the floor round it gives way! Run!");
+            return;
+        }
+        // The brimstone chest: a superior's key, two pieces as the crystal
+        // chest gives them (a purple now and then) and a purse
+        if (chest.room === "brimstone") {
+            if (by.me) {
+                removeItem(this.inventory, BRIMSTONE_KEY, 1);
+                this.hooks.onChanged();
+            }
+            gear(this.world.lootTiers, PRIZE_CASKET, "crystal");
+            gear(this.world.lootTiers, PRIZE_CASKET, "crystal");
+            drop(COINS, purse(300, 600));
+            this.announce("The brimstone chest's lock gives, and it's full.");
+            return;
+        }
         if (chest.boss) {
             // The boss's key goes in the lock. The prize: two or three pieces
             // of the map's tier (the tier's prizes among them), a potion and
@@ -6243,7 +7222,12 @@ export class Run {
                 this.clueDropped = true;
                 drop(CLUE_SCROLL, 1);
             } else if (depths && this.rng() > DEPTHS_SUPPLIES) {
-                drop(COINS, purse(60, 150));
+                // ...or a can or two of lantern oil (version 161)
+                if (this.rng() < CHEST_OIL) {
+                    drop(OIL_CAN, randInt(this.rng, 1, 2));
+                } else {
+                    drop(COINS, purse(60, 150));
+                }
             } else if (this.rng() < 0.4) {
                 drop(potion(), 1);
             } else {
@@ -6387,7 +7371,8 @@ export class Run {
         coop.send({
             k: "world",
             exits: exits.map((e) => [round2(e.x), round2(e.z)] as [number, number]),
-            chests: this.chests.map((c) => [round2(c.tile.x), round2(c.tile.z), c.vault ? 2 : c.boss ? 1 : 0]),
+            chests: this.chests.map((c) => [round2(c.tile.x), round2(c.tile.z), c.vault ? 2 : c.boss ? 1 : c.room === "trap" ? 3 : c.room === "brimstone" ? 4 : 0]),
+            altars: this.altars.map((a) => [round2(a.x), round2(a.z)]),
             trader: this.trader ? [round2(this.trader.x), round2(this.trader.z), round2(this.trader.rotation)] : undefined,
             ferry: this.ferry ? [round2(this.ferry.x), round2(this.ferry.z), round2(this.ferry.rotation)] : undefined,
             defs: this.defs.slice(),
@@ -6593,7 +7578,8 @@ export class Run {
         let def = this.ghostDefs.get(code);
         if (!def) {
             def = {
-                id: `ghost:${code}`,
+                id: lite.id ?? `ghost:${code}`,
+                superior: lite.superior ? true : undefined,
                 npcId: lite.npc,
                 name: lite.name,
                 hp: lite.hp,
@@ -6653,9 +7639,19 @@ export class Run {
                 }
             });
         }
-        this.chests = message.chests.map(([x, z, kind]) => ({ tile: { x, z }, opened: false, boss: kind === 1, vault: kind === 2 }));
+        this.chests = message.chests.map(([x, z, kind]) => ({
+            tile: { x, z },
+            opened: false,
+            boss: kind === 1,
+            vault: kind === 2,
+            room: kind === 3 ? "trap" : kind === 4 ? "brimstone" : undefined,
+        }));
         for (const chest of this.chests) {
             void this.loadChest(chest);
+        }
+        this.altars = (message.altars ?? []).map(([x, z]) => ({ x, z, used: false }));
+        for (const altar of this.altars) {
+            void this.loadAltar(altar);
         }
         if (message.trader) {
             const [x, z, rotation] = message.trader;
@@ -6826,6 +7822,10 @@ export class Run {
                 const e = this.ghosts.get(message.u);
                 if (e) {
                     e.def = { ...e.def, hp: message.hp, damage: message.d };
+                    if (message.h) {
+                        e.hunting = true;
+                        this.huntWarned = Infinity;
+                    }
                 }
                 break;
             }
@@ -6835,6 +7835,16 @@ export class Run {
                 } else if (!message.on) {
                     this.openLair();
                 }
+                break;
+            case "flood":
+                if (message.on && this.cave && !this.floods.some((f) => f.cell === message.c)) {
+                    this.flood(message.c);
+                } else if (!message.on) {
+                    this.drain(message.c);
+                }
+                break;
+            case "gas":
+                this.addGas(message.x, message.z, message.r, message.l);
                 break;
             case "drop":
                 this.dropPickup(message.i, message.n, message.x, message.z, 0, message.u);
@@ -6928,6 +7938,9 @@ export class Run {
                     this.kills++;
                     if (message.champion) {
                         this.championKills++;
+                    }
+                    if (e?.def.superior) {
+                        this.superiorKills++;
                     }
                     if (this.stats.ranged) {
                         this.rangedKills++;
@@ -7099,6 +8112,7 @@ export class Run {
                     !chest.opened &&
                     near(chest.tile.x, chest.tile.z, GUEST_REACH) &&
                     (!chest.vault || this.guestSpend(from, VAULT_KEY, 1)) &&
+                    (chest.room !== "brimstone" || this.guestSpend(from, BRIMSTONE_KEY, 1)) &&
                     (!chest.boss || (!this.goldenSpent() && this.guestSpend(from, BOSS_KEY, 1)))
                 ) {
                     this.openChest(chest, mate);
@@ -7392,6 +8406,7 @@ export class Run {
     private applyStats(): void {
         const stats = gearStats(this.equipment, this.wear);
         applyPetStats(stats, this.petBuff);
+        this.applyDepthsStats(stats);
         if (this.boosts.strength > 0) {
             stats.damage = Math.round(stats.damage * 1.25);
         }

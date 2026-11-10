@@ -48,9 +48,18 @@ export const STARTER_KITS: StarterKit[] = [
 // The old kit newSave() still makes, swapped for the one picked
 const OLD_STASHED = 1129;
 
+// The Depths' fresh start also gets a bullseye lantern and a few cans of
+// oil for it (version 161): the dark there is the darkest in the game
+const LANTERN = 4550;
+const OIL = 277;
+const DEPTHS_OIL = 3;
+
 export function applyStarter(save: SaveData, kit: StarterKit): void {
     removeItem(save.stash, OLD_STASHED, 1);
     save.equipment = { ...kit.equipment };
     save.backpack = kit.backpack.map((s) => ({ ...s }));
+    if (save.mode === "endless") {
+        save.backpack.push({ id: LANTERN, count: 1 }, { id: OIL, count: DEPTHS_OIL });
+    }
     delete save.pickStarter;
 }

@@ -1,9 +1,10 @@
 import * as THREE from "three";
 
-import { COINS, ITEMS, PRIZES, SLOTS, getItem, rollGear, rollShopStock } from "./content/items";
+import { COINS, FOOD_BY_TIER, ITEMS, PRIZES, SLOTS, getItem, price, rollGear, rollShopStock } from "./content/items";
 import { TASKS } from "./content/tasks";
 import { clampThreat, threatOpen } from "./content/threat";
-import { ENDLESS_DEPTHS, ENDLESS_ID, WORLD_BY_ID, WorldDef, endlessDepth, getWorld, mapUnlocked, setModeSource } from "./content/worlds";
+import { ENDLESS_DEPTHS, ENDLESS_ID, WORLD_BY_ID, WorldDef, endlessDepth, endlessWorld, getWorld, mapUnlocked, setModeSource } from "./content/worlds";
+import { DEPTH_TITLES, DepthsGain, SLAYER_CAPE, dailyDay, dailyDepth, dailySeed, shardsFor } from "./game/depths";
 import { Account } from "./game/account";
 import { recordAttempt } from "./game/contract";
 import { GameStart, Session } from "./game/coop";
@@ -19,6 +20,7 @@ import {
     Grave,
     ItemStack,
     activeSlot,
+    depthsOf,
     loadSave,
     loadedSlot,
     packSize,
@@ -69,7 +71,7 @@ const session = new Session();
 
 // The character in Lumbridge's courtyard behind the guild's screens
 const menu = new MenuScene(renderer);
-const ui = new UI(document.getElementById("ui")!, save, menu, session, { startRun });
+const ui = new UI(document.getElementById("ui")!, save, menu, session, { startRun, startDaily });
 if (wiped) {
     ui.notice = "This version starts everyone fresh: the save from before it has been cleared.";
 }
@@ -114,7 +116,27 @@ let broughtCoins = 0;
 // What a run takes in from the save: the pack, what's worn, the guild's
 // upgrades, the gravestone on that map, the pet, and the armour's wear. Coins
 // packed (the stash screen's Coins section) go in the purse, not a slot.
-function packUp(worldId: string): RunCarry {
+// And what the pack and the gear were worth: the daily cave's haul is what
+// came out over it (version 161)
+let broughtWorth = 0;
+// Food a level of the Depths' Provisions upgrade packs
+const PROVISIONS = 2;
+
+function carriedWorth(stacks: ItemStack[], equipment: RunCarry["equipment"]): number {
+    let worth = 0;
+    for (const s of stacks) {
+        worth += s.id === COINS ? s.count : price(getItem(s.id)) * s.count;
+    }
+    for (const slot of SLOTS) {
+        const id = equipment[slot];
+        if (id !== undefined) {
+            worth += price(getItem(id));
+        }
+    }
+    return worth;
+}
+
+function packUp(worldId: string, daily?: number): RunCarry {
     // Nobody goes in unarmed
     if (save.equipment.weapon === undefined) {
         save.equipment.weapon = 1205;
@@ -152,8 +174,23 @@ function packUp(worldId: string): RunCarry {
     }
     writeSave(save);
     broughtCoins = countOf(save.backpack, COINS);
+    broughtWorth = carriedWorth(save.backpack, save.equipment);
+    // The Depths: the delvers' upgrades go along, and Provisions packs the
+    // depth's own food over what was packed, as far as the pack takes it
+    const inventory = save.backpack.filter((s) => s.id !== COINS).map((s) => ({ ...s }));
+    let depths: RunCarry["depths"];
+    if (worldId === ENDLESS_ID) {
+        const progress = depthsOf(save);
+        depths = { upgrades: { ...progress.upgrades }, daily };
+        const food = FOOD_BY_TIER[Math.min(FOOD_BY_TIER.length - 1, getWorld(ENDLESS_ID).tier - 1)];
+        const extra = roomFor(inventory, food, PROVISIONS * progress.upgrades.provisions);
+        if (extra > 0) {
+            addItem(inventory, food, extra);
+        }
+    }
     return {
-        inventory: save.backpack.filter((s) => s.id !== COINS).map((s) => ({ ...s })),
+        depths,
+        inventory,
         equipment: { ...save.equipment },
         coins: broughtCoins,
         packSize: packSize(save),
@@ -196,6 +233,16 @@ function startRun(worldId: string): void {
     }
     const world = getWorld(worldId);
     void launchWorld(world, packUp(worldId), (Date.now() ^ (world.tier * 7919)) >>> 0);
+}
+
+// The daily cave (version 161): today's seed and depth, the same for
+// everyone, whatever this profile's own depth
+function startDaily(): void {
+    if (!runMayStart() || save.mode !== "endless") {
+        return;
+    }
+    const day = dailyDay();
+    void launchWorld(endlessWorld(dailyDepth(day)), packUp(ENDLESS_ID, day), dailySeed(day));
 }
 
 // The host started the party's run: everyone launches the same map from
@@ -503,8 +550,10 @@ async function onRunEnd(result: RunResult): Promise<void> {
         if (report.bossKills > 0 && !stats.mapsBeaten.includes(result.world.id)) {
             stats.mapsBeaten.push(result.world.id);
         }
-        // The Depths beaten at their depth go a star deeper (version 156)
-        if (report.bossKills > 0 && result.world.id === ENDLESS_ID && (result.world.depth ?? 1) >= endlessDepth() && endlessDepth() < ENDLESS_DEPTHS) {
+        // The Depths beaten at their depth go a star deeper (version 156;
+        // not from the daily cave, whose depth is the day's)
+        const daily = result.carry.depths?.daily !== undefined;
+        if (report.bossKills > 0 && result.world.id === ENDLESS_ID && !daily && (result.world.depth ?? 1) >= endlessDepth() && endlessDepth() < ENDLESS_DEPTHS) {
             save.endlessDepth = endlessDepth() + 1;
             ui.message(`The Depths go deeper: depth ${save.endlessDepth} of ${ENDLESS_DEPTHS}, its enemies and bosses tougher from the next run on.`);
         }
@@ -545,6 +594,7 @@ async function onRunEnd(result: RunResult): Promise<void> {
             delete save.wear[Number(key)];
         }
     }
+    const depthsGain = result.world.id === ENDLESS_ID ? settleDepths(result) : undefined;
     // Tasks done by now, paid once
     const done = TASKS.filter((t) => !save.tasks.includes(t.id) && t.done(save, result));
     for (const task of done) {
@@ -563,7 +613,46 @@ async function onRunEnd(result: RunResult): Promise<void> {
         addItem(save.stash, contract.rewardItem, 1);
     }
     writeSave(save);
-    ui.showSummary(result, kept, { tasks: done, insured, grave: graveMade, graveHalved, pet, contract });
+    ui.showSummary(result, kept, { tasks: done, insured, grave: graveMade, graveHalved, pet, contract, depths: depthsGain });
+}
+
+// What a Depths run comes to between runs (version 161): its cave shards,
+// whether its depth is cleared now (escaped with a boss slain: a title, and
+// the fifth the Slayer cape), and the daily cave's haul, which goes on the
+// board for a logged in account
+function settleDepths(result: RunResult): DepthsGain {
+    const progress = depthsOf(save);
+    const report = result.report;
+    const depth = result.world.depth ?? 1;
+    const escaped = result.kind === "extracted";
+    const day = result.carry.depths?.daily;
+    const daily = day !== undefined;
+    const shards = shardsFor(report, depth, escaped);
+    progress.shards += shards;
+    const gain: DepthsGain = { shards };
+    if (escaped && report.bossKills > 0 && !daily && !progress.cleared.includes(depth)) {
+        progress.cleared = [...progress.cleared, depth].sort((a, b) => a - b);
+        gain.title = DEPTH_TITLES[depth - 1];
+        progress.title = gain.title;
+        if (depth === ENDLESS_DEPTHS) {
+            addItem(save.stash, SLAYER_CAPE, 1);
+            gain.cape = true;
+        }
+    }
+    if (day !== undefined) {
+        const haul = escaped ? Math.max(0, carriedWorth([...result.carry.inventory, { id: COINS, count: result.carry.coins }], result.carry.equipment) - broughtWorth) : 0;
+        gain.daily = { day, haul };
+        if (escaped) {
+            const best = progress.daily?.day === day ? progress.daily.best : 0;
+            progress.daily = { day, best: Math.max(best, haul) };
+            if (account.state) {
+                void account.submitDaily(day, haul).then((r) => {
+                    ui.message(r.ok ? `The daily cave's board has you at number ${r.data.rank}, best ${r.data.best.toLocaleString()}.` : r.error);
+                });
+            }
+        }
+    }
+    return gain;
 }
 
 // Every item icon in one sheet, fetched once (icons drawn before it comes

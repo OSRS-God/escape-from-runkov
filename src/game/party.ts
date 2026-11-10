@@ -69,6 +69,10 @@ export type EnemyDefLite = {
     boss?: 1;
     champion?: 1;
     shoots?: "magic" | "ranged";
+    // Its own id (version 161: a Depths boss's lair theme goes by it), and
+    // whether it's a superior
+    id?: string;
+    superior?: 1;
 };
 
 export type Snapshot = {
@@ -89,8 +93,11 @@ export type DownMessage =
           k: "world";
           // The ways out
           exits: [number, number][];
-          // x, z, kind: 0 a chest, 1 the boss's golden one, 2 the vault
-          chests: [number, number, 0 | 1 | 2][];
+          // x, z, kind: 0 a chest, 1 the boss's golden one, 2 the vault; the
+          // Depths' 3 ornate chest and 4 brimstone chest (version 161)
+          chests: [number, number, 0 | 1 | 2 | 3 | 4][];
+          // The Depths' altars (version 161)
+          altars?: [number, number][];
           trader?: [number, number, number];
           // The genie beside the spawn: x, z, which way he faces
           ferry?: [number, number, number];
@@ -121,8 +128,12 @@ export type DownMessage =
     | { k: "msg"; text: string; to?: string }
     // The Depths (version 159): a boss grown stronger, its hitpoints and
     // hit now; and a lair shut (on: 1) or open again, by its cell
-    | { k: "boost"; u: number; hp: number; d: number }
+    | { k: "boost"; u: number; hp: number; d: number; h?: 1 }
     | { k: "seal"; c: number; on: 0 | 1 }
+    // The Depths' cave events (version 161): a room's doorways flooded shut
+    // (on: 1) or drained, and a pocket of gas
+    | { k: "flood"; c: number; on: 0 | 1 }
+    | { k: "gas"; x: number; z: number; r: number; l: number }
     // A hero's worn gear changed (the host's own, or a guest's passed on),
     // so everyone draws them in it (version 72)
     | { k: "gear"; id: string; e: Equipment }

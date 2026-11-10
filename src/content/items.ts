@@ -131,7 +131,16 @@ export type ItemDef = {
     // the gilded pieces) or the playtester's (version 89, the Guthix sunfire
     // set). Never in a chest, a drop or the shop, and no tier's prize.
     exclusive?: "owner" | "playtester";
+    // A mode's own reward (version 161): never in a chest, a drop or the
+    // shop, and no tier's prize; only given (the Slayer cape, for depth 5)
+    reward?: "depths";
+    // The Depths' light (version 161): a lantern, and the oil it burns
+    lantern?: boolean;
+    oil?: boolean;
+    // The key to the Depths' brimstone chest, which a superior drops
+    brimstone?: boolean;
 };
+export const BRIMSTONE_KEY = 23083;
 
 export type AttackStyle = "melee" | "ranged" | "magic";
 export const ATTACK_STYLES: AttackStyle[] = ["melee", "ranged", "magic"];
@@ -1443,6 +1452,16 @@ export const ITEMS: ItemDef[] = [
     // The golden chest's key: the boss drops it every time, and it's no use
     // off the map either
     { id: 991, name: "Golden chest key", tier: 0, value: 0, bossKey: true },
+    // The Depths (version 161, as the user asked). A bullseye lantern lights
+    // more of the dark round you while there's oil in the pack to burn (run.ts
+    // LANTERN_SIGHT), and the Slayer cape is theirs alone: escaping depth 5
+    // with a boss slain gives it, and nothing else does (`reward`)
+    { id: 4550, name: "Bullseye lantern", tier: 0, value: 400, lantern: true },
+    { id: 277, name: "Oil can", tier: 0, value: 40, stackable: true, oil: true },
+    // A superior's key to the Depths' brimstone chest (version 161), no use
+    // off the map
+    { id: 23083, name: "Brimstone key", tier: 0, value: 0, brimstone: true },
+    armour(9786, "Slayer cape", "cape", 5, 14, 10000000, { hp: 10, prayer: 4, reward: "depths" }),
     // Version 59: ranged and magic filled out. Thrown weapons, which need no
     // ammunition: darts (fastest, lightest), knives, throwing axes (the
     // heaviest), chinchompas (what they hit, everything beside it takes
@@ -2092,7 +2111,7 @@ export function rollShopStock(random: () => number, maxTier = 5, size = STOCK_SI
 // Gear by tier, for chests
 export const GEAR_BY_TIER: Map<number, ItemDef[]> = new Map();
 for (const item of ITEMS) {
-    if (item.slot && !item.exclusive) {
+    if (item.slot && !item.exclusive && !item.reward) {
         const list = GEAR_BY_TIER.get(item.tier) ?? [];
         list.push(item);
         GEAR_BY_TIER.set(item.tier, list);
@@ -2123,7 +2142,7 @@ const RARITY: [number, number, number] = [4, 2, 1];
 {
     const groups = new Map<string, ItemDef[]>();
     for (const item of ITEMS) {
-        if (item.slot && !item.exclusive) {
+        if (item.slot && !item.exclusive && !item.reward) {
             const key = `${item.tier}:${item.slot}`;
             groups.set(key, [...(groups.get(key) ?? []), item]);
         }

@@ -101,7 +101,39 @@ export type SaveData = {
     // How deep the Depths go for this profile, 1 to 5 (their tier): one deeper
     // each time it's beaten
     endlessDepth?: number;
+    // The Depths' own progress (version 161): cave shards and what they've
+    // bought (DEPTHS_UPGRADES), the depths escaped from with a boss slain
+    // (each a title, the fifth the Slayer cape), the title worn, and the best
+    // of today's daily cave
+    depths?: DepthsProgress;
 };
+
+export type DepthsUpgradeKey = "provisions" | "prayer" | "sight" | "hardiness";
+export type DepthsProgress = {
+    shards: number;
+    upgrades: Record<DepthsUpgradeKey, number>;
+    cleared: number[];
+    title?: string;
+    daily?: { day: number; best: number };
+};
+
+// What cave shards buy, a level at a time, for every Depths run after
+export const DEPTHS_UPGRADES: Record<DepthsUpgradeKey, { name: string; effect: string; costs: number[] }> = {
+    provisions: { name: "Provisions", effect: "two more of the food you can find packed for you a run, a level", costs: [40, 120, 300] },
+    prayer: { name: "Steady prayer", effect: "protection drains a tenth slower in the Depths, a level", costs: [60, 160, 360] },
+    sight: { name: "Keen eyes", effect: "a tile more of the dark seen round you, a level", costs: [50, 140, 320] },
+    hardiness: { name: "Hardiness", effect: "five more hitpoints in the Depths, a level", costs: [80, 200, 450] },
+};
+
+export function newDepths(): DepthsProgress {
+    return { shards: 0, upgrades: { provisions: 0, prayer: 0, sight: 0, hardiness: 0 }, cleared: [] };
+}
+
+// The profile's Depths progress, made on first want
+export function depthsOf(save: SaveData): DepthsProgress {
+    save.depths ??= newDepths();
+    return save.depths;
+}
 
 // The fields each profile keeps for itself; the rest (the character's look
 // and name, friends, the save's version) is the same in both
@@ -132,6 +164,7 @@ const PROFILE_KEYS = [
     "threat",
     "activeRun",
     "endlessDepth",
+    "depths",
 ] as const;
 type ProfileKey = (typeof PROFILE_KEYS)[number];
 export type Profile = Partial<Pick<SaveData, ProfileKey>>;
@@ -502,6 +535,7 @@ export function parseSave(raw: string): SaveData | undefined {
         } else {
             delete save.endlessDepth;
         }
+        save.depths = cleanDepths(data.depths);
         if (data.other && typeof data.other === "object") {
             const shared: Record<string, unknown> = { ...data, other: undefined, mode: undefined };
             for (const key of PROFILE_KEYS) {
@@ -521,6 +555,28 @@ export function parseSave(raw: string): SaveData | undefined {
     } catch {
         return undefined;
     }
+}
+
+// A save's Depths progress, kept to what it could be (version 161)
+function cleanDepths(raw: unknown): DepthsProgress | undefined {
+    if (!raw || typeof raw !== "object") {
+        return undefined;
+    }
+    const d = raw as Partial<DepthsProgress>;
+    const count = (n: unknown, max: number) => (typeof n === "number" && Number.isFinite(n) ? Math.min(max, Math.max(0, Math.floor(n))) : 0);
+    const out = newDepths();
+    out.shards = count(d.shards, 1e9);
+    for (const key of Object.keys(DEPTHS_UPGRADES) as DepthsUpgradeKey[]) {
+        out.upgrades[key] = count(d.upgrades?.[key], DEPTHS_UPGRADES[key].costs.length);
+    }
+    out.cleared = Array.isArray(d.cleared) ? [...new Set(d.cleared.filter((n) => Number.isInteger(n) && n >= 1 && n <= 5))].sort() : [];
+    if (typeof d.title === "string" && d.title.length <= 40) {
+        out.title = d.title;
+    }
+    if (d.daily && typeof d.daily === "object") {
+        out.daily = { day: count(d.daily.day, 1e7), best: count(d.daily.best, 1e12) };
+    }
+    return out;
 }
 
 // The save in this browser, or a new one; `wiped` says a save from an older

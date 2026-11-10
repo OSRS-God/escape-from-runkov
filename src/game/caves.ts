@@ -69,8 +69,8 @@ export type CaveLayout = {
     // Which room is in each cell, x + y * CELLS_X ("" for rock)
     cells: string[];
     start: number;
-    // The rooms' models, the start's first
-    load(onPart: (part: THREE.Object3D) => void): MapLoad;
+    // The rooms' models, the start's first, each with its cell
+    load(onPart: (part: THREE.Object3D, cell: number) => void): MapLoad;
     // The cell a scene position is in, -1 off the cave
     cellAt(x: number, z: number): number;
     // A room's doorways: the open tiles (the region's indices) of the way
@@ -217,7 +217,7 @@ export async function layoutCave(id: string, name: string, seed: number): Promis
     const region = new Region(json);
     const names = cells.map((room) => room.name);
 
-    const load = (onPart: (part: THREE.Object3D) => void): MapLoad => {
+    const load = (onPart: (part: THREE.Object3D, cell: number) => void): MapLoad => {
         let cancelled = false;
         const startX = start % CELLS_X;
         const startY = Math.floor(start / CELLS_X);
@@ -232,7 +232,7 @@ export async function layoutCave(id: string, name: string, seed: number): Promis
             // The same room can be in the cave more than once (the rock is)
             const part = gltf.scene.clone();
             part.position.set(BASE_X + (c % CELLS_X) * size, 0, -(BASE_Y + Math.floor(c / CELLS_X) * size));
-            onPart(part);
+            onPart(part, c);
         };
         const near = Promise.all(byDistance.filter((s) => s.d <= NEAR).map(place)).then(() => undefined);
         const queue = byDistance.filter((s) => s.d > NEAR);
