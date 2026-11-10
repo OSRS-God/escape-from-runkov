@@ -221,15 +221,33 @@ the thing's own length that a hit breaks (PROP_TAP and the holds in run.ts).
   banquets in the halls (ten bites, 12 hitpoints each, one in five gone bad).
 - Co-op: the props go out with the map (party.ts `props`), a guest's E goes to the host as
   `use` and the host's word comes back as `prop`; what a hero drinks, eats, trades, reads or
-  climbs is their own, what drops or wakes is the host's. A freed prisoner fights for the
-  hero who freed him, on their own screen (the others don't see him).
+  climbs is their own, what drops or wakes is the host's. A freed prisoner is the host's
+  whoever freed him (as the user asked, everyone sees him): the host moves him at his hero's
+  side and swings for them, guests are told of him (`ally`) and draw him where the
+  snapshots say (`al`).
+- A freed prisoner finds his way round walls by the field the enemies follow to his hero,
+  only goes for what he can see, and is put back by his hero if he's stuck (he walked into
+  castle walls before).
+- Poison's ticks don't break a hold (`lastStruck`, not `lastHurt`): a bad drink from a pool
+  stopped every mine and fish till it wore off.
+- Touch: the big button names a hold ("Search · hold", "Mine · hold"), a tap with a hold
+  besides ("Fill · hold: light", "Drink · hold: fish") and a hold under way ("Searching ·
+  keep holding"), "Locked" at a sealed passage; the prompts say "hold the button".
 - Assets: 26 new locs and 11 new items in assets.json (exported with Run-Escape `loc` and
   `item`, icons in the sheet).
 Tested on the dev server, single player: every kind on both maps placed in its rooms and
 used (the barrel's burst took a banshee from 68 to 9, the crack and the library vault paid
 out, the passage carried the player 300 tiles, the ladder dropped them 170, a freed prisoner
-hit a gargoyle, a mad one attacked, a suit of armour woke). Not tried: co-op, a phone, the
-lit rooms keeping weak enemies out (only read through), holy water's double hits.
+hit a gargoyle, a mad one attacked, a suit of armour woke). Then: holy water doubled a hit
+on an Ankou and not on a Black Knight; a lit room kept a dark wizard at its doorway while a
+Vyrewatch Sentinel walked in. Co-op, two tabs on the local relay, castle and Depths: the
+guest used barrels (oil and a burst that killed a champion), sacks, a brazier, the lever and
+a trapdoor (288 tiles), the font, the banquet, the library's vault, a corpse, a vein, a pool,
+a crack, the shrine and a ladder, and woke a suit of armour, with the host's state the same;
+prisoners freed by the guest and by the host were each seen on both screens following the
+one who freed them, the guest's killing a dark wizard in four swings. Phone sized (740 by
+360 with touch): the button and prompts as above, a held button searches a crate. Not tried:
+a real phone, three or four players.
 
 Version 165 (not yet deployed), as the user asked: both maps gone over for their looks.
 - Light: the Depths and the Forgotten Castle have a gloom of their own now, the night's

@@ -536,9 +536,29 @@ type Chest = {
     room?: "trap" | "brimstone";
 };
 
-// A freed prisoner fighting at this player's side (version 166): where,
-// for how long yet, the next swing, and how long the last one plays
-type Ally = { actor: Actor; x: number; z: number; facing: number; left: number; swingIn: number; busy: number };
+// A freed prisoner fighting at someone's side (version 166): the host's to
+// move, everyone's to see. His number, whose he is, where (and on a guest,
+// where the host last put him), for how long yet, the next swing, how long
+// the last one plays, his swings so far (a guest plays one when it grows)
+type Ally = {
+    uid: number;
+    owner: string;
+    actor: Actor;
+    x: number;
+    z: number;
+    facing: number;
+    left: number;
+    swingIn: number;
+    busy: number;
+    attacks: number;
+    walking: boolean;
+    targetX: number;
+    targetZ: number;
+    targetFacing: number;
+    seenAttacks: number;
+    // Seconds he's barely moved for (ALLY_STUCK and he's put back by his hero)
+    stuck: number;
+};
 
 const PLAYER_RADIUS = 0.35;
 // What the ground stops: narrower than the body, so a one tile gap between
@@ -922,6 +942,7 @@ const ALLY_REACH = 8;
 const ALLY_EVERY = 1.6;
 const ALLY_HIT = 8;
 const ALLY_HIT_TIER = 6;
+const ALLY_STUCK = 1.5;
 // A lit brazier keeps the weakest third of the map's kinds out of its room
 const LIT_WEAK_SHARE = 1 / 3;
 
@@ -2668,7 +2689,9 @@ export class Run {
     // (the shrine's prayer trade, or the castle's portraits)
     private shrineGifts = new Set<string>();
     private lairsShown = false;
-    // E held on one: which, for how long, since when (a hit breaks a hold)
+    // E held on one: which, for how long, since when (a hit breaks a hold,
+    // `lastStruck`'s: not poison)
+    private lastStruck = -100;
     private holdProp?: Prop;
     private holdFor = 0;
     private holdFrom = 0;
@@ -3088,7 +3111,7 @@ export class Run {
                 this.holdFrom = this.time;
             }
             // A hit breaks a hold: start again
-            if (act.hold && this.lastHurt > this.holdFrom) {
+            if (act.hold && this.lastStruck > this.holdFrom) {
                 this.holdFor = 0;
                 this.keys.delete("KeyE");
                 this.hooks.onMessage("You're hit, and lose your grip on it.");
@@ -3550,9 +3573,7 @@ export class Run {
                 const ally = this.rng() < PRISONER_ALLY;
                 this.sendProp(p, ally ? 3 : 4, by);
                 if (ally) {
-                    if (by.me) {
-                        this.freeAlly(p);
-                    }
+                    this.freeAlly(p, by);
                     return;
                 }
                 void this.spawnEnemy(this.champion(this.humanFoe("Crazed prisoner")), { x: p.x, z: p.z }).then((e) => {
@@ -3680,11 +3701,9 @@ export class Run {
                 this.lightBrazier(p);
             }
         }
+        // (a freed prisoner comes on his own: `ally`)
         if (message.r !== undefined && message.r > 0 && !p.gone) {
             this.removeProp(p);
-            if (message.r === 3 && message.by === this.self.id) {
-                this.freeAlly(p);
-            }
         }
         this.refreshProp(p);
     }
@@ -3714,63 +3733,137 @@ export class Run {
         this.updateAllies(dt);
     }
 
-    // A freed prisoner, at this player's side for ALLY_SECONDS
-    private freeAlly(at: { x: number; z: number }): void {
-        this.hooks.onMessage("The prisoner rubs his wrists and grabs a chair leg: he'll fight at your side for a while.");
+    // A freed prisoner at the side of whoever freed him for ALLY_SECONDS:
+    // the host's (or a solo player's) to move, and every guest is told so
+    // they see him too
+    private freeAlly(at: { x: number; z: number }, owner: Hero): void {
+        const uid = this.nextUid++;
+        this.addAlly(uid, owner.id, at.x, at.z);
+        if (this.coop?.role === "host") {
+            this.coop.send({ k: "ally", u: uid, x: round2(at.x), z: round2(at.z), by: owner.id, on: 1 } satisfies DownMessage);
+        }
+        for (const h of [this.self, ...this.mates.values()]) {
+            this.tell(
+                h,
+                h === owner
+                    ? "The prisoner rubs his wrists and grabs a chair leg: he'll fight at your side for a while."
+                    : `The prisoner ${owner.name} freed fights at their side for a while.`,
+            );
+        }
+    }
+
+    // His model, here (the host's own, or a guest's copy of the host's)
+    private addAlly(uid: number, owner: string, x: number, z: number): void {
         void createActor("npcs", PRISONER_NPC).then((actor) => {
-            if (this.ended) {
+            if (this.ended || this.alliesGone.has(uid)) {
+                this.alliesGone.delete(uid);
                 return;
             }
-            this.placeActor(actor, at.x, at.z);
+            this.placeActor(actor, x, z);
             addShadow(actor.root, 0.45);
             play(actor, "idle");
-            this.allies.push({ actor, x: at.x, z: at.z, facing: 0, left: ALLY_SECONDS, swingIn: ALLY_EVERY, busy: 0 });
+            this.allies.push({
+                uid,
+                owner,
+                actor,
+                x,
+                z,
+                facing: 0,
+                left: ALLY_SECONDS,
+                swingIn: ALLY_EVERY,
+                busy: 0,
+                attacks: 0,
+                walking: false,
+                targetX: x,
+                targetZ: z,
+                targetFacing: 0,
+                seenAttacks: 0,
+                stuck: 0,
+            });
         });
     }
 
-    // Each follows this player and goes for what's near them, a swing every
-    // ALLY_EVERY seconds (this player's hit: a guest's goes to the host)
+    // Gone before his model came (a guest told while it loaded)
+    private readonly alliesGone = new Set<number>();
+
+    private dropAlly(uid: number): void {
+        const a = this.allies.find((x) => x.uid === uid);
+        if (!a) {
+            this.alliesGone.add(uid);
+            return;
+        }
+        this.scene.remove(a.actor.root);
+        this.allies.splice(this.allies.indexOf(a), 1);
+    }
+
+    // The host's: each follows whoever freed him and goes for what's near
+    // them, a swing every ALLY_EVERY seconds (their hit, for their kill),
+    // until his time's up or they're gone. A guest's copies are eased to
+    // where the host's snapshots put them.
     private updateAllies(dt: number): void {
         const tier = this.world.tier;
+        const guest = this.coop?.role === "guest";
         for (const a of [...this.allies]) {
             a.actor.mixer.update(dt);
+            a.busy -= dt;
+            if (guest) {
+                const k = 1 - Math.exp(-12 * dt);
+                a.x += (a.targetX - a.x) * k;
+                a.z += (a.targetZ - a.z) * k;
+                let turn = a.targetFacing - a.facing;
+                turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+                a.facing += turn * k;
+                if (a.attacks !== a.seenAttacks) {
+                    a.seenAttacks = a.attacks;
+                    a.busy = 0.8;
+                    play(a.actor, "attack", { once: true });
+                } else if (a.busy <= 0) {
+                    play(a.actor, a.walking ? "walk" : "idle");
+                }
+                a.actor.root.position.set(a.x, this.groundY(a.x, a.z), a.z);
+                a.actor.root.rotation.y = a.facing;
+                continue;
+            }
             a.left -= dt;
             a.swingIn -= dt;
-            a.busy -= dt;
-            if (a.left <= 0 || this.done) {
-                this.scene.remove(a.actor.root);
-                this.allies.splice(this.allies.indexOf(a), 1);
-                if (!this.done) {
-                    this.hooks.onMessage("The prisoner slips away into the dark.");
+            const owner = this.heroById(a.owner);
+            const ownerHere = owner && !owner.dead && !(owner.me ? this.done : (owner as Mate).done);
+            if (a.left <= 0 || !owner || !ownerHere) {
+                this.dropAlly(a.uid);
+                if (this.coop?.role === "host") {
+                    this.coop.send({ k: "ally", u: a.uid, x: round2(a.x), z: round2(a.z), by: a.owner, on: 0 } satisfies DownMessage);
+                }
+                if (owner && ownerHere) {
+                    this.tell(owner, "The prisoner slips away into the dark.");
                 }
                 continue;
             }
             let target: Enemy | undefined;
             let best = ALLY_REACH;
             for (const e of this.enemies) {
-                if (e.state === "dead" || e.def.passive || Math.hypot(e.x - this.px, e.z - this.pz) > ALLY_REACH * 1.5) {
+                if (e.state === "dead" || e.def.passive || Math.hypot(e.x - owner.x, e.z - owner.z) > ALLY_REACH * 1.5) {
                     continue;
                 }
+                // (only what he can see: nothing through a wall)
                 const d = Math.hypot(e.x - a.x, e.z - a.z);
-                if (d < best) {
+                if (d < best && this.region.lineOfSight(a.x, a.z, e.x, e.z)) {
                     best = d;
                     target = e;
                 }
             }
-            const gx = target ? target.x : this.px;
-            const gz = target ? target.z : this.pz;
+            const gx = target ? target.x : owner.x;
+            const gz = target ? target.z : owner.z;
             const stop = target ? target.def.radius + 0.8 : ALLY_FOLLOW;
             const dx = gx - a.x;
             const dz = gz - a.z;
             const d = Math.hypot(dx, dz);
-            if (!target && d > 20) {
-                // Left behind (a passage, a ladder): he finds his way
-                a.x = this.px - Math.sin(this.facing) * 1.2;
-                a.z = this.pz - Math.cos(this.facing) * 1.2;
+            a.walking = false;
+            if ((!target && d > 20) || a.stuck > ALLY_STUCK) {
+                // Left behind (a passage, a ladder) or stuck on a wall: he
+                // finds his way
+                this.allyCatchUp(a, owner);
             } else if (d > stop) {
-                const step = PLAYER_SPEED * 0.9 * dt;
-                [a.x, a.z] = this.moveCircle(a.x, a.z, (dx / d) * step, (dz / d) * step, COLLISION_RADIUS);
-                a.facing = Math.atan2(dx, dz);
+                this.allyStep(a, gx, gz, owner, dt);
                 if (a.busy <= 0) {
                     play(a.actor, "walk");
                 }
@@ -3779,8 +3872,9 @@ export class Run {
                 if (a.swingIn <= 0) {
                     a.swingIn = ALLY_EVERY;
                     a.busy = 0.8;
+                    a.attacks++;
                     play(a.actor, "attack", { once: true });
-                    this.damageEnemy(target, randInt(this.rng, 0, ALLY_HIT + ALLY_HIT_TIER * tier), this.self);
+                    this.damageEnemy(target, randInt(this.rng, 0, ALLY_HIT + ALLY_HIT_TIER * tier), owner);
                 } else if (a.busy <= 0) {
                     play(a.actor, "idle");
                 }
@@ -3789,6 +3883,76 @@ export class Run {
             }
             a.actor.root.position.set(a.x, this.groundY(a.x, a.z), a.z);
             a.actor.root.rotation.y = a.facing;
+        }
+    }
+
+    // A step toward a spot: straight where nothing's in the way, else down
+    // the field the enemies follow to his hero (round the castle's walls)
+    private allyStep(a: Ally, gx: number, gz: number, owner: Hero, dt: number): void {
+        const region = this.region;
+        let dx = gx - a.x;
+        let dz = gz - a.z;
+        const straight = region.lineOfSight(a.x, a.z, gx, gz) && region.clearWalk(a.x, a.z, gx, gz, COLLISION_RADIUS);
+        const flow = this.flows.get(owner.id);
+        const here = flow ? region.flowAt(flow, a.x, a.z) : -1;
+        if (!straight && flow && here > 0) {
+            const tx = region.tileX(a.x);
+            const ty = region.tileY(a.z);
+            let best = here;
+            let bx = tx;
+            let by = ty;
+            for (const [ox, oy] of [
+                [1, 0],
+                [-1, 0],
+                [0, 1],
+                [0, -1],
+            ]) {
+                if (region.crossesWall(tx, ty, tx + ox, ty + oy)) {
+                    continue;
+                }
+                const n = region.flowAt(flow, tx + ox + 0.5, -(ty + oy + 0.5));
+                if (n !== -1 && n < best) {
+                    best = n;
+                    bx = tx + ox;
+                    by = ty + oy;
+                }
+            }
+            dx = bx + 0.5 - a.x;
+            dz = -(by + 0.5) - a.z;
+        }
+        const len = Math.hypot(dx, dz);
+        if (len < 0.01) {
+            return;
+        }
+        const step = PLAYER_SPEED * 0.9 * dt;
+        const [nx, nz] = this.moveCircle(a.x, a.z, (dx / len) * step, (dz / len) * step, COLLISION_RADIUS);
+        a.stuck = Math.hypot(nx - a.x, nz - a.z) < step * 0.3 ? a.stuck + dt : 0;
+        a.x = nx;
+        a.z = nz;
+        a.facing = Math.atan2(dx, dz);
+        a.walking = true;
+    }
+
+    // Put back behind his hero, where there's room
+    private allyCatchUp(a: Ally, owner: Hero): void {
+        a.stuck = 0;
+        for (const back of [1.2, 0.6, 0]) {
+            const x = owner.x - Math.sin(owner.facing) * back;
+            const z = owner.z - Math.cos(owner.facing) * back;
+            if (back === 0 || this.region.fits(x, z, 0.3)) {
+                a.x = x;
+                a.z = z;
+                return;
+            }
+        }
+    }
+
+    // The host's word on a freed prisoner, on a guest
+    private applyAlly(message: Extract<DownMessage, { k: "ally" }>): void {
+        if (message.on) {
+            this.addAlly(message.u, message.by, message.x, message.z);
+        } else {
+            this.dropAlly(message.u);
         }
     }
 
@@ -8018,6 +8182,10 @@ export class Run {
         this.hp -= hit;
         this.hitsTaken++;
         this.lastHurt = this.time;
+        // (poison's ticks don't break a hold on the map's things: version 166)
+        if (by !== POISON.name) {
+            this.lastStruck = this.time;
+        }
         this.hurtFlash = 0.15;
         this.hooks.onHurt?.(hit);
         this.player.flash(new THREE.Color(1.6, 0.5, 0.5));
@@ -9166,6 +9334,10 @@ export class Run {
             f: (this.awake ? 1 : 0) | (this.closed ? 2 : 0),
             h: heroes,
             e: shots,
+            al:
+                this.allies.length > 0
+                    ? this.allies.map((a) => [a.uid, round1(a.x), round1(a.z), round1(a.facing), a.walking ? 1 : 0, a.attacks % 100] as [number, number, number, number, 0 | 1, number])
+                    : undefined,
         } satisfies DownMessage);
     }
 
@@ -9360,6 +9532,20 @@ export class Run {
         this.hostLeft = s.left;
         this.awake = (s.f & 1) !== 0;
         this.closed = (s.f & 2) !== 0;
+        for (const [u, x, z, facing, walking, attacks] of s.al ?? []) {
+            const a = this.allies.find((y) => y.uid === u);
+            if (a) {
+                a.targetX = x;
+                a.targetZ = z;
+                a.targetFacing = facing;
+                a.walking = walking === 1;
+                a.attacks = attacks;
+                if (Math.hypot(x - a.x, z - a.z) > 5) {
+                    a.x = x;
+                    a.z = z;
+                }
+            }
+        }
         for (const state of s.h) {
             if (state[0] === this.self.id) {
                 continue;
@@ -9566,6 +9752,9 @@ export class Run {
             }
             case "prop":
                 this.applyProp(message);
+                break;
+            case "ally":
+                this.applyAlly(message);
                 break;
             case "opened": {
                 const chest = this.chests[message.c];

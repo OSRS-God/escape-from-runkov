@@ -113,12 +113,24 @@ export function mainButtonText(prompt: string): { label: string; sub: string; li
     if (/^Hold E to revive/.test(prompt)) {
         return { label: "Revive", sub: "hold", lit: true };
     }
+    const word = (verb: string) => verb[0].toUpperCase() + verb.slice(1);
+    // The maps' own things (version 166): a hold of their own under way
+    // ("Mining... 1.2s"), a tap with a hold besides ("Press E to drink ·
+    // hold E to fish"), or a hold alone ("Hold E to search the crate")
+    const doing = /^(\w+)[^]*\.\.\. [\d.]+s$/.exec(prompt);
+    if (doing) {
+        return { label: doing[1], sub: "keep holding", lit: true };
+    }
     const press = /^Press E to (\w+)/.exec(prompt);
     if (press) {
-        const verb = press[1];
-        return { label: verb[0].toUpperCase() + verb.slice(1), sub: "", lit: true };
+        const also = /· hold E to (\w+)/.exec(prompt);
+        return { label: word(press[1]), sub: also ? `hold: ${also[1]}` : "", lit: true };
     }
-    if (/locked|closed/i.test(prompt)) {
+    const hold = /^Hold E to (\w+)/.exec(prompt);
+    if (hold) {
+        return { label: word(hold[1]), sub: "hold", lit: true };
+    }
+    if (/locked|closed|sealed/i.test(prompt)) {
         return { label: "Locked", sub: "", lit: false };
     }
     return { label: "Use", sub: "", lit: false };
@@ -128,8 +140,9 @@ export function mainButtonText(prompt: string): { label: string; sub: string; li
 export function touchPrompt(prompt: string): string {
     return prompt
         .replace(/^Hold E to escape/, "Hold Escape")
-        .replace(/^Hold E to revive/, "Hold the button to revive")
-        .replace(/^Press E to /, "Tap the button to ");
+        .replace(/^Hold E to /, "Hold the button to ")
+        .replace(/^Press E to /, "Tap the button to ")
+        .replace(/ · hold E to /, " · hold it to ");
 }
 
 const PROTECT_LABEL: Record<Protect, string> = { none: "Pray", melee: "Melee", ranged: "Ranged", magic: "Magic" };

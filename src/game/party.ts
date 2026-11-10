@@ -84,6 +84,9 @@ export type Snapshot = {
     f: number;
     h: HeroState[];
     e: EnemyShot[];
+    // Freed prisoners fighting for someone (version 166): number, x, z,
+    // facing, walking (1) or not, swings so far
+    al?: [number, number, number, number, 0 | 1, number][];
 };
 
 export type DownMessage =
@@ -121,6 +124,9 @@ export type DownMessage =
     // prisoner who fights for `by` 1, or turns on them 2; a suit of armour
     // awake 1)
     | { k: "prop"; i: number; u: number; on?: 1; r?: number; by?: string }
+    // A freed prisoner at `by`'s side (on: 1), or gone (on: 0): the host
+    // moves him, everyone sees him
+    | { k: "ally"; u: number; x: number; z: number; by: string; on: 0 | 1 }
     // A patch of ground about to hurt
     | { k: "hazard"; x: number; z: number; r: number; l: number }
     // An enemy's shot at a hero, from here, and a hero's at an enemy
