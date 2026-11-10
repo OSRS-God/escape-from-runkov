@@ -11,6 +11,7 @@
 //   maps/<id>/<x>_<y>.glb, maps/<id>.json   each map a square at a time
 //                                   (or maps/<id>.glb whole), and its collision
 //   caves/<room>.glb, caves/caves.json      the Depths' cave rooms
+//   castles/<room>.glb, castles/castles.json  the Forgotten Castle's rooms
 //   player/kits/<id>.glb, player/items/<id>.glb, player/items.json (every
 //   worn piece's info in one file), player/kits.json, player/colors.json
 //   sounds.pack, sounds.json        every sound, and where each is in the pack
@@ -59,6 +60,20 @@ if (fs.existsSync(depthsMobsFile)) {
     for (const mob of [...depths.mobs, ...depths.superiors]) {
         if (!manifest.npcs.includes(mob.npcId)) {
             manifest.npcs.push(mob.npcId);
+        }
+    }
+}
+
+// And the Forgotten Castle's enemies and lords (version 163)
+for (const file of ["castle-mobs.json", "castle-bosses.json"]) {
+    const from = path.join(root, "src", "content", file);
+    if (!fs.existsSync(from)) {
+        continue;
+    }
+    const json = JSON.parse(fs.readFileSync(from, "utf8"));
+    for (const npc of Array.isArray(json) ? json : json.mobs) {
+        if (!manifest.npcs.includes(npc.npcId)) {
+            manifest.npcs.push(npc.npcId);
         }
     }
 }
@@ -179,6 +194,18 @@ if (fs.existsSync(caves)) {
     copy(path.join(caves, "caves.json"), path.join(target, "caves", "caves.json"));
 } else {
     missing.push("caves (run export-assets.ts caves)");
+}
+// And the Forgotten Castle's rooms (version 163; export-assets.ts castles)
+const castles = path.join(source, "castles");
+if (fs.existsSync(castles)) {
+    for (const file of fs.readdirSync(castles)) {
+        if (file.startsWith("castle_") && file.endsWith(".glb")) {
+            copyModel(path.join(castles, file), path.join(target, "castles", file));
+        }
+    }
+    copy(path.join(castles, "castles.json"), path.join(target, "castles", "castles.json"));
+} else {
+    missing.push("castles (run export-assets.ts castles)");
 }
 for (const id of manifest.sounds) {
     const from = path.join(source, "sounds", `${id}.wav`);

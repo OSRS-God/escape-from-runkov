@@ -22,8 +22,14 @@ export function shardsFor(report: Pick<RunReport, "kills" | "championKills" | "s
 // if it cleared one, and the daily cave's day and haul if it was that
 export type DepthsGain = { shards: number; title?: string; cape?: boolean; daily?: { day: number; haul: number } };
 
-// The title each depth gives, escaped from with a boss slain
+// The title each depth gives, escaped from with a boss slain; and the
+// Forgotten Castle's own (version 163)
 export const DEPTH_TITLES = ["Delver", "Tunneller", "Deep delver", "Abyss walker", "Slayer of the Depths"];
+export const CASTLE_TITLES = ["Trespasser", "Gatebreaker", "Knight of the Ruin", "Kingslayer", "Lord of the Forgotten Castle"];
+
+export function titlesFor(worldId: string): string[] {
+    return worldId === "castle" ? CASTLE_TITLES : DEPTH_TITLES;
+}
 
 // The fifth's reward, nothing else gives it (items.ts `reward`)
 export const SLAYER_CAPE = 9786;

@@ -189,6 +189,47 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 163 (not yet deployed), as the user asked: the Forgotten Castle, a new map 40 by 40
+OSRS chunks (5 by 5 map squares, 320 by 320 tiles, about 73,000 open: the biggest there is),
+a mode of its own like the Depths (the user's picks: a fresh-start profile, laid out new every
+run, several bosses), past the Inferno (opened by beating it on the regular profile; five
+stars at depth 1).
+- Rooms: Run-Escape's new scripts/cache/castle-rooms.ts (and export-assets.ts `castles`, the
+  caves' export made general) builds 90 rooms, every door set in six kinds: great halls
+  (Falador castle's pale stone, a throne, long tables and chairs, pillars, armour, banners),
+  overgrown courtyards (rough grey stone, dead grass, a dry fountain, dead trees, statues),
+  quarters and libraries (Draynor Manor's plaster and panelling, thin walls between rooms with
+  doorways, beds, wardrobes, shelves), chapels (pews and an altar) and dungeons (grey stone on
+  dark earth, cells, chains, crates); cobwebs, rubble and bones everywhere. Walls go as Draynor
+  Manor's do (cave-dump.ts read it): facing in on the ring round the floor, Ls and posts at the
+  turns, thin walls on tiles' edges inside. Checked: every room's doors joined and all its open
+  ground reached, by the exported collision (a first export had cobwebs, which block, in
+  doorways: they now go only where they cut nothing off).
+- Game: caves.ts lays out any room set (RoomSet: CAVE_ROOMS 6 by 5, CASTLE_ROOMS 5 by 5);
+  worlds.ts's CASTLE_ID world at five depths (enemies four tiers up, lords five, as the Depths'
+  rules past five stars), castle-mobs.json's 14 enemies (dark wizards, animated armour, black
+  knights, feral vampyres, ankou, shadow warriors, armoured zombies, huge spiders, undead
+  druids, gargoyles, hellhounds, skeleton warlords, skeletal mystics, Vyrewatch sentinels) and
+  castle-bosses.json's 8 lords (Count Draynor, the Black Knight Titan, Vanstrom Klause, Arrav,
+  Dusk, Vardorvis, the Nightmare, Verzik Vitur), each with a move of its own (run.ts
+  SIGNATURES) and a candlelit lair; models, clips and sounds exported by a helper (none met
+  elsewhere in the game). Everything the Depths have the castle has (the dark and the lantern,
+  sealed lairs, the hunter, the roof's collapses as its ceilings', events, special rooms,
+  shards, upgrades, no insurance or gravestones, one golden chest), with titles of its own
+  (Trespasser to Lord of the Forgotten Castle); not the Delver, the Slayer cape or the daily
+  cave, which stay the Depths'.
+- Profiles: save.ts keeps one profile a mode now (`profiles`, by mode; `mode` "endless" or
+  "castle"); a save with the one other profile in `other` has it read as the mode not out.
+  The title screen has the Forgotten Castle's room under the Depths' (locked till the Inferno),
+  its entry screen, and Leave the Castle; the maps screen lists both modes under "Modes of
+  their own".
+Tested on the dev server: the castle's entry, a fresh start (the regular profile waiting), a run
+(25 rooms of all six kinds, 72,959 open tiles, 262 enemies, 5 lords and lairs, the altar and
+both room chests, the lantern lit), Count Draynor's lair sealed and his bite, a lord slain
+empowering the rest and the Nightmare hunting, an escape giving shards, depth 2 and the title;
+an old save's `other` read into `profiles`, and switching through all three modes and back.
+Not tried: co-op in the castle, every lord's move in a fight.
+
 Version 162 (not yet deployed), as the user asked: a starter class of the Depths' own, the
 Delver ("Slayer · Delver"; starter.ts, `depths` keeps it off a regular new character's
 choice). Built for the dark rather than the fight: iron knives (one held, 150 packed) and an

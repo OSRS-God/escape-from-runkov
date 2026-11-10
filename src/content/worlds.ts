@@ -3,6 +3,8 @@
 // (made by Run-Escape/scripts/cache/make-game-worlds.ts). Chests and the
 // boss are scattered about; the way out is where you came in.
 import { EnemyDef, SECOND_FORM_SHARE } from "./enemies";
+import castleBossesJson from "./castle-bosses.json";
+import castleMobsJson from "./castle-mobs.json";
 import depthsMobsJson from "./depths-mobs.json";
 import endlessBossesJson from "./endless-bosses.json";
 import worldsJson from "./worlds.json";
@@ -46,8 +48,10 @@ export type WorldDef = {
     chestItems: [number, number];
     lootTiers: { tier: number; weight: number }[];
     // A cave laid out new every run from cave rooms (game/caves.ts), not a
-    // real region
+    // real region; and which set of rooms (the Forgotten Castle's, version
+    // 163, else the Depths' caves)
     caves?: boolean;
+    rooms?: "castles";
     // The Depths: the bosses a run picks from (ENDLESS_BOSSES of them), each
     // made at this map's tier
     bosses?: EnemyDef[];
@@ -75,6 +79,7 @@ const DESCRIPTIONS: Record<string, string> = {
     prifddinas: "The crystal city's gauntlet and its corrupted beasts. The Hunllef hunts the deepest halls.",
     inferno: "Inside the volcano under Mor Ul Rek: TzHaar and Jal creatures on the rock, and a Jad among them.",
     endless: "Caves that are never the same twice: thirty chambers dug anew every run, the biggest map there is. Five of fourteen lair bosses lurk far apart, slayer monsters crawl everywhere, and now and then a superior one rises where its kind falls. The loot comes from every tier. A fresh start: its own stash, its own class. Lairs seal behind you, the roof keeps coming down, each boss slain makes the rest stronger, and only one golden chest opens a run.",
+    castle: "A castle nobody remembers, its halls rebuilt in a new order every run: twenty-five rooms of great halls, overgrown courtyards, quarters, libraries, chapels and dungeons, 40 chunks a side. Its dead lords hold court far apart, and what served them still walks its halls. Past the Inferno: five stars from the first depth. A fresh start: its own stash, its own class.",
 };
 
 // What a map tier asks of you (see scripts/balance.ts): the average enemy
@@ -170,6 +175,14 @@ const SHOOTERS: Record<string, Shooter> = {
     flaming_pyrelord: FIRE_BOLT,
     aberrant_spectre: WIND_STRIKE,
     abhorrent_spectre: WIND_BOLT,
+    // The Forgotten Castle's (version 163): its dark wizards, druids and
+    // mystics cast, and of its lords Vanstrom, the Nightmare and Verzik
+    dark_wizard: WIND_STRIKE,
+    undead_druid: WATER_STRIKE,
+    skeletal_mystic: WIND_BOLT,
+    vanstrom_klause: WAVE,
+    the_nightmare: WAVE,
+    verzik_vitur: WAVE,
 };
 
 // Bosses' own moves (enemies.ts says what each is; run.ts does them)
@@ -409,14 +422,37 @@ function superiorsOf(w: WorldJson, scale: { hp: number; damage: number }): Recor
     return out;
 }
 
+// The Forgotten Castle (version 163, as the user asked): a mode of its own
+// like the Depths, a fresh start, laid out new every run (caves.ts
+// CASTLE_ROOMS: five by five map squares, 40 OSRS chunks a side) with
+// several bosses of its own far apart, and past the Inferno: five stars at
+// its first depth. Its enemies and bosses are castle-mobs.json's and
+// castle-bosses.json's, none of them met anywhere else.
+export const CASTLE_ID = "castle";
+
+function castleJson(): WorldJson {
+    return {
+        id: CASTLE_ID,
+        name: "The Forgotten Castle",
+        description: "",
+        tier: 5,
+        difficulty: { hp: 1, damage: 1 },
+        enemies: [...(castleMobsJson.mobs as WorldEnemyJson[])].sort((a, b) => a.hp - b.hp),
+        boss: (castleBossesJson as WorldEnemyJson[])[0],
+    };
+}
+
 function makeWorld(w: WorldJson): WorldDef {
     const scale = tierScale(w);
     const endless = w.id === ENDLESS_ID;
+    const castle = w.id === CASTLE_ID;
+    const ownBosses = endless ? (endlessBossesJson as WorldEnemyJson[]) : castle ? (castleBossesJson as WorldEnemyJson[]) : undefined;
     return {
-        caves: endless || undefined,
+        caves: endless || castle || undefined,
+        rooms: castle ? "castles" : undefined,
         superiors: endless ? superiorsOf(w, scale) : undefined,
-        // Its own cave bosses, at its depth's tier
-        bosses: endless ? (endlessBossesJson as WorldEnemyJson[]).map((b) => convertEnemy(b, w, scale)) : undefined,
+        // Its own bosses, at its depth's tier
+        bosses: ownBosses?.map((b) => convertEnemy(b, w, scale)),
         id: w.id,
         name: w.name,
         description: DESCRIPTIONS[w.id] ?? w.description,
@@ -434,7 +470,7 @@ function makeWorld(w: WorldJson): WorldDef {
         // piece or two
         chests: 16 + w.tier * 2,
         chestItems: w.tier >= 4 ? [1, 2] : [1, 1],
-        lootTiers: endless ? ENDLESS_LOOT : lootTiersFor(w.tier),
+        lootTiers: endless || castle ? ENDLESS_LOOT : lootTiersFor(w.tier),
     };
 }
 
@@ -468,10 +504,15 @@ const DEPTHS_TINY = new Set([
     "rockslug",
 ]);
 
-function depthsWorld(depth: number): WorldDef {
-    const json = endlessJson(REGULAR_JSONS);
-    const enemyTier = depth + DEPTHS_ENEMY_TIERS_UP;
-    const bossTier = depth + DEPTHS_BOSS_TIERS_UP;
+// The Forgotten Castle starts where the Depths' hardest left off: its
+// enemies four tiers above the depth (five stars at the first) and its
+// bosses five
+const CASTLE_ENEMY_TIERS_UP = 4;
+const CASTLE_BOSS_TIERS_UP = 5;
+
+function depthsWorld(depth: number, json = endlessJson(REGULAR_JSONS), enemyUp = DEPTHS_ENEMY_TIERS_UP, bossUp = DEPTHS_BOSS_TIERS_UP): WorldDef {
+    const enemyTier = depth + enemyUp;
+    const bossTier = depth + bossUp;
     const world = makeWorld({ ...json, tier: Math.min(5, enemyTier) });
     const enemyPast = Math.pow(DEPTHS_PAST_FIVE, Math.max(0, enemyTier - 5));
     const bossPast = Math.pow(DEPTHS_PAST_FIVE, Math.max(0, bossTier - 5));
@@ -499,24 +540,43 @@ function depthsWorld(depth: number): WorldDef {
 }
 
 const ENDLESS_WORLDS: WorldDef[] = Array.from({ length: ENDLESS_DEPTHS }, (_, i) => depthsWorld(i + 1));
+const CASTLE_WORLDS: WorldDef[] = Array.from({ length: ENDLESS_DEPTHS }, (_, i) =>
+    depthsWorld(i + 1, castleJson(), CASTLE_ENEMY_TIERS_UP, CASTLE_BOSS_TIERS_UP),
+);
 
-export const WORLDS: WorldDef[] = [...REGULAR_JSONS.map(makeWorld), ENDLESS_WORLDS[0]];
+export const WORLDS: WorldDef[] = [...REGULAR_JSONS.map(makeWorld), ENDLESS_WORLDS[0], CASTLE_WORLDS[0]];
 
 export const WORLD_BY_ID: Map<string, WorldDef> = new Map(WORLDS.map((w) => [w.id, w]));
 
-// Which profile is out (save.ts's modes), and the Depths' depth for it: main.ts
-// gives the save's
-type ModeSource = () => { endless: boolean; depth: number };
-let modeSource: ModeSource = () => ({ endless: false, depth: 1 });
+// The modes of their own (save.ts's), each its map's id: the Depths and the
+// Forgotten Castle
+export type ModeId = "regular" | "endless" | "castle";
+export const MODE_WORLD: Record<Exclude<ModeId, "regular">, string> = { endless: ENDLESS_ID, castle: CASTLE_ID };
+
+// Whether a map is a mode's own (the Depths, the castle)
+export function isModeWorld(id: string): boolean {
+    return id === ENDLESS_ID || id === CASTLE_ID;
+}
+
+// Which profile is out (save.ts's modes), and its depth: main.ts gives the
+// save's
+type ModeSource = () => { mode: ModeId; depth: number };
+let modeSource: ModeSource = () => ({ mode: "regular", depth: 1 });
 
 export function setModeSource(source: ModeSource): void {
     modeSource = source;
 }
 
+// In a mode of its own (the Depths or the castle), not the regular maps
 export function playingEndless(): boolean {
-    return modeSource().endless;
+    return modeSource().mode !== "regular";
 }
 
+export function playingMode(): ModeId {
+    return modeSource().mode;
+}
+
+// The depth of the mode that's out (each mode's profile has its own)
 export function endlessDepth(): number {
     return Math.min(ENDLESS_DEPTHS, Math.max(1, modeSource().depth || 1));
 }
@@ -525,13 +585,22 @@ export function endlessWorld(depth = endlessDepth()): WorldDef {
     return ENDLESS_WORLDS[Math.min(ENDLESS_DEPTHS, Math.max(1, depth)) - 1];
 }
 
-// The regular maps: every one but the Depths, a mode of their own (for the
-// tasks that ask for every map, and the pets)
-export const REGULAR_WORLDS: WorldDef[] = WORLDS.filter((w) => w.id !== ENDLESS_ID);
+export function castleWorld(depth = endlessDepth()): WorldDef {
+    return CASTLE_WORLDS[Math.min(ENDLESS_DEPTHS, Math.max(1, depth)) - 1];
+}
 
-// A map by id (the Depths at the profile's depth)
+// A mode's map at a depth, by the map's id
+export function modeWorld(id: string, depth = endlessDepth()): WorldDef {
+    return id === CASTLE_ID ? castleWorld(depth) : endlessWorld(depth);
+}
+
+// The regular maps: every one but the modes' own (for the tasks that ask for
+// every map, and the pets)
+export const REGULAR_WORLDS: WorldDef[] = WORLDS.filter((w) => !isModeWorld(w.id));
+
+// A map by id (a mode's at the profile's depth)
 export function getWorld(id: string): WorldDef {
-    const world = id === ENDLESS_ID ? endlessWorld() : WORLD_BY_ID.get(id);
+    const world = isModeWorld(id) ? modeWorld(id) : WORLD_BY_ID.get(id);
     if (!world) {
         throw new Error("Unknown world " + id);
     }
@@ -555,10 +624,11 @@ export function mapBefore(id: string): WorldDef | undefined {
 // in the regular one every map but the Depths, in order (they're gone into from
 // the maps screen, onto its own profile, whenever the player likes)
 export function mapUnlocked(mapsBeaten: string[], id: string): boolean {
-    if (playingEndless()) {
-        return id === ENDLESS_ID;
+    const mode = playingMode();
+    if (mode !== "regular") {
+        return id === MODE_WORLD[mode];
     }
-    if (id === ENDLESS_ID) {
+    if (isModeWorld(id)) {
         return false;
     }
     const before = mapBefore(id);

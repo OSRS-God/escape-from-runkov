@@ -95,8 +95,12 @@ export type SaveData = {
     // name), a fresh start of their own, as the user asked:
     // its own stash, coins, gear, record and the rest (PROFILE_KEYS), with a
     // starter kit picked again. The profile played is the one in the save's
-    // own fields; the other waits in `other`. `mode` says which is out.
-    mode?: "endless";
+    // own fields; the others wait in `profiles`, by mode (version 163, for
+    // the Forgotten Castle, a mode of its own as well; until then the one
+    // other waited in `other`, which a save from then still has, and which
+    // is read as the mode not out). `mode` says which is out.
+    mode?: "endless" | "castle";
+    profiles?: Partial<Record<Mode, Profile>>;
     other?: Profile;
     // How deep the Depths go for this profile, 1 to 5 (their tier): one deeper
     // each time it's beaten
@@ -120,9 +124,9 @@ export type DepthsProgress = {
 // What cave shards buy, a level at a time, for every Depths run after
 export const DEPTHS_UPGRADES: Record<DepthsUpgradeKey, { name: string; effect: string; costs: number[] }> = {
     provisions: { name: "Provisions", effect: "two more of the food you can find packed for you a run, a level", costs: [40, 120, 300] },
-    prayer: { name: "Steady prayer", effect: "protection drains a tenth slower in the Depths, a level", costs: [60, 160, 360] },
+    prayer: { name: "Steady prayer", effect: "protection drains a tenth slower down there, a level", costs: [60, 160, 360] },
     sight: { name: "Keen eyes", effect: "a tile more of the dark seen round you, a level", costs: [50, 140, 320] },
-    hardiness: { name: "Hardiness", effect: "five more hitpoints in the Depths, a level", costs: [80, 200, 450] },
+    hardiness: { name: "Hardiness", effect: "five more hitpoints down there, a level", costs: [80, 200, 450] },
 };
 
 export function newDepths(): DepthsProgress {
@@ -179,10 +183,13 @@ function profileOf(save: SaveData): Profile {
     return out as Profile;
 }
 
-export type Mode = "regular" | "endless";
+// The regular maps, and the modes of their own: the Depths ("endless") and
+// the Forgotten Castle (version 163)
+export type Mode = "regular" | "endless" | "castle";
+export const MODES: Mode[] = ["regular", "endless", "castle"];
 
 // The profile that's out begun again (version 158: Start over in the
-// Depths), from a new save's, a starter kit to pick; the other profile and
+// Depths), from a new save's, a starter kit to pick; the other profiles and
 // what's shared (the look, name and friends) as they were
 export function restartProfile(save: SaveData): void {
     const target = save as unknown as Record<string, unknown>;
@@ -193,27 +200,35 @@ export function restartProfile(save: SaveData): void {
 }
 
 export function modeOf(save: SaveData): Mode {
-    return save.mode === "endless" ? "endless" : "regular";
+    return save.mode === "endless" || save.mode === "castle" ? save.mode : "regular";
 }
 
-// Puts the other profile out: what's out now goes into `other`, and a first
-// time into the Depths starts from a new save's (a starter kit to pick)
+// Whether a mode's profile has been played (a first time in starts fresh)
+export function hasProfile(save: SaveData, mode: Mode): boolean {
+    return modeOf(save) === mode || save.profiles?.[mode] !== undefined;
+}
+
+// Puts another profile out: what's out now waits in `profiles`, and a first
+// time into a mode starts from a new save's (a starter kit to pick)
 export function switchMode(save: SaveData, mode: Mode): void {
-    if (modeOf(save) === mode) {
+    const current = modeOf(save);
+    if (current === mode) {
         return;
     }
     const away = profileOf(save);
-    const back = save.other ?? profileOf(newSave());
+    const back = save.profiles?.[mode] ?? profileOf(newSave());
     const target = save as unknown as Record<string, unknown>;
     for (const key of PROFILE_KEYS) {
         delete target[key];
     }
     Object.assign(save, back);
-    save.other = away;
-    if (mode === "endless") {
-        save.mode = "endless";
-    } else {
+    const profiles = { ...save.profiles, [current]: away };
+    delete profiles[mode];
+    save.profiles = profiles;
+    if (mode === "regular") {
         delete save.mode;
+    } else {
+        save.mode = mode;
     }
 }
 
@@ -525,9 +540,12 @@ export function parseSave(raw: string): SaveData | undefined {
             }
             save.thrownBundles = true;
         }
-        // The Depths' profiles (version 156): the one waiting is made good the
-        // same way as the one out, from its own fields and the shared ones
-        if (save.mode !== "endless") {
+        // The profiles (version 156; one a mode since version 163): each one
+        // waiting is made good the same way as the one out, from its own
+        // fields and the shared ones. A save from before keeps its one other
+        // in `other`: the Depths' when the regular maps are out, the regular
+        // maps' when the Depths are.
+        if (save.mode !== "endless" && save.mode !== "castle") {
             delete save.mode;
         }
         if (typeof save.endlessDepth === "number" && Number.isFinite(save.endlessDepth)) {
@@ -536,19 +554,30 @@ export function parseSave(raw: string): SaveData | undefined {
             delete save.endlessDepth;
         }
         save.depths = cleanDepths(data.depths);
+        const waiting: Partial<Record<Mode, unknown>> = { ...(data.profiles && typeof data.profiles === "object" ? data.profiles : {}) };
         if (data.other && typeof data.other === "object") {
-            const shared: Record<string, unknown> = { ...data, other: undefined, mode: undefined };
-            for (const key of PROFILE_KEYS) {
-                delete shared[key];
+            waiting[data.mode === "endless" ? "regular" : "endless"] ??= data.other;
+        }
+        const shared: Record<string, unknown> = { ...data, other: undefined, profiles: undefined, mode: undefined };
+        for (const key of PROFILE_KEYS) {
+            delete shared[key];
+        }
+        const profiles: Partial<Record<Mode, Profile>> = {};
+        for (const mode of MODES) {
+            const raw = waiting[mode];
+            if (mode === modeOf(save) || !raw || typeof raw !== "object") {
+                continue;
             }
-            const other = parseSave(JSON.stringify({ ...shared, ...data.other }));
-            if (other) {
-                save.other = profileOf(other);
-            } else {
-                delete save.other;
+            const made = parseSave(JSON.stringify({ ...shared, ...raw }));
+            if (made) {
+                profiles[mode] = profileOf(made);
             }
+        }
+        delete save.other;
+        if (Object.keys(profiles).length > 0) {
+            save.profiles = profiles;
         } else {
-            delete save.other;
+            delete save.profiles;
         }
         save.friendKey ??= newFriendKey();
         return save;
@@ -745,12 +774,15 @@ export function dropExclusive(save: SaveData): void {
             }
         }
     }
-    // And the profile waiting (version 156), the same way
-    if (save.other) {
-        const o = save.other;
+    // And the profiles waiting (version 156), the same way
+    for (const mode of MODES) {
+        const o = save.profiles?.[mode];
+        if (!o) {
+            continue;
+        }
         const other = { ...o, stash: o.stash ?? [], backpack: o.backpack ?? [], equipment: o.equipment ?? {}, graves: o.graves ?? [] } as SaveData;
         dropExclusive(other);
-        save.other = profileOf(other);
+        save.profiles = { ...save.profiles, [mode]: profileOf(other) };
     }
 }
 

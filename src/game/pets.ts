@@ -7,7 +7,7 @@ import * as THREE from "three";
 
 import { CROWN_PETS } from "../content/crownpets";
 import { EnemyDef } from "../content/enemies";
-import { ENDLESS_ID, endlessWorld, getWorld } from "../content/worlds";
+import { CASTLE_ID, ENDLESS_ID, castleWorld, endlessWorld, getWorld } from "../content/worlds";
 import { Actor, createActor, play, tint } from "./assets";
 import { GearStats } from "./inventory";
 import { addShadow } from "./shadows";
@@ -20,11 +20,16 @@ const PET_HEIGHT = 0.9;
 export { isBossPet } from "../content/crownpets";
 
 // A Depths boss's pet (version 161, as the user asked): kept by the boss's
-// own id ("endless:cerberus"), as the Depths' bosses change every run
+// own id ("endless:cerberus"), as the Depths' bosses change every run; and a
+// Forgotten Castle boss's the same way ("castle:...", version 163)
 const DEPTHS_PET_PREFIX = `${ENDLESS_ID}:`;
+const CASTLE_PET_PREFIX = `${CASTLE_ID}:`;
 
 function depthsBoss(id: string): EnemyDef | undefined {
-    return id.startsWith(DEPTHS_PET_PREFIX) ? endlessWorld(1).bosses?.find((b) => b.id === id) : undefined;
+    if (id.startsWith(DEPTHS_PET_PREFIX)) {
+        return endlessWorld(1).bosses?.find((b) => b.id === id);
+    }
+    return id.startsWith(CASTLE_PET_PREFIX) ? castleWorld(1).bosses?.find((b) => b.id === id) : undefined;
 }
 
 export function petName(worldId: string): string {
@@ -34,7 +39,7 @@ export function petName(worldId: string): string {
 
 // Where a pet's from, for the Tasks screen
 export function petFrom(id: string): string {
-    return CROWN_PETS[id] ? CROWN_PETS[id].from : depthsBoss(id) ? "from the Depths" : `from ${getWorld(id).name}`;
+    return CROWN_PETS[id] ? CROWN_PETS[id].from : depthsBoss(id) ? (id.startsWith(CASTLE_PET_PREFIX) ? "from the Forgotten Castle" : "from the Depths") : `from ${getWorld(id).name}`;
 }
 
 // What a pet does for you while it follows, one small thing each, after
@@ -116,6 +121,10 @@ const DEPTHS_PET_BUFFS: Record<string, PetBuff> = {
 export function petBuff(worldId: string | undefined): PetBuff | undefined {
     if (worldId?.startsWith(DEPTHS_PET_PREFIX)) {
         return DEPTHS_PET_BUFFS[worldId.slice(DEPTHS_PET_PREFIX.length)];
+    }
+    // A castle lord's: its court's strength
+    if (worldId?.startsWith(CASTLE_PET_PREFIX)) {
+        return { text: "your hits land 4% harder and every hit on you does 1 less", damage: 0.04, soak: 1 };
     }
     return worldId !== undefined ? (PET_BUFFS[worldId] ?? CROWN_PETS[worldId]?.buff) : undefined;
 }

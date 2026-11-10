@@ -1,0 +1,18 @@
+{
+  "mobs": [
+    { "id": "dark_wizard", "npcId": 2056, "name": "Dark wizard", "hp": 24, "damage": 3, "speed": 1.9, "radius": 0.3, "size": 1, "anims": { "idle": 808, "walk": 819, "attack": 711, "death": 836 }, "sounds": { "attack": 178, "hit": 513, "death": 512 } },
+    { "id": "animated_steel_armour", "npcId": 2452, "name": "Animated Steel Armour", "hp": 40, "damage": 5, "speed": 1.7, "radius": 0.3, "size": 1, "anims": { "idle": 808, "walk": 819, "attack": 390, "death": 836 }, "sounds": { "attack": 2510, "hit": 281, "death": 280 } },
+    { "id": "black_knight", "npcId": 11952, "name": "Black Knight", "hp": 42, "damage": 5, "speed": 1.9, "radius": 0.3, "size": 1, "anims": { "idle": 808, "walk": 819, "attack": 390, "death": 836 }, "sounds": { "attack": 2510, "hit": 513, "death": 512 } },
+    { "id": "feral_vampyre", "npcId": 3237, "name": "Feral Vampyre", "hp": 60, "damage": 6, "speed": 2.3, "radius": 0.3, "size": 1, "anims": { "idle": 808, "walk": 819, "attack": 422, "death": 836 }, "sounds": { "attack": 1484, "hit": 884, "death": 882 } },
+    { "id": "ankou", "npcId": 2514, "name": "Ankou", "hp": 65, "damage": 7, "speed": 1.9, "radius": 0.3, "size": 1, "anims": { "idle": 808, "walk": 819, "attack": 422, "death": 836 }, "sounds": { "attack": 1778, "hit": 1780, "death": 1779 } },
+    { "id": "shadow_warrior", "npcId": 2853, "name": "Shadow warrior", "hp": 67, "damage": 7, "speed": 2.0, "radius": 0.3, "size": 1, "anims": { "idle": 842, "walk": 841, "attack": 390, "death": 836 }, "sounds": { "attack": 745, "hit": 747, "death": 746 } },
+    { "id": "armoured_zombie", "npcId": 12720, "name": "Armoured zombie", "hp": 85, "damage": 8, "speed": 1.5, "radius": 0.3, "size": 1, "anims": { "idle": 5572, "walk": 5570, "attack": 5571, "death": 5575 }, "sounds": { "attack": 3347, "hit": 3349, "death": 3348 } },
+    { "id": "huge_spider", "npcId": 134, "name": "Huge spider", "hp": 87, "damage": 8, "speed": 2.2, "radius": 0.4, "scale": 0.9, "size": 2, "anims": { "idle": 5318, "walk": 5317, "attack": 5319, "death": 5321 }, "sounds": { "attack": 3605, "hit": 3607, "death": 3606 } },
+    { "id": "undead_druid", "npcId": 2145, "name": "Undead Druid", "hp": 95, "damage": 9, "speed": 1.6, "radius": 0.3, "size": 1, "anims": { "idle": 5576, "walk": 5577, "attack": 5578, "death": 5575 }, "sounds": { "attack": 3763, "hit": 3765, "death": 3764 } },
+    { "id": "gargoyle", "npcId": 412, "name": "Gargoyle", "hp": 105, "damage": 11, "speed": 1.6, "radius": 0.45, "scale": 0.75, "size": 3, "anims": { "idle": 1516, "walk": 1515, "attack": 1517, "death": 1518 }, "sounds": { "attack": 428, "hit": 430, "death": 429 } },
+    { "id": "hellhound", "npcId": 104, "name": "Hellhound", "hp": 116, "damage": 11, "speed": 2.2, "radius": 0.4, "scale": 0.9, "size": 2, "anims": { "idle": 6561, "walk": 6583, "attack": 6581, "death": 6564 }, "sounds": { "attack": 6904, "hit": 6928, "death": 6952 } },
+    { "id": "skeleton_warlord", "npcId": 1539, "name": "Skeleton warlord", "hp": 124, "damage": 13, "speed": 1.8, "radius": 0.3, "size": 1, "anims": { "idle": 2065, "walk": 2064, "attack": 2067, "death": 836 }, "sounds": { "attack": 1745, "hit": 774, "death": 777 } },
+    { "id": "skeletal_mystic", "npcId": 7604, "name": "Skeletal Mystic", "hp": 130, "damage": 12, "speed": 1.7, "radius": 0.4, "scale": 0.9, "size": 2, "anims": { "idle": 5483, "walk": 5479, "attack": 5485, "death": 5491 }, "sounds": { "attack": 5026, "hit": 779, "death": 777 } },
+    { "id": "vyrewatch_sentinel", "npcId": 9756, "name": "Vyrewatch Sentinel", "hp": 150, "damage": 14, "speed": 2.1, "radius": 0.35, "size": 1, "anims": { "idle": 8703, "walk": 8702, "attack": 8704, "death": 8710 }, "sounds": { "attack": 888, "hit": 883, "death": 889 } }
+  ]
+}

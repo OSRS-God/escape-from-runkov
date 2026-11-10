@@ -3,8 +3,8 @@ import * as THREE from "three";
 import { COINS, FOOD_BY_TIER, ITEMS, PRIZES, SLOTS, getItem, price, rollGear, rollShopStock } from "./content/items";
 import { TASKS } from "./content/tasks";
 import { clampThreat, threatOpen } from "./content/threat";
-import { ENDLESS_DEPTHS, ENDLESS_ID, WORLD_BY_ID, WorldDef, endlessDepth, endlessWorld, getWorld, mapUnlocked, setModeSource } from "./content/worlds";
-import { DEPTH_TITLES, DepthsGain, SLAYER_CAPE, dailyDay, dailyDepth, dailySeed, shardsFor } from "./game/depths";
+import { CASTLE_ID, ENDLESS_DEPTHS, ENDLESS_ID, WORLD_BY_ID, WorldDef, endlessDepth, endlessWorld, getWorld, isModeWorld, mapUnlocked, setModeSource } from "./content/worlds";
+import { DepthsGain, SLAYER_CAPE, dailyDay, dailyDepth, dailySeed, shardsFor, titlesFor } from "./game/depths";
 import { Account } from "./game/account";
 import { recordAttempt } from "./game/contract";
 import { GameStart, Session } from "./game/coop";
@@ -23,6 +23,7 @@ import {
     depthsOf,
     loadSave,
     loadedSlot,
+    modeOf,
     packSize,
     runAlive,
     runHeartbeatAge,
@@ -52,7 +53,7 @@ if (!crownKey() && activeSlot() !== 0) {
 }
 const { save, wiped } = loadSave();
 // Which profile is out, and how deep the Depths go for it (worlds.ts asks)
-setModeSource(() => ({ endless: save.mode === "endless", depth: save.endlessDepth ?? 1 }));
+setModeSource(() => ({ mode: modeOf(save), depth: save.endlessDepth ?? 1 }));
 let run: Run | undefined;
 
 // A run under way (version 153; settleAbandonedRun): how long its page may
@@ -179,10 +180,11 @@ function packUp(worldId: string, daily?: number): RunCarry {
     // depth's own food over what was packed, as far as the pack takes it
     const inventory = save.backpack.filter((s) => s.id !== COINS).map((s) => ({ ...s }));
     let depths: RunCarry["depths"];
-    if (worldId === ENDLESS_ID) {
+    // (the castle's the same, with its own: version 163)
+    if (isModeWorld(worldId)) {
         const progress = depthsOf(save);
         depths = { upgrades: { ...progress.upgrades }, daily };
-        const food = FOOD_BY_TIER[Math.min(FOOD_BY_TIER.length - 1, getWorld(ENDLESS_ID).tier - 1)];
+        const food = FOOD_BY_TIER[Math.min(FOOD_BY_TIER.length - 1, getWorld(worldId).tier - 1)];
         const extra = roomFor(inventory, food, PROVISIONS * progress.upgrades.provisions);
         if (extra > 0) {
             addItem(inventory, food, extra);
@@ -387,7 +389,7 @@ function leaveCarried(
     }
     // The Depths keep nothing of a death: no insurance pays out, and no
     // gravestone is left (version 159)
-    const depths = map === ENDLESS_ID;
+    const depths = isModeWorld(map);
     let insured: number | undefined;
     if (save.insured !== undefined && !depths) {
         const i = lost.findIndex((s) => s.id === save.insured);
@@ -553,9 +555,9 @@ async function onRunEnd(result: RunResult): Promise<void> {
         // The Depths beaten at their depth go a star deeper (version 156;
         // not from the daily cave, whose depth is the day's)
         const daily = result.carry.depths?.daily !== undefined;
-        if (report.bossKills > 0 && result.world.id === ENDLESS_ID && !daily && (result.world.depth ?? 1) >= endlessDepth() && endlessDepth() < ENDLESS_DEPTHS) {
+        if (report.bossKills > 0 && isModeWorld(result.world.id) && !daily && (result.world.depth ?? 1) >= endlessDepth() && endlessDepth() < ENDLESS_DEPTHS) {
             save.endlessDepth = endlessDepth() + 1;
-            ui.message(`The Depths go deeper: depth ${save.endlessDepth} of ${ENDLESS_DEPTHS}, its enemies and bosses tougher from the next run on.`);
+            ui.message(`${result.world.id === CASTLE_ID ? "The Forgotten Castle" : "The Depths"} go${result.world.id === CASTLE_ID ? "es" : ""} deeper: depth ${save.endlessDepth} of ${ENDLESS_DEPTHS}, its enemies and bosses tougher from the next run on.`);
         }
         // And beaten at its threat level: the next level opens (version
         // 150). A party's guest, playing at the host's level, counts no
@@ -594,7 +596,7 @@ async function onRunEnd(result: RunResult): Promise<void> {
             delete save.wear[Number(key)];
         }
     }
-    const depthsGain = result.world.id === ENDLESS_ID ? settleDepths(result) : undefined;
+    const depthsGain = isModeWorld(result.world.id) ? settleDepths(result) : undefined;
     // Tasks done by now, paid once
     const done = TASKS.filter((t) => !save.tasks.includes(t.id) && t.done(save, result));
     for (const task of done) {
@@ -632,9 +634,10 @@ function settleDepths(result: RunResult): DepthsGain {
     const gain: DepthsGain = { shards };
     if (escaped && report.bossKills > 0 && !daily && !progress.cleared.includes(depth)) {
         progress.cleared = [...progress.cleared, depth].sort((a, b) => a - b);
-        gain.title = DEPTH_TITLES[depth - 1];
+        gain.title = titlesFor(result.world.id)[depth - 1];
         progress.title = gain.title;
-        if (depth === ENDLESS_DEPTHS) {
+        // (the Slayer cape is the Depths' alone)
+        if (depth === ENDLESS_DEPTHS && result.world.id === ENDLESS_ID) {
             addItem(save.stash, SLAYER_CAPE, 1);
             gain.cape = true;
         }

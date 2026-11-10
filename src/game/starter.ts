@@ -81,7 +81,8 @@ export function applyStarter(save: SaveData, kit: StarterKit): void {
     removeItem(save.stash, OLD_STASHED, 1);
     save.equipment = { ...kit.equipment };
     save.backpack = kit.backpack.map((s) => ({ ...s }));
-    if (save.mode === "endless") {
+    // (the Forgotten Castle's too, as dark: version 163)
+    if (save.mode === "endless" || save.mode === "castle") {
         save.backpack.push({ id: LANTERN, count: 1 });
         const oil = save.backpack.find((s) => s.id === OIL);
         if (oil) {

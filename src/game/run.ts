@@ -54,7 +54,7 @@ import {
     staffCasts,
 } from "../content/spells";
 import { Threat, threatName, threatOf, threatText } from "../content/threat";
-import { ENDLESS_BOSSES, ENDLESS_DEPTHS, SUPERIOR_MAX, SUPERIOR_ONE_IN, WorldDef, endlessWorld } from "../content/worlds";
+import { CASTLE_ID, ENDLESS_BOSSES, ENDLESS_DEPTHS, SUPERIOR_MAX, SUPERIOR_ONE_IN, WorldDef, modeWorld } from "../content/worlds";
 import { GameStart, LootRule } from "./coop";
 import { Hero, Mate } from "./mates";
 import {
@@ -133,7 +133,7 @@ import { playMusic } from "./music";
 import { PlayerLook, RUN_CLIP_SPEED } from "./player";
 import { isKept } from "./kit";
 import { Region, Tile, TileSet, loadRegion } from "./region";
-import { CaveLayout, layoutCave } from "./caves";
+import { CASTLE_ROOMS, CAVE_ROOMS, CaveLayout, layoutCave } from "./caves";
 import { Character, DepthsUpgradeKey, Equipment, Grave, ItemStack } from "./save";
 import { ZOOM_MAX, ZOOM_MIN, saveSettings, settings } from "./settings";
 
@@ -871,8 +871,20 @@ const LAIR_THEMES: Record<string, LairTheme> = {
     giant_mole: { word: "Dust hangs in the air of the Mole's warren.", floor: new THREE.Color(1.1, 0.95, 0.75), glow: [24, 14, 4], sight: -1 },
 };
 
+// The Forgotten Castle's lords' rooms (version 163): candles still lit for
+// whoever held court, warm in the dark
+const CASTLE_LAIR: LairTheme = {
+    word: "Candles still burn in here, for whoever holds court.",
+    floor: new THREE.Color(1.08, 0.95, 0.82),
+    glow: [34, 16, 4],
+};
+
 function baseId(def: EnemyDef): string {
     return def.id.slice(def.id.indexOf(":") + 1);
+}
+
+function lairTheme(def: EnemyDef): LairTheme | undefined {
+    return LAIR_THEMES[baseId(def)] ?? (def.id.startsWith(`${CASTLE_ID}:`) ? CASTLE_LAIR : undefined);
 }
 const SIGNATURES: Record<string, Signature> = {
     // Three breaths in turn: fire, poison and ice that holds you
@@ -1003,6 +1015,97 @@ const SIGNATURES: Record<string, Signature> = {
         atMark: (run, e) => {
             run.sigSay("A dark energy core splits off the Corporeal Beast and feeds it: kill the core!");
             run.sigAdds(e, "jelly", "Dark energy core", 1, { scale: 0.5, tint: new THREE.Color(0.35, 0.25, 0.5), mend: true });
+        },
+    },
+    // The Forgotten Castle's lords (castle-bosses.json, version 163).
+    // Count Draynor drinks: what his bite takes mends him
+    count_draynor: {
+        every: 7,
+        move: (run, e, t) => {
+            run.sigSay("Count Draynor lunges for your throat!");
+            run.sigRing(e, t.x, t.z, 1.4, 1.0, 0.14, () => run.sigHeal(e, 0.06));
+        },
+    },
+    // The Black Knight Titan's stamp shakes the floor round him
+    black_knight_titan: {
+        every: 8,
+        move: (run, e) => {
+            run.sigSay("The Black Knight Titan stamps!");
+            run.sigRing(e, e.x, e.z, 3, 1.2, 0.22);
+        },
+    },
+    // Vanstrom's shadow swallows the light, and your prayer with it
+    vanstrom_klause: {
+        every: 8,
+        move: (run, e, t) => {
+            run.sigSay("Vanstrom Klause's shadow spreads across the floor!");
+            for (let i = 0; i < 3; i++) {
+                run.sigRing(e, t.x + (Math.random() - 0.5) * 4, t.z + (Math.random() - 0.5) * 4, 1.6, 1.3, 0.1, (hero) => run.sigDrainPrayer(hero, 20));
+            }
+        },
+    },
+    // Arrav calls the dead who served with him
+    arrav: {
+        marks: [0.66, 0.33],
+        atMark: (run, e) => {
+            run.sigSay("Arrav raises the dead who served with him!");
+            run.sigAdds(e, "armoured_zombie", "Arrav's dead", 3, { hp: 0.7 });
+        },
+    },
+    // Dusk brings the ceiling down, and stone guardians wake at half
+    dusk: {
+        every: 6,
+        move: (run, e, t) => {
+            run.sigSay("Dusk tears at the ceiling: stone falls round you!");
+            for (let i = 0; i < 4; i++) {
+                const spread = i === 0 ? 0 : 3;
+                run.sigRing(e, t.x + (Math.random() - 0.5) * 2 * spread, t.z + (Math.random() - 0.5) * 2 * spread, 1.1, 1.2, 0.14);
+            }
+        },
+        marks: [0.5],
+        atMark: (run, e) => {
+            run.sigSay("The stone guardians round the hall stir to Dusk's side!");
+            run.sigAdds(e, "gargoyle", "Stone guardian", 2, { scale: 0.8, hp: 0.6 });
+        },
+    },
+    // Vardorvis's axes sweep a line through you
+    vardorvis: {
+        every: 7,
+        move: (run, e, t) => {
+            const dx = t.x - e.x;
+            const dz = t.z - e.z;
+            const len = Math.max(0.01, Math.hypot(dx, dz));
+            for (let k = 1; k <= 5; k++) {
+                const along = Math.min(len + 2, k * Math.max(1.5, (len + 2) / 5));
+                run.sigRing(e, e.x + (dx / len) * along, e.z + (dz / len) * along, 1.3, 1.1, 0.18);
+            }
+            run.sigSay("Vardorvis sends his axes spinning through the hall!");
+        },
+    },
+    // The Nightmare's husks hold you while she feeds; parasites at half
+    the_nightmare: {
+        every: 8,
+        move: (run, e, t) => {
+            run.sigSay("Husks claw up out of the floor at you!");
+            run.sigRing(e, t.x, t.z, 1.6, 1.3, 0.1, (hero) => run.sigRoot(hero, 2.5));
+        },
+        marks: [0.5],
+        atMark: (run, e) => {
+            run.sigSay("Parasites burst out of the Nightmare and feed her: kill them!");
+            run.sigAdds(e, "shadow_warrior", "Parasite", 2, { scale: 0.7, hp: 0.5, tint: new THREE.Color(0.7, 0.55, 0.9), mend: true });
+        },
+    },
+    // Verzik's webs and her brood
+    verzik_vitur: {
+        every: 7,
+        move: (run, e, t) => {
+            run.sigSay("Verzik Vitur hurls her web!");
+            [0.8, 1.2, 1.6].forEach((warning, i) => run.sigRing(e, t.x + (i - 1) * 0.7, t.z, 1.3, warning, 0.12, (hero) => run.sigRoot(hero, 1)));
+        },
+        marks: [0.66, 0.33],
+        atMark: (run, e) => {
+            run.sigSay("Verzik's brood scuttles out to her!");
+            run.sigAdds(e, "huge_spider", "Verzik's brood", 3, { scale: 0.6, hp: 0.4 });
         },
     },
     // Frost that holds you where you stand
@@ -1543,7 +1646,7 @@ export class Run {
         coop?: CoopSetup,
     ): Promise<Run> {
         // The Depths' caves are laid out from the run's seed, the same for a whole party
-        const cave = world.caves ? await layoutCave(world.id, world.name, seed) : undefined;
+        const cave = world.caves ? await layoutCave(world.id, world.name, seed, world.rooms === "castles" ? CASTLE_ROOMS : CAVE_ROOMS) : undefined;
         const region = cave ? cave.region : await loadRegion(world.id);
         // The host's enemies have more in them for a bigger party
         if (coop?.role === "host" && coop.heroes.length > 1) {
@@ -2298,7 +2401,7 @@ export class Run {
         const busy = new Set([cave.cellAt(this.px, this.pz), ...bossTiles.map((t) => cave.cellAt(t.x, t.z))]);
         const cells = cave.cells
             .map((name, cell) => ({ name, cell, roll: this.rng() }))
-            .filter((c) => c.name !== "cave_0_rock" && !busy.has(c.cell))
+            .filter((c) => c.name !== cave.empty && !busy.has(c.cell))
             .sort((a, b) => a.roll - b.roll)
             .map((c) => c.cell);
         // An open, reachable tile well inside a room
@@ -2306,8 +2409,8 @@ export class Run {
             if (cell === undefined) {
                 return undefined;
             }
-            const ox = g.baseX + (cell % 6) * 64;
-            const oy = g.baseY + Math.floor(cell / 6) * 64;
+            const ox = g.baseX + (cell % cave.cellsX) * 64;
+            const oy = g.baseY + Math.floor(cell / cave.cellsX) * 64;
             for (let tries = 0; tries < 80; tries++) {
                 const x = ox + 12 + Math.floor(this.rng() * 40) + 0.5;
                 const z = -(oy + 12 + Math.floor(this.rng() * 40) + 0.5);
@@ -2387,6 +2490,14 @@ export class Run {
         this.placeActor(actor, exit.x, exit.z);
         actor.root.visible = this.exitsOpen();
         play(actor, "play");
+    }
+
+    // What the run's first word says of the Depths' rules (DEPTHS_RULES), or
+    // the Forgotten Castle's, the same in its own words (version 163)
+    private depthsRules(): string {
+        return this.world.id === CASTLE_ID
+            ? "The ways out are barred until a lord falls, or six minutes have gone, and there's no genie here. The castle wakes fast, and its ceilings keep coming down."
+            : DEPTHS_RULES;
     }
 
     // The ways out are there to use: always, but in the Depths only once a
@@ -2783,7 +2894,7 @@ export class Run {
             const host = coop.heroes.find((h) => h.id !== coop.me)?.name ?? "the host";
             this.hooks.onMessage(
                 this.world.bosses
-                    ? `${this.world.name}, with ${host}'s party. Chests are scattered about, ${this.bossGuards()}. ${DEPTHS_RULES}`
+                    ? `${this.world.name}, with ${host}'s party. Chests are scattered about, ${this.bossGuards()}. ${this.depthsRules()}`
                     : `${this.world.name}, with ${host}'s party. Chests are scattered about, ${this.bossGuards()}; the ways out are to be found. They close in ${Math.round(this.closeSeconds() / 60)} minutes. A genie waits where you arrived: ${this.ferryFee().toLocaleString()} coins buys a wish out.`,
             );
             // The host's map comes once this one's ready for it; the world
@@ -2793,7 +2904,7 @@ export class Run {
         } else {
             this.hooks.onMessage(
                 this.world.bosses
-                    ? `${this.world.name}. Chests are scattered about, ${this.bossGuards()}. ${DEPTHS_RULES}`
+                    ? `${this.world.name}. Chests are scattered about, ${this.bossGuards()}. ${this.depthsRules()}`
                     : `${this.world.name}. Chests are scattered about, ${this.bossGuards()}. There are ${this.exits.length} ways out, the nearest somewhere to the ${this.exitCompass()}: find one, or the boss will tell you. They close in ${Math.round(this.closeSeconds() / 60)} minutes. A genie waits where you arrived: ${this.ferryFee().toLocaleString()} coins buys a wish out.`,
             );
             if (coop?.role === "host") {
@@ -3125,7 +3236,12 @@ export class Run {
             }
             this.wakeNear(hero.x, hero.z, COLLAPSE_ROUSE);
         }
-        this.announce(this.collapses === 1 ? "The cave shudders and the roof starts to come down. Get clear of the rings!" : "The roof comes down again, harder.");
+        const castle = this.world.id === CASTLE_ID;
+        this.announce(
+            this.collapses === 1
+                ? `The ${castle ? "castle" : "cave"} shudders and the ${castle ? "ceiling" : "roof"} starts to come down. Get clear of the rings!`
+                : `The ${castle ? "ceiling" : "roof"} comes down again, harder.`,
+        );
     }
 
     // A sound from somewhere on the map, as loud as it's near: full within
@@ -5433,8 +5549,8 @@ export class Run {
         // At least the deepest depth's strength, whatever the depth: the
         // same boss at ENDLESS_DEPTHS over the same boss here, unscaled (so
         // a party's and a threat level's extra stays on top)
-        const here = endlessWorld(this.world.depth ?? 1).bosses ?? [];
-        const deep = endlessWorld(ENDLESS_DEPTHS).bosses ?? [];
+        const here = modeWorld(this.world.id, this.world.depth ?? 1).bosses ?? [];
+        const deep = modeWorld(this.world.id, ENDLESS_DEPTHS).bosses ?? [];
         for (const o of left) {
             const share = o.hp / o.def.hp;
             const id = o.def.id;
@@ -5472,7 +5588,7 @@ export class Run {
     private themeAt(x: number, z: number): { theme: LairTheme; boss: Enemy; cell: number } | undefined {
         const cell = this.cave?.cellAt(x, z);
         const boss = cell !== undefined ? this.lairs.get(cell) : undefined;
-        const theme = boss ? LAIR_THEMES[baseId(boss.def)] : undefined;
+        const theme = boss ? lairTheme(boss.def) : undefined;
         return theme && boss && cell !== undefined ? { theme, boss, cell } : undefined;
     }
 
@@ -5494,7 +5610,7 @@ export class Run {
         }
         const part = this.caveParts.get(cell);
         const boss = this.lairs.get(cell);
-        const theme = boss ? LAIR_THEMES[baseId(boss.def)] : undefined;
+        const theme = boss ? lairTheme(boss.def) : undefined;
         if (!part || !theme || part.userData.lairTinted) {
             return;
         }
@@ -5619,7 +5735,11 @@ export class Run {
                     woke++;
                 }
             }
-            this.announce(woke > 0 ? `The cave's vermin swarm: ${woke} of them come skittering out of the dark!` : "Something skitters in the walls, then goes quiet.");
+            this.announce(
+                woke > 0
+                    ? `The ${this.world.id === CASTLE_ID ? "castle" : "cave"}'s vermin swarm: ${woke} of them come skittering out of the dark!`
+                    : "Something skitters in the walls, then goes quiet.",
+            );
         }
     }
 
@@ -5627,7 +5747,7 @@ export class Run {
     private floodSomewhere(heroes: Hero[]): void {
         const cave = this.cave!;
         const inUse = new Set([...heroes.map((h) => cave.cellAt(h.x, h.z)), ...this.lairs.keys(), ...this.floods.map((f) => f.cell), this.sealed?.cell]);
-        const cells = cave.cells.map((name, cell) => ({ name, cell })).filter((c) => c.name !== "cave_0_rock" && !inUse.has(c.cell));
+        const cells = cave.cells.map((name, cell) => ({ name, cell })).filter((c) => c.name !== cave.empty && !inUse.has(c.cell));
         const pick = cells[Math.floor(this.rng() * cells.length)];
         if (!pick) {
             return;
@@ -5637,8 +5757,12 @@ export class Run {
             this.coop.send({ k: "flood", c: pick.cell, on: 1 } satisfies DownMessage);
         }
         const g = this.region;
-        const mid = g.centreOf(pick.cell % 6 * 64 + 32 + (Math.floor(pick.cell / 6) * 64 + 32) * g.sizeX);
-        this.announce(`Water roars through the tunnels: a cave to the ${this.compassTo(mid.x, mid.z)} is flooded shut for a minute.`);
+        const mid = g.centreOf((pick.cell % cave.cellsX) * 64 + 32 + (Math.floor(pick.cell / cave.cellsX) * 64 + 32) * g.sizeX);
+        this.announce(
+            this.world.id === CASTLE_ID
+                ? `Water floods through the halls: a wing to the ${this.compassTo(mid.x, mid.z)} is flooded shut for a minute.`
+                : `Water roars through the tunnels: a cave to the ${this.compassTo(mid.x, mid.z)} is flooded shut for a minute.`,
+        );
     }
 
     private flood(cell: number): void {
@@ -5902,6 +6026,14 @@ export class Run {
 
     sigSay(text: string): void {
         this.announce(text);
+    }
+
+    // A boss mended by this share of its hitpoints (Count Draynor's bite)
+    sigHeal(e: Enemy, share: number): void {
+        const whole = e.reborn ? Math.round(e.def.hp * SECOND_FORM_SHARE) : e.def.hp;
+        if (e.state !== "dead") {
+            e.hp = Math.min(whole, e.hp + Math.round(e.def.hp * share));
+        }
     }
 
     sigPoison(hero: Hero): void {

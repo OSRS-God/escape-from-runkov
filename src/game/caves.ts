@@ -19,10 +19,15 @@ const NORTH = 1;
 const EAST = 2;
 const SOUTH = 4;
 const WEST = 8;
-const CELLS_X = 6;
-const CELLS_Y = 5;
-// Every cell (solid rock, cave_0_rock, is for a cell growing missed)
-const ROOMS = CELLS_X * CELLS_Y;
+
+// A set of rooms to lay a map out from (version 163): its folder under
+// assets and the index in it (<dir>/<dir>.json), the grid of cells, and the
+// room for a cell growing missed. The Depths' caves, a grid of six by five;
+// the Forgotten Castle's rooms (Run-Escape's castle-rooms.ts), five by five,
+// 40 OSRS chunks a side as the user asked, whose empty room draws nothing.
+export type RoomSet = { dir: string; cellsX: number; cellsY: number; empty: string };
+export const CAVE_ROOMS: RoomSet = { dir: "caves", cellsX: 6, cellsY: 5, empty: "cave_0_rock" };
+export const CASTLE_ROOMS: RoomSet = { dir: "castles", cellsX: 5, cellsY: 5, empty: "castle_0_void" };
 // Of the cells next to each other that both have rooms but aren't joined,
 // this share are joined too, so the cave has loops and not only dead ends
 const LOOP_SHARE = 0.25;
@@ -52,22 +57,29 @@ type CavesJson = { size: number; doorFrom: number; doorWidth: number; rooms: Cav
 const DOORWAY_DEPTH = 3;
 const DOORWAY_SPLAY = 3;
 
-let cavesJson: Promise<CavesJson> | undefined;
+const roomsJson = new Map<string, Promise<CavesJson>>();
 
-function loadCaves(): Promise<CavesJson> {
-    cavesJson ??= fetch(assetUrl("assets/caves/caves.json")).then((r) => {
-        if (!r.ok) {
-            throw new Error("No cave rooms (assets/caves/caves.json)");
-        }
-        return r.json() as Promise<CavesJson>;
-    });
-    return cavesJson;
+function loadRooms(set: RoomSet): Promise<CavesJson> {
+    let loading = roomsJson.get(set.dir);
+    if (!loading) {
+        loading = fetch(assetUrl(`assets/${set.dir}/${set.dir}.json`)).then((r) => {
+            if (!r.ok) {
+                throw new Error(`No rooms (assets/${set.dir}/${set.dir}.json)`);
+            }
+            return r.json() as Promise<CavesJson>;
+        });
+        roomsJson.set(set.dir, loading);
+    }
+    return loading;
 }
 
 export type CaveLayout = {
     region: Region;
-    // Which room is in each cell, x + y * CELLS_X ("" for rock)
+    // Which room is in each cell, x + y * cellsX (the set's empty room's
+    // name where there's none), and how many cells across
     cells: string[];
+    cellsX: number;
+    empty: string;
     start: number;
     // The rooms' models, the start's first, each with its cell
     load(onPart: (part: THREE.Object3D, cell: number) => void): MapLoad;
@@ -79,8 +91,11 @@ export type CaveLayout = {
 };
 
 // Which cells have rooms, and how they're joined: a room grown off the
-// start, then off the others, to ROOMS, and loops added
-function growCave(rng: Rng): { doors: number[]; start: number } {
+// start, then off the others, to every cell, and loops added
+function growCave(rng: Rng, set: RoomSet): { doors: number[]; start: number } {
+    const CELLS_X = set.cellsX;
+    const CELLS_Y = set.cellsY;
+    const ROOMS = CELLS_X * CELLS_Y;
     const doors = new Array<number>(CELLS_X * CELLS_Y).fill(-1);
     // The start on the cave's south edge, as you come down into it
     const start = Math.floor(rng() * CELLS_X);
@@ -140,19 +155,31 @@ function growCave(rng: Rng): { doors: number[]; start: number } {
     return { doors, start };
 }
 
-export async function layoutCave(id: string, name: string, seed: number): Promise<CaveLayout> {
-    const caves = await loadCaves();
+export async function layoutCave(id: string, name: string, seed: number, set: RoomSet = CAVE_ROOMS): Promise<CaveLayout> {
+    const CELLS_X = set.cellsX;
+    const CELLS_Y = set.cellsY;
+    const caves = await loadRooms(set);
     const size = caves.size;
     // Its own roll, so the run's other rolls stay as they were
     const rng = makeRng(seed ^ 0x5eedcafe);
-    const { doors, start } = growCave(rng);
+    const { doors, start } = growCave(rng, set);
     const byDoors = new Map<number, CaveRoomJson[]>();
     for (const room of caves.rooms) {
         const list = byDoors.get(room.doors) ?? [];
         list.push(room);
         byDoors.set(room.doors, list);
     }
-    const rock = byDoors.get(0)![0];
+    // The empty room: solid all over (the castle's draws nothing, and isn't
+    // in its index)
+    const rock: CaveRoomJson = byDoors.get(0)?.[0] ?? {
+        name: set.empty,
+        doors: 0,
+        kind: "empty",
+        tiles: new Array<number>(size * size).fill(1),
+        heights: new Array<number>((size + 1) * (size + 1)).fill(0),
+        boxes: [],
+    };
+    const drawn = (room: string) => room !== set.empty || byDoors.has(0);
     const cells = doors.map((d) => {
         if (d <= 0) {
             return rock;
@@ -223,9 +250,10 @@ export async function layoutCave(id: string, name: string, seed: number): Promis
         const startY = Math.floor(start / CELLS_X);
         const byDistance = names
             .map((n, c) => ({ n, c, d: Math.max(Math.abs((c % CELLS_X) - startX), Math.abs(Math.floor(c / CELLS_X) - startY)) }))
+            .filter((s) => drawn(s.n))
             .sort((a, b) => a.d - b.d);
         const place = async ({ n, c }: { n: string; c: number }) => {
-            const gltf = await loadModel(assetUrl(`assets/caves/${n}.glb`));
+            const gltf = await loadModel(assetUrl(`assets/${set.dir}/${n}.glb`));
             if (cancelled) {
                 return;
             }
@@ -287,5 +315,5 @@ export async function layoutCave(id: string, name: string, seed: number): Promis
         }
         return out;
     };
-    return { region, cells: names, start, load, cellAt, doorways };
+    return { region, cells: names, cellsX: CELLS_X, empty: set.empty, start, load, cellAt, doorways };
 }
