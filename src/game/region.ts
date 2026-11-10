@@ -393,6 +393,17 @@ export class Region {
         return this.isOpenTile(this.tileX(x), this.tileY(z));
     }
 
+    // A tile (by index) shut or opened again in the middle of a run: the
+    // Depths' lairs (version 159)
+    setSolid(i: number, solid: boolean): void {
+        this.tiles[i] = solid ? this.tiles[i] | SOLID : this.tiles[i] & ~SOLID;
+    }
+
+    // A tile's index's scene position, its middle
+    centreOf(i: number): Tile {
+        return { x: this.baseX + (i % this.sizeX) + 0.5, z: -(this.baseY + Math.floor(i / this.sizeX) + 0.5) };
+    }
+
     // Can a circle of this radius sit here? Clear of what blocks on each
     // solid tile it reaches (version 109: the tile's box, all of it but for
     // an object that stands on less), unless the tile is a round obstacle's,

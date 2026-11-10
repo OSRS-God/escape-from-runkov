@@ -338,8 +338,11 @@ function leaveCarried(
             lost.push({ id, count: 1 });
         }
     }
+    // The Depths keep nothing of a death: no insurance pays out, and no
+    // gravestone is left (version 159)
+    const depths = map === ENDLESS_ID;
     let insured: number | undefined;
-    if (save.insured !== undefined) {
+    if (save.insured !== undefined && !depths) {
         const i = lost.findIndex((s) => s.id === save.insured);
         if (i !== -1) {
             if (lost[i].count > 1) {
@@ -357,7 +360,7 @@ function leaveCarried(
     let graveHalved = false;
     if (died) {
         save.stats.deaths++;
-        if (lost.length > 0) {
+        if (lost.length > 0 && !depths) {
             const inGrave = insured !== undefined ? lost.filter((_, i) => i % 2 === 0) : lost;
             graveHalved = insured !== undefined && inGrave.length < lost.length;
             const grave: Grave = { map, x, z, items: inGrave.map((s) => ({ ...s })), runsLeft: GRAVE_RUNS };
@@ -501,9 +504,9 @@ async function onRunEnd(result: RunResult): Promise<void> {
             stats.mapsBeaten.push(result.world.id);
         }
         // The Depths beaten at their depth go a star deeper (version 156)
-        if (report.bossKills > 0 && result.world.id === ENDLESS_ID && result.world.tier >= endlessDepth() && endlessDepth() < ENDLESS_DEPTHS) {
+        if (report.bossKills > 0 && result.world.id === ENDLESS_ID && (result.world.depth ?? 1) >= endlessDepth() && endlessDepth() < ENDLESS_DEPTHS) {
             save.endlessDepth = endlessDepth() + 1;
-            ui.message(`The Depths go deeper: depth ${save.endlessDepth} of ${ENDLESS_DEPTHS}, ${save.endlessDepth} star enemies and bosses from the next run on.`);
+            ui.message(`The Depths go deeper: depth ${save.endlessDepth} of ${ENDLESS_DEPTHS}, its enemies and bosses tougher from the next run on.`);
         }
         // And beaten at its threat level: the next level opens (version
         // 150). A party's guest, playing at the host's level, counts no

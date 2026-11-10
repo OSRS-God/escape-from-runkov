@@ -189,6 +189,48 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 159 (not yet deployed): the Depths made far harder than the regular maps, as the user
+asked (nobody should come close to more than one boss in a run), all twelve suggestions in:
+- Depth d has enemies of tier d + 1 and bosses of tier d + 2 (worlds.ts depthsWorld), with half
+  again a regular boss's hitpoints (DEPTHS_BOSS_HP; twice, first, left a tier 3 kit, the best
+  the Depths give before a golden chest, unable to kill one at depth 1), and past five stars
+  1.35 times again for every tier over. `depth` on the world now names the depth; its tier is
+  its enemies'.
+- A boss slain makes every boss left at least the deepest depth's strength (or three times
+  its hitpoints and twice its hit, whichever is more: EMPOWER_HP/_DAMAGE) and the strongest of
+  them hunts you for the rest of the run (run.ts empowerBosses; co-op `boost`).
+- A lair seals once everyone in it is five tiles in from its doorways with its boss up: boulders
+  (locs 2919 and 5842, new in assets.json) on its doorways, blocked until the boss falls or
+  nobody's left in there, and then the boss heals whole; one that loses you heals whole too
+  (caves.ts doorways/cellAt, region.ts setSolid, run.ts updateLairs/shutLair/openLair; co-op
+  `seal`). Checked: sealing each of the 360 rooms of 12 caves left nothing outside reachable.
+- The cave wakes after 30 seconds, not four minutes; every 75 the roof comes down round each
+  of you (4 rocks and one more each time, the first right where you stand, a tenth of your
+  hitpoints and 3% more each time to 35%), rousing what's near (run.ts collapse).
+- No genie, and the ways out are hidden and shut until a boss falls, or six minutes have gone
+  (DEPTHS_EXITS_OPEN: without it a fresh start's kit, which can't kill a boss, could never get
+  out).
+- Food on the dead 30% as often, a kill's prayer potion and a chest's food or potion 35% as
+  often (a purse instead), one food a chest, prayer drains half again as fast.
+- Dark: the screen goes black but for about seven tiles round you (placeCaveDark, a gradient
+  over the canvas: fog goes by depth, so the sides stayed lit).
+- Champions and elites three times as often; 30% of enemies come as packs of 3 to 5, led by a
+  champion half the time; enemies start 16 tiles from where you arrive, not 8 (a test run died
+  at the start); 4 to 6 champions guard each boss.
+- Superiors one kill in 15, up to 8 a run, and one rising rouses what's within 12 tiles.
+- No insurance and no gravestone in the Depths (main.ts leaveCarried; the stash screen and the
+  death summary say so).
+- One golden chest opens a run; the rest have rusted shut.
+`scripts/depths-balance.ts` plays it on paper (packs, champions, superiors, collapses, guards,
+the boss, then the hunter): at every depth, with every kit up to the best in the game, two
+bosses in a run 0.0% of 500; one boss at depth 1 a tier 5 set 100%, a tier 3 set 0.2% (real
+play dodges and prays, which the paper doesn't). Tested in a run: the bosses at 1950 hp each,
+59 champions of 228 enemies, the ways out hidden, no genie, a lair sealed (24 doorway tiles, 6
+boulders, nothing outside reachable), the boss killed: the four left rose to 6834 hp hitting
+95 and the Ice Queen (10935) came hunting, the lair opened, the ways out came up; the second
+golden chest stayed shut; the roof came down at 75 seconds for 10 of 100; a sealed boss left
+hurt healed whole.
+
 Version 158 (not yet deployed), as the user asked. Purple (tier 4) and gold (tier 5) gear only
 from a boss's golden chest, on every map: chests, kills, champions, superiors, caskets, balloons
 and the shop give tier 3 at best (items.ts FOUND_TIER_MAX; run.ts dropGear's `from`), but the

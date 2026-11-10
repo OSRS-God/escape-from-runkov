@@ -53,7 +53,7 @@ import {
     staffCasts,
 } from "../content/spells";
 import { Threat, threatName, threatOf, threatText } from "../content/threat";
-import { ENDLESS_BOSSES, SUPERIOR_MAX, SUPERIOR_ONE_IN, WorldDef } from "../content/worlds";
+import { ENDLESS_BOSSES, ENDLESS_DEPTHS, SUPERIOR_MAX, SUPERIOR_ONE_IN, WorldDef, endlessWorld } from "../content/worlds";
 import { GameStart, LootRule } from "./coop";
 import { Hero, Mate } from "./mates";
 import {
@@ -132,7 +132,7 @@ import { playMusic } from "./music";
 import { PlayerLook, RUN_CLIP_SPEED } from "./player";
 import { isKept } from "./kit";
 import { Region, Tile, TileSet, loadRegion } from "./region";
-import { layoutCave } from "./caves";
+import { CaveLayout, layoutCave } from "./caves";
 import { Character, Equipment, Grave, ItemStack } from "./save";
 import { ZOOM_MAX, ZOOM_MIN, saveSettings, settings } from "./settings";
 
@@ -733,9 +733,12 @@ const NIGHT_CHANCE = 0.25;
 const NIGHT_LIGHT = new THREE.Color(0.35, 0.41, 0.68);
 const NIGHT_SKY = 0x0f1424;
 const NIGHT_FOG: [number, number] = [12, 34];
-// The caves' dark (the Depths), and how far off it starts and closes in
+// The caves' dark (the Depths), and how far off it starts and closes in;
+// and how many tiles round you can be seen at all (version 159:
+// placeCaveDark)
 const CAVE_DARK = 0x000000;
 const CAVE_FOG: [number, number] = [22, 48];
+const CAVE_SIGHT = 7;
 // The caves' rock on the minimap and the full map
 const CAVE_ROCK_MAP = "#120d08";
 const NIGHT_AGGRO = 0.6;
@@ -815,6 +818,50 @@ const ENEMY_MAX = 200;
 
 // The Depths' bosses are each the best spread of this many candidates
 const BOSS_SPREAD_CANDIDATES = 40;
+// Version 159, the Depths made far harder than the regular maps (the user
+// asked: nobody should come close to more than one boss a run). Each boss
+// slain makes the ones left this much stronger, and the strongest of them
+// comes hunting.
+const EMPOWER_HP = 3;
+const EMPOWER_DAMAGE = 2;
+// A boss's lair shuts behind you, a rockfall over its doorways, once you're
+// this far in from them with the boss up, until it falls or nobody's left in
+// there; one left alone heals whole
+const LAIR_SEAL_IN = 5;
+const LAIR_ROCKS = [2919, 5842];
+// The cave wakes almost at once; then every so often the roof comes down
+// round each of you, a few more rocks each time and each a harder hit (a
+// share of your hitpoints, to at most COLLAPSE_HIT_MAX), and it rouses what's
+// near. No genie; the ways out stay sealed in the rock until a boss falls,
+// or this long has gone by (a fresh start's kit can't kill a boss: without
+// it, it could never get out)
+const DEPTHS_WAKE_SECONDS = 30;
+const DEPTHS_EXITS_OPEN = 360;
+const COLLAPSE_EVERY = 75;
+const COLLAPSE_ROCKS = 4;
+const COLLAPSE_SPREAD = 4;
+const COLLAPSE_WARNING = 1.6;
+const COLLAPSE_HIT = 0.1;
+const COLLAPSE_HIT_STEP = 0.03;
+const COLLAPSE_HIT_MAX = 0.35;
+const COLLAPSE_ROUSE = 14;
+// Supplies are scarce: a kill's prayer potion and a chest's food or potion
+// this share as often (the food on the dead is worlds.ts's), and protection
+// drains this much faster
+const DEPTHS_SUPPLIES = 0.35;
+// Champions and elites this many times as often; this share of the enemies
+// come as a pack of this many, led by a champion this often; a risen
+// superior rouses what's this near; and each boss has this many champions
+// standing guard about it
+const DEPTHS_CHAMPIONS = 3;
+const DEPTHS_PACK = 0.3;
+const DEPTHS_PACK_SIZE: [number, number] = [3, 5];
+const DEPTHS_PACK_LEADER = 0.5;
+const SUPERIOR_ROUSE = 12;
+const BOSS_GUARDS: [number, number] = [4, 6];
+const DEPTHS_PRAYER_DRAIN = 1.5;
+const DEPTHS_RULES =
+    "The ways out are sealed in the rock until a boss falls, or six minutes have gone, and there's no genie down here. The cave wakes fast, and its roof keeps coming down.";
 
 // `count` different ones of a list, in a random order
 function pickSome<T>(rng: Rng, list: T[], count: number): T[] {
@@ -980,6 +1027,10 @@ export class Run {
     championKills = 0;
     // The Depths' superiors risen this run (SUPERIOR_MAX)
     private superiorsRisen = 0;
+    // The Depths' cave, and the lair shut now (LAIR_SEAL_IN): its cell, its
+    // boss, the tiles blocked and the boulders on them
+    private cave?: CaveLayout;
+    private sealed?: { cell: number; boss?: Enemy; tiles: number[]; rocks: Actor[] };
     rangedKills = 0;
     ate = 0;
     clues = 0;
@@ -1236,6 +1287,7 @@ export class Run {
             map.add(part);
             run.applyNightTo(part);
         };
+        run.cave = cave;
         run.mapLoad = cave ? cave.load(onPart) : loadMap(region, region.spawn.x, region.spawn.z, onPart);
         await run.mapLoad.near;
         // The minimap is drawn by day either way, so it can be read; and
@@ -1765,8 +1817,9 @@ export class Run {
             jobs.push(createActor("locs", EXIT_LOC).then((a) => this.placeExit(a, exit)));
         }
 
-        // The genie, two tiles from where you arrived, facing the spot
-        const ferryTile = this.nearTile({ x: this.px, z: this.pz }, taken, reach);
+        // The genie, two tiles from where you arrived, facing the spot (none
+        // in the Depths)
+        const ferryTile = this.world.bosses ? undefined : this.nearTile({ x: this.px, z: this.pz }, taken, reach);
         if (ferryTile) {
             const rotation = Math.atan2(this.px - ferryTile.x, this.pz - ferryTile.z);
             this.ferry = { x: ferryTile.x, z: ferryTile.z, rotation };
@@ -1873,16 +1926,31 @@ export class Run {
                     break;
                 }
             }
-            const tile = region.randomTile(this.rng, reach, 8, taken);
+            // (twice as far off where you arrive in the Depths, with all
+            // their champions and packs: a test run died where it came in)
+            const tile = region.randomTile(this.rng, reach, this.world.bosses ? 16 : 8, taken);
             if (tile) {
-                const champion: boolean = this.rng() < this.threat.champion || (i === enemyCount - 1 && !anyChampion);
+                // The Depths (DEPTHS_PACK): champions and elites more often,
+                // and some come as a pack, led by a champion as often as not
+                const depths = this.world.bosses ? DEPTHS_CHAMPIONS : 1;
+                const pack = this.world.bosses && this.rng() < DEPTHS_PACK ? randInt(this.rng, DEPTHS_PACK_SIZE[0], DEPTHS_PACK_SIZE[1]) - 1 : 0;
+                const champion: boolean =
+                    this.rng() < this.threat.champion * depths || (pack > 0 && this.rng() < DEPTHS_PACK_LEADER) || (i === enemyCount - 1 && !anyChampion);
                 anyChampion = anyChampion || champion;
                 // Some of the walkers patrol a round instead of standing
                 const route =
-                    !champion && !def.shoots && this.rng() < PATROL_CHANCE ? this.patrolRoute(tile, reach) : undefined;
+                    !champion && !pack && !def.shoots && this.rng() < PATROL_CHANCE ? this.patrolRoute(tile, reach) : undefined;
                 // Now and then an elite, with a trait of its own
                 const traits = Object.keys(TRAITS) as Trait[];
-                const trait = !champion && this.rng() < this.threat.elite / ELITE_ONE_IN ? traits[Math.floor(this.rng() * traits.length)] : undefined;
+                const trait =
+                    !champion && this.rng() < (this.threat.elite * depths) / ELITE_ONE_IN ? traits[Math.floor(this.rng() * traits.length)] : undefined;
+                for (let p = 0; p < pack && i < enemyCount - 1; p++) {
+                    const beside = this.nearTile(tile, taken, reach);
+                    if (beside) {
+                        i++;
+                        jobs.push(this.spawnEnemy(def, beside).then(() => undefined));
+                    }
+                }
                 jobs.push(
                     this.spawnEnemy(champion ? this.champion(def) : def, tile, trait).then((e) => {
                         e.route = route;
@@ -1899,6 +1967,27 @@ export class Run {
         }
         bossTiles.forEach((tile, i) => {
             jobs.push(this.spawnEnemy(bossDefs[i], tile).then(() => undefined));
+            // The Depths' bosses each have champions standing guard about
+            // them (BOSS_GUARDS), of the cave's own kinds
+            if (!this.world.bosses) {
+                return;
+            }
+            const guards = randInt(this.rng, BOSS_GUARDS[0], BOSS_GUARDS[1]);
+            let placed = 0;
+            for (let tries = 0; tries < guards * 6 && placed < guards; tries++) {
+                const angle = this.rng() * Math.PI * 2;
+                const dist = 3 + this.rng() * 3;
+                const x = Math.floor(tile.x + Math.cos(angle) * dist) + 0.5;
+                const z = Math.floor(tile.z + Math.sin(angle) * dist) + 0.5;
+                const at = this.region.tileX(x) - region.baseX + (this.region.tileY(z) - region.baseY) * region.sizeX;
+                if (region.flowAt(reach, x, z) < 0 || taken.has(at) || !region.fits(x, z, 0.4)) {
+                    continue;
+                }
+                taken.add(at);
+                placed++;
+                const def = this.world.enemies[Math.floor(this.rng() * this.world.enemies.length)].def;
+                jobs.push(this.spawnEnemy(this.champion(def), { x, z }).then(() => undefined));
+            }
         });
     }
 
@@ -1922,7 +2011,32 @@ export class Run {
     private placeExit(actor: Actor, exit: Exit): void {
         exit.actor = actor;
         this.placeActor(actor, exit.x, exit.z);
+        actor.root.visible = this.exitsOpen();
         play(actor, "play");
+    }
+
+    // The ways out are there to use: always, but in the Depths only once a
+    // boss has fallen, or the rock's split on its own (DEPTHS_EXITS_OPEN)
+    private exitsOpen(): boolean {
+        return !this.world.bosses || this.bossKills > 0 || this.time >= DEPTHS_EXITS_OPEN;
+    }
+
+    // The Depths' ways out come out of the rock once they're open
+    private exitsShown = false;
+
+    private updateDepthsExits(): void {
+        if (this.exitsShown || !this.world.bosses || !this.exitsOpen()) {
+            return;
+        }
+        this.exitsShown = true;
+        for (const e of this.exits) {
+            if (e.actor) {
+                e.actor.root.visible = true;
+            }
+        }
+        if (this.bossKills === 0) {
+            this.hooks.onMessage("Somewhere the rock splits on its own: the ways out are open.");
+        }
     }
 
     // The way out nearest the player
@@ -1941,6 +2055,16 @@ export class Run {
 
     // The boss has fallen: the nearest way out is told
     private revealNearestExit(): void {
+        // The Depths' ways out break open out of the rock (and stay open)
+        if (this.world.bosses && !this.exitsShown) {
+            this.hooks.onMessage("Somewhere the rock splits: the ways out are open.");
+            this.exitsShown = true;
+            for (const e of this.exits) {
+                if (e.actor) {
+                    e.actor.root.visible = true;
+                }
+            }
+        }
         const exit = this.nearestExit();
         if (exit) {
             exit.found = true;
@@ -2279,7 +2403,9 @@ export class Run {
         if (coop?.role === "guest") {
             const host = coop.heroes.find((h) => h.id !== coop.me)?.name ?? "the host";
             this.hooks.onMessage(
-                `${this.world.name}, with ${host}'s party. Chests are scattered about, ${this.bossGuards()}; the ways out are to be found. They close in ${Math.round(this.closeSeconds() / 60)} minutes. A genie waits where you arrived: ${this.ferryFee().toLocaleString()} coins buys a wish out.`,
+                this.world.bosses
+                    ? `${this.world.name}, with ${host}'s party. Chests are scattered about, ${this.bossGuards()}. ${DEPTHS_RULES}`
+                    : `${this.world.name}, with ${host}'s party. Chests are scattered about, ${this.bossGuards()}; the ways out are to be found. They close in ${Math.round(this.closeSeconds() / 60)} minutes. A genie waits where you arrived: ${this.ferryFee().toLocaleString()} coins buys a wish out.`,
             );
             // The host's map comes once this one's ready for it; the world
             // holds until everyone's loaded
@@ -2287,7 +2413,9 @@ export class Run {
             coop.send({ k: "loaded" } satisfies UpMessage);
         } else {
             this.hooks.onMessage(
-                `${this.world.name}. Chests are scattered about, ${this.bossGuards()}. There are ${this.exits.length} ways out, the nearest somewhere to the ${this.exitCompass()}: find one, or ${this.world.bosses ? "a" : "the"} boss will tell you. They close in ${Math.round(this.closeSeconds() / 60)} minutes. A genie waits where you arrived: ${this.ferryFee().toLocaleString()} coins buys a wish out.`,
+                this.world.bosses
+                    ? `${this.world.name}. Chests are scattered about, ${this.bossGuards()}. ${DEPTHS_RULES}`
+                    : `${this.world.name}. Chests are scattered about, ${this.bossGuards()}. There are ${this.exits.length} ways out, the nearest somewhere to the ${this.exitCompass()}: find one, or the boss will tell you. They close in ${Math.round(this.closeSeconds() / 60)} minutes. A genie waits where you arrived: ${this.ferryFee().toLocaleString()} coins buys a wish out.`,
             );
             if (coop?.role === "host") {
                 this.sendWorld();
@@ -2568,9 +2696,12 @@ export class Run {
         if (this.coop?.role === "guest") {
             return;
         }
-        if (!this.awake && this.time >= WAKE_SECONDS * this.threat.clock) {
+        if (!this.awake && this.time >= (this.world.bosses ? DEPTHS_WAKE_SECONDS : WAKE_SECONDS * this.threat.clock)) {
             this.awake = true;
             this.announce("The map wakes. Everything here knows you're about now, and nothing heals on its own.");
+        }
+        if (this.world.bosses && this.time >= COLLAPSE_EVERY * (this.collapses + 1)) {
+            this.collapse();
         }
         const left = this.closeSeconds() - this.time;
         for (const warn of [120, 60, 30]) {
@@ -2585,6 +2716,31 @@ export class Run {
             this.closed = true;
             this.announce("The ways out have closed. There's no leaving with the loot now.");
         }
+    }
+
+    // The Depths' roof comes down (COLLAPSE_EVERY): rocks about each hero,
+    // more and harder each time, and what's near comes to see
+    private collapses = 0;
+
+    private collapse(): void {
+        this.collapses++;
+        const share = Math.min(COLLAPSE_HIT_MAX, COLLAPSE_HIT + COLLAPSE_HIT_STEP * (this.collapses - 1));
+        const rocks = COLLAPSE_ROCKS + this.collapses;
+        const falling: EnemyDef = { ...this.world.enemies[0].def, name: "Falling rocks" };
+        for (const hero of this.heroes()) {
+            for (let i = 0; i < rocks; i++) {
+                // The first right where they stand, the rest about them
+                const spread = i === 0 ? 0 : COLLAPSE_SPREAD;
+                const x = hero.x + (this.rng() - 0.5) * 2 * spread;
+                const z = hero.z + (this.rng() - 0.5) * 2 * spread;
+                if (!this.region.fits(x, z, 0.1)) {
+                    continue;
+                }
+                this.hazard(x, z, 1.2, COLLAPSE_WARNING, (h) => this.hurtHero(h, falling, 0, "melee", true, Math.max(1, Math.round(h.maxHp * share))));
+            }
+            this.wakeNear(hero.x, hero.z, COLLAPSE_ROUSE);
+        }
+        this.announce(this.collapses === 1 ? "The cave shudders and the roof starts to come down. Get clear of the rings!" : "The roof comes down again, harder.");
     }
 
     // A sound from somewhere on the map, as loud as it's near: full within
@@ -2706,6 +2862,7 @@ export class Run {
         for (const d of this.disposables) {
             d.dispose();
         }
+        this.caveDark?.remove();
         // The shafts of light over what's still lying about
         for (const p of this.pickups) {
             p.beam?.geometry.dispose();
@@ -3072,7 +3229,8 @@ export class Run {
                     e.state !== "dead" &&
                     (guest ? Math.hypot(e.x - this.px, e.z - this.pz) < GUEST_BOSS_NEAR : e.target === this.self),
             );
-            this.prayer = Math.max(0, this.prayer - (PRAYER_DRAIN * (bossOnMe ? BOSS_PRAYER_DRAIN : 1) * dt) / scale);
+            const depths = this.world.bosses ? DEPTHS_PRAYER_DRAIN : 1;
+            this.prayer = Math.max(0, this.prayer - (PRAYER_DRAIN * (bossOnMe ? BOSS_PRAYER_DRAIN : 1) * depths * dt) / scale);
             if (this.prayer <= 0) {
                 this.protect = "none";
                 this.hooks.onMessage("Your prayer runs out.");
@@ -3366,6 +3524,8 @@ export class Run {
             return;
         }
         this.updateClock();
+        this.updateLairs();
+        this.updateDepthsExits();
         this.updatePrayer(dt);
         this.updateAmbient(dt);
         this.updatePlayer(dt);
@@ -3468,6 +3628,34 @@ export class Run {
             .applyAxisAngle(UP, this.cameraYaw);
         this.camera.position.set(x, py, z).add(this.cameraOffset);
         this.camera.lookAt(x, py + 0.6, z);
+        this.placeCaveDark(x, py + 0.6, z);
+    }
+
+    // The Depths' dark closes in round you (version 159): black over the
+    // screen but for a ring of CAVE_SIGHT tiles about whoever's watched,
+    // however far the camera's pulled back. On the screen rather than as
+    // fog, which goes by depth into it, so the sides would stay lit.
+    private caveDark?: HTMLDivElement;
+
+    private placeCaveDark(x: number, y: number, z: number): void {
+        if (!this.world.caves) {
+            return;
+        }
+        if (!this.caveDark) {
+            this.caveDark = document.createElement("div");
+            this.caveDark.className = "cave-dark";
+            this.renderer.domElement.after(this.caveDark);
+        }
+        const canvas = this.renderer.domElement;
+        const at = new THREE.Vector3(x, y, z).project(this.camera);
+        const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+        const edge = new THREE.Vector3(x, y, z).addScaledVector(right, CAVE_SIGHT).project(this.camera);
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        const sx = ((at.x + 1) / 2) * w;
+        const sy = ((1 - at.y) / 2) * h;
+        const radius = Math.hypot(((edge.x - at.x) / 2) * w, ((edge.y - at.y) / 2) * h);
+        this.caveDark.style.background = `radial-gradient(circle at ${sx.toFixed(0)}px ${sy.toFixed(0)}px, rgba(0, 0, 0, 0) ${(radius * 0.4).toFixed(0)}px, rgba(0, 0, 0, 0.7) ${(radius * 0.75).toFixed(0)}px, rgba(0, 0, 0, 0.97) ${radius.toFixed(0)}px)`;
     }
 
     // This player as the enemies (and the snapshot) see them
@@ -4322,6 +4510,8 @@ export class Run {
                 s.state = "chase";
                 s.noIdleUntil = this.time + SUPERIOR_PERSIST;
             });
+            // Its roar brings what's near (version 159)
+            this.wakeNear(at.x, at.z, SUPERIOR_ROUSE);
             this.announce(`A superior foe has appeared: ${superior.name}!`);
         }
         if (this.rng() < e.def.foodChance) {
@@ -4333,6 +4523,9 @@ export class Run {
             // The golden chest's key, every time
             this.dropPickup(BOSS_KEY, 1, e.x - 0.3, e.z + 0.3);
             this.hooks.onMessage(`${e.def.name} falls and drops the golden chest's key. The nearest way out is ${this.exitDirection()}.`);
+            if (this.world.bosses) {
+                this.empowerBosses();
+            }
             // Now and then something small is left behind, if you haven't
             // got one from here already
             // (none from the Depths: pets are a map's own boss's, and the
@@ -4388,7 +4581,7 @@ export class Run {
             this.announce(`The ${e.def.name.toLowerCase()} was carrying something.`);
         } else if (roll < 0.02 + PURSE_CHANCE) {
             this.dropPickup(COINS, coins * randInt(this.rng, 4, 8), e.x - 0.3, e.z + 0.3);
-        } else if (roll < 0.02 + PURSE_CHANCE + PRAYER_POTION_CHANCE) {
+        } else if (roll < 0.02 + PURSE_CHANCE + PRAYER_POTION_CHANCE * (this.world.bosses ? DEPTHS_SUPPLIES : 1)) {
             this.dropPickup(2434, 1, e.x - 0.3, e.z - 0.3);
         }
     }
@@ -4565,6 +4758,10 @@ export class Run {
                 if (giveUp && e.def.boss && t && this.time - e.gaveUpAt > 5) {
                     e.gaveUpAt = this.time;
                     this.announce(`${e.def.name} loses interest and turns back.`);
+                    // A Depths boss given the slip heals whole (version 159)
+                    if (this.world.bosses) {
+                        this.healBoss(e);
+                    }
                 }
                 if (!t || giveUp) {
                     e.state = "idle";
@@ -4739,6 +4936,149 @@ export class Run {
         e.z = nz;
         e.facing = Math.atan2(dx, dz);
         play(e.actor, "walk");
+    }
+
+    // A Depths boss down (EMPOWER_HP): the ones left grow stronger, as hurt
+    // as they were, and the strongest of them comes hunting, and never gives up
+    private empowerBosses(): void {
+        const left = this.enemies.filter((o) => o.def.boss && o.state !== "dead");
+        if (left.length === 0) {
+            return;
+        }
+        // At least the deepest depth's strength, whatever the depth: the
+        // same boss at ENDLESS_DEPTHS over the same boss here, unscaled (so
+        // a party's and a threat level's extra stays on top)
+        const here = endlessWorld(this.world.depth ?? 1).bosses ?? [];
+        const deep = endlessWorld(ENDLESS_DEPTHS).bosses ?? [];
+        for (const o of left) {
+            const share = o.hp / o.def.hp;
+            const id = o.def.id;
+            const mine = here.find((b) => b.id === id);
+            const deepest = deep.find((b) => b.id === id);
+            const hp = Math.max(EMPOWER_HP, mine && deepest ? deepest.hp / mine.hp : 1);
+            const damage = Math.max(EMPOWER_DAMAGE, mine && deepest ? deepest.damage / mine.damage : 1);
+            o.def = { ...o.def, hp: Math.round(o.def.hp * hp), damage: Math.round(o.def.damage * damage) };
+            o.hp = Math.max(1, Math.round(o.def.hp * share));
+            if (this.coop?.role === "host") {
+                this.coop.send({ k: "boost", u: o.uid, hp: o.def.hp, d: o.def.damage } satisfies DownMessage);
+            }
+        }
+        const hunter = left.reduce((a, b) => (b.def.hp > a.def.hp ? b : a));
+        hunter.state = "chase";
+        hunter.lastHurtAt = this.time;
+        hunter.noIdleUntil = Infinity;
+        const others = left.length > 1 ? `the ${left.length} bosses left grow stronger` : `${hunter.def.name} grows stronger`;
+        this.announce(`The Depths stir: ${others}, and ${hunter.def.name} is hunting you!`);
+    }
+
+    // The Depths' lairs (LAIR_SEAL_IN): one shuts once everyone in it is well
+    // in from its doorways with its boss up and nothing stands in them, and
+    // opens again once the boss is down, or nobody's left in there (and then
+    // the boss heals whole)
+    private updateLairs(): void {
+        const cave = this.cave;
+        if (!cave || this.coop?.role === "guest") {
+            return;
+        }
+        const heroes = this.heroes();
+        const sealed = this.sealed;
+        if (sealed) {
+            const boss = sealed.boss;
+            const anyoneIn = heroes.some((h) => cave.cellAt(h.x, h.z) === sealed.cell);
+            if (!boss || boss.state === "dead") {
+                this.openLair();
+            } else if (!anyoneIn) {
+                this.openLair(boss);
+            }
+            return;
+        }
+        for (const e of this.enemies) {
+            if (!e.def.boss || e.state === "dead" || e.state === "idle") {
+                continue;
+            }
+            const cell = cave.cellAt(e.homeX, e.homeZ);
+            if (!heroes.some((h) => cave.cellAt(h.x, h.z) === cell)) {
+                continue;
+            }
+            const doorways = cave.doorways(cell).map((i) => this.region.centreOf(i));
+            const near = (x: number, z: number, far: number) => doorways.some((c) => Math.hypot(c.x - x, c.z - z) < far);
+            const ready =
+                heroes.every((h) => !near(h.x, h.z, cave.cellAt(h.x, h.z) === cell ? LAIR_SEAL_IN : 2)) &&
+                !this.enemies.some((o) => o.state !== "dead" && near(o.x, o.z, o.def.radius + 1));
+            if (ready) {
+                this.shutLair(cell, e);
+            }
+            return;
+        }
+    }
+
+    // A lair's doorways blocked, and boulders fallen on them
+    private shutLair(cell: number, boss?: Enemy): void {
+        const tiles = this.cave!.doorways(cell);
+        for (const i of tiles) {
+            this.region.setSolid(i, true);
+        }
+        const sealed = { cell, boss, tiles, rocks: [] as Actor[] };
+        this.sealed = sealed;
+        // A boulder on every other tile each way: each is two tiles across
+        const g = this.region;
+        for (const i of tiles) {
+            if ((i % g.sizeX) % 2 !== 0 || Math.floor(i / g.sizeX) % 2 !== 0) {
+                continue;
+            }
+            const at = g.centreOf(i);
+            const id = LAIR_ROCKS[Math.floor(this.rng() * LAIR_ROCKS.length)];
+            const turn = Math.floor(this.rng() * 4) * (Math.PI / 2);
+            void createActor("locs", id).then((rock) => {
+                if (this.sealed !== sealed || this.ended) {
+                    return;
+                }
+                this.placeActor(rock, at.x + 0.5, at.z - 0.5, turn);
+                addShadow(rock.root, 0.9);
+                sealed.rocks.push(rock);
+            });
+        }
+        if (boss) {
+            this.announce(`Rocks crash down over the doorways: ${boss.def.name}'s lair is sealed until it falls.`);
+        }
+        if (this.coop?.role === "host") {
+            this.coop.send({ k: "seal", c: cell, on: 1 } satisfies DownMessage);
+        }
+    }
+
+    // The rocks shift and the lair opens; a boss nobody's left fighting
+    // heals whole and goes back to standing guard
+    private openLair(healed?: Enemy): void {
+        const sealed = this.sealed;
+        if (!sealed) {
+            return;
+        }
+        this.sealed = undefined;
+        for (const i of sealed.tiles) {
+            this.region.setSolid(i, false);
+        }
+        for (const rock of sealed.rocks) {
+            this.scene.remove(rock.root);
+        }
+        if (healed) {
+            this.healBoss(healed);
+        }
+        if (this.coop?.role !== "guest") {
+            this.announce("The rocks shift: the lair's doorways are open again.");
+        }
+        if (this.coop?.role === "host") {
+            this.coop.send({ k: "seal", c: sealed.cell, on: 0 } satisfies DownMessage);
+        }
+    }
+
+    // A Depths boss left alone is whole again, as if never fought
+    private healBoss(e: Enemy): void {
+        const whole = e.reborn ? Math.round(e.def.hp * SECOND_FORM_SHARE) : e.def.hp;
+        if (e.state === "dead" || e.hp >= whole) {
+            return;
+        }
+        e.hp = whole;
+        this.announce(`${e.def.name} is left alone, and heals whole.`);
     }
 
     // Half way down, a boss is enraged: quicker, redder, with company. In a
@@ -5627,13 +5967,14 @@ export class Run {
         this.reviving = 0;
 
         // A way out, once it's been found
+        const open = this.exitsOpen();
         for (const exit of this.exits) {
-            if (!exit.found && Math.hypot(exit.x - this.px, exit.z - this.pz) < EXIT_SIGHT) {
+            if (open && !exit.found && Math.hypot(exit.x - this.px, exit.z - this.pz) < EXIT_SIGHT) {
                 exit.found = true;
                 this.hooks.onMessage("You spot a way out.");
             }
         }
-        const exit = this.exits.find((e) => e.actor && near(e.x, e.z));
+        const exit = open ? this.exits.find((e) => e.actor && near(e.x, e.z)) : undefined;
         if (exit) {
             if (this.closed) {
                 this.prompt = "The ways out have closed";
@@ -5752,6 +6093,10 @@ export class Run {
                 this.prompt = "The vault is locked. One of this map's champions carries the key.";
                 return;
             }
+            if (chest.boss && this.goldenSpent()) {
+                this.prompt = "The golden chest's lock has rusted shut: the Depths give up only one a run.";
+                return;
+            }
             if (chest.boss && !this.inventory.some((s) => s.id === BOSS_KEY)) {
                 this.prompt = "The golden chest is locked. The boss has its key.";
                 return;
@@ -5766,6 +6111,12 @@ export class Run {
             }
             return;
         }
+    }
+
+    // The Depths give up one golden chest a run, whoever opens it (version
+    // 159); the rest stay shut
+    private goldenSpent(): boolean {
+        return this.world.bosses !== undefined && this.chests.some((c) => c.boss && c.opened);
     }
 
     // A chest opened, by this player unless said (the host opens them for
@@ -5879,13 +6230,18 @@ export class Run {
                 gear(this.world.lootTiers);
             }
         } else if (roll < 0.85) {
+            // The Depths' chests hold supplies far less often: a purse
+            // instead (DEPTHS_SUPPLIES)
+            const depths = this.world.bosses !== undefined;
             if (!this.clueDropped && this.rng() < 0.15) {
                 this.clueDropped = true;
                 drop(CLUE_SCROLL, 1);
+            } else if (depths && this.rng() > DEPTHS_SUPPLIES) {
+                drop(COINS, purse(60, 150));
             } else if (this.rng() < 0.4) {
                 drop(potion(), 1);
             } else {
-                drop(FOOD_BY_TIER[Math.min(FOOD_BY_TIER.length - 1, tier - 1)], randInt(this.rng, 1, 2));
+                drop(FOOD_BY_TIER[Math.min(FOOD_BY_TIER.length - 1, tier - 1)], depths ? 1 : randInt(this.rng, 1, 2));
             }
         } else {
             // 15 to 40 until version 78, less than the food the same chest
@@ -6460,6 +6816,20 @@ export class Run {
                 }
                 break;
             }
+            case "boost": {
+                const e = this.ghosts.get(message.u);
+                if (e) {
+                    e.def = { ...e.def, hp: message.hp, damage: message.d };
+                }
+                break;
+            }
+            case "seal":
+                if (message.on && !this.sealed && this.cave) {
+                    this.shutLair(message.c);
+                } else if (!message.on) {
+                    this.openLair();
+                }
+                break;
             case "drop":
                 this.dropPickup(message.i, message.n, message.x, message.z, 0, message.u);
                 break;
@@ -6723,7 +7093,7 @@ export class Run {
                     !chest.opened &&
                     near(chest.tile.x, chest.tile.z, GUEST_REACH) &&
                     (!chest.vault || this.guestSpend(from, VAULT_KEY, 1)) &&
-                    (!chest.boss || this.guestSpend(from, BOSS_KEY, 1))
+                    (!chest.boss || (!this.goldenSpent() && this.guestSpend(from, BOSS_KEY, 1)))
                 ) {
                     this.openChest(chest, mate);
                 }

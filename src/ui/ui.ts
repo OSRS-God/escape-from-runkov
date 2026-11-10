@@ -814,7 +814,7 @@ export class UI {
                     h(
                         "div",
                         { class: "subtitle" },
-                        `The caves are dug anew every run, thirty chambers wide, with ${ENDLESS_BOSSES} lair bosses far apart and loot from every tier. They start at one star and go a star deeper each time you slay a boss and escape, down to ${ENDLESS_DEPTHS}.`,
+                        `The caves are dug anew every run, thirty chambers wide, with ${ENDLESS_BOSSES} lair bosses far apart and loot from every tier. Far harder than the regular maps: two star enemies and three star bosses from the first depth, a star deeper each time you slay a boss and escape, down to ${ENDLESS_DEPTHS}. Every boss that falls makes the rest stronger, and the strongest comes hunting. No insurance, no gravestones, no genie.`,
                     ),
                     h("button", { class: "primary", onclick: () => this.switchProfile("endless") }, first ? "Start fresh in the Depths" : "Enter the Depths"),
                     h("button", { onclick: () => this.showMaps() }, "Back"),
@@ -892,7 +892,7 @@ export class UI {
             play: last
                 ? `Last: ${last.name} ${"★".repeat(last.tier)}${s.fastestEscape > 0 ? ` · best escape ${time(s.fastestEscape)}` : ""}`
                 : modeOf(save) === "endless"
-                  ? `The Depths, depth ${getWorld(ENDLESS_ID).tier} of ${ENDLESS_DEPTHS}`
+                  ? `The Depths, depth ${getWorld(ENDLESS_ID).depth ?? 1} of ${ENDLESS_DEPTHS}`
                   : `${REGULAR_WORLDS.length} maps, one star to five, then the Depths`,
             stash:
                 plural(pieces, "piece") +
@@ -3049,7 +3049,7 @@ export class UI {
                         { class: "map-name" },
                         `${world.name} `,
                         h("span", { class: "stats" }, door ? "" : "★".repeat(world.tier)),
-                        endlessMode ? h("span", { class: "beaten" }, ` depth ${world.tier} of ${ENDLESS_DEPTHS}`) : null,
+                        endlessMode ? h("span", { class: "beaten" }, ` depth ${world.depth ?? 1} of ${ENDLESS_DEPTHS}`) : null,
                         !door && beaten.includes(world.id) ? h("span", { class: "beaten" }, " ✓ beaten") : null,
                     ),
                     h("div", { class: "stats" }, world.description),
@@ -3090,7 +3090,7 @@ export class UI {
                     "div",
                     { class: "subtitle" },
                     endlessMode
-                        ? "Your Depths profile: its own stash and gear, and the caves alone. Slay a boss and escape to go a star deeper. Leave the Depths from here or the title screen to go back to your regular maps."
+                        ? "Your Depths profile: its own stash and gear, and the caves alone. Slay a boss and escape to go a depth deeper. Leave the Depths from here or the title screen to go back to your regular maps."
                         : "The maps open in order: slay a map's boss and escape in the same run, and the next opens. Stars are how hard a map is and how good its chests are; the guild's starter kit is good for one star.",
                 ),
                 h("div", { class: "panel maps" }, h("div", { class: "item-list" }, ...rows)),
@@ -3252,7 +3252,9 @@ export class UI {
                 insurable.push(stack.id);
             }
         }
-        const insuranceRows = insurable.map((id) => {
+        // (none in the Depths, which keep everything of a death: version 159)
+        const noInsurance = modeOf(save) === "endless";
+        const insuranceRows = (noInsurance ? [] : insurable).map((id) => {
             const item = getItem(id);
             const cost = Math.max(10, Math.round(price(item) * 0.2 * (1 - 0.25 * save.upgrades.insurance)));
             const insured = save.insured === id;
@@ -4095,12 +4097,14 @@ export class UI {
                             h(
                                 "div",
                                 { class: "subtitle" },
-                                save.insured !== undefined
-                                    ? `Your ${getItem(save.insured).name.toLowerCase()} is insured for the next run: it comes home even if you don't. The fee is spent either way.`
-                                    : "Pay the guild a fifth of a piece's price to bring it home if you don't make it. One piece, worn or packed, for one run; the fee is spent either way.",
+                                noInsurance
+                                    ? "The guild won't insure anything for the Depths: what goes down with you and doesn't come back is gone, and there's no gravestone to go back to."
+                                    : save.insured !== undefined
+                                      ? `Your ${getItem(save.insured).name.toLowerCase()} is insured for the next run: it comes home even if you don't. The fee is spent either way.`
+                                      : "Pay the guild a fifth of a piece's price to bring it home if you don't make it. One piece, worn or packed, for one run; the fee is spent either way.",
                             ),
                             h("div", { class: "item-list" }, ...insuranceRows),
-                            insuranceRows.length === 0 ? h("div", { class: "subtitle" }, "Wear or pack some gear first.") : null,
+                            insuranceRows.length === 0 && !noInsurance ? h("div", { class: "subtitle" }, "Wear or pack some gear first.") : null,
                         ),
                         h(
                             "details",
@@ -5157,7 +5161,9 @@ export class UI {
                       ? "A gravestone marks where you fell. Your insurance paid out, so it holds only half of the rest. Go back for it within your next two runs, or it's gone."
                       : "A gravestone marks where you fell, with the rest in it. Go back for it within your next two runs, or it's gone.",
               )
-            : null;
+            : result.kind === "died" && result.world.id === ENDLESS_ID
+              ? h("div", { class: "subtitle" }, "The Depths keep everything you carried: there's no insurance and no gravestone down there.")
+              : null;
         const pet = extras.pet
             ? h(
                   "div",

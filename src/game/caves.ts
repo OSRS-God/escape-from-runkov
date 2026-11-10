@@ -45,7 +45,12 @@ type CaveRoomJson = {
     boxes: number[];
 };
 
-type CavesJson = { size: number; rooms: CaveRoomJson[] };
+type CavesJson = { size: number; doorFrom: number; doorWidth: number; rooms: CaveRoomJson[] };
+
+// A lair's doorways (version 159): the way in at each of a room's doors,
+// this many tiles in from its edge, and this many either side of the door
+const DOORWAY_DEPTH = 3;
+const DOORWAY_SPLAY = 3;
 
 let cavesJson: Promise<CavesJson> | undefined;
 
@@ -66,6 +71,11 @@ export type CaveLayout = {
     start: number;
     // The rooms' models, the start's first
     load(onPart: (part: THREE.Object3D) => void): MapLoad;
+    // The cell a scene position is in, -1 off the cave
+    cellAt(x: number, z: number): number;
+    // A room's doorways: the open tiles (the region's indices) of the way
+    // in at each of its doors, to shut a lair with
+    doorways(cell: number): number[];
 };
 
 // Which cells have rooms, and how they're joined: a room grown off the
@@ -242,5 +252,40 @@ export async function layoutCave(id: string, name: string, seed: number): Promis
             },
         };
     };
-    return { region, cells: names, start, load };
+    const cellAt = (x: number, z: number): number => {
+        const cx = Math.floor((region.tileX(x) - BASE_X) / size);
+        const cy = Math.floor((region.tileY(z) - BASE_Y) / size);
+        return cx < 0 || cy < 0 || cx >= CELLS_X || cy >= CELLS_Y ? -1 : cx + cy * CELLS_X;
+    };
+    const doorways = (cell: number): number[] => {
+        const ox = (cell % CELLS_X) * size;
+        const oy = Math.floor(cell / CELLS_X) * size;
+        const out: number[] = [];
+        const along = [caves.doorFrom - DOORWAY_SPLAY, caves.doorFrom + caves.doorWidth + DOORWAY_SPLAY];
+        const band = (x0: number, x1: number, y0: number, y1: number) => {
+            for (let y = y0; y < y1; y++) {
+                for (let x = x0; x < x1; x++) {
+                    const i = ox + x + (oy + y) * sizeX;
+                    if ((region.tiles[i] & 1) === 0) {
+                        out.push(i);
+                    }
+                }
+            }
+        };
+        const d = doors[cell];
+        if (d & NORTH) {
+            band(along[0], along[1], size - DOORWAY_DEPTH, size);
+        }
+        if (d & SOUTH) {
+            band(along[0], along[1], 0, DOORWAY_DEPTH);
+        }
+        if (d & EAST) {
+            band(size - DOORWAY_DEPTH, size, along[0], along[1]);
+        }
+        if (d & WEST) {
+            band(0, DOORWAY_DEPTH, along[0], along[1]);
+        }
+        return out;
+    };
+    return { region, cells: names, start, load, cellAt, doorways };
 }

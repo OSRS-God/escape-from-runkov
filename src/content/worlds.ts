@@ -54,6 +54,8 @@ export type WorldDef = {
     // The Depths' mini bosses, by the id of the lesser kind whose kills
     // bring each (SUPERIOR_ONE_IN)
     superiors?: Record<string, EnemyDef>;
+    // The Depths' depth, 1 to ENDLESS_DEPTHS (its tier is its enemies')
+    depth?: number;
 };
 
 // worlds.json carries Run Escape's blurbs, about its waves and bosses, so
@@ -72,7 +74,7 @@ const DESCRIPTIONS: Record<string, string> = {
     god_wars: "The God Wars Dungeon, where four armies have fought for an age. All of them want you dead.",
     prifddinas: "The crystal city's gauntlet and its corrupted beasts. The Hunllef hunts the deepest halls.",
     inferno: "Inside the volcano under Mor Ul Rek: TzHaar and Jal creatures on the rock, and a Jad among them.",
-    endless: "Caves that are never the same twice: thirty chambers dug anew every run, the biggest map there is. Five of fourteen lair bosses lurk far apart, slayer monsters crawl everywhere, and now and then a superior one rises where its kind falls. The loot comes from every tier. A fresh start: its own stash, its own class.",
+    endless: "Caves that are never the same twice: thirty chambers dug anew every run, the biggest map there is. Five of fourteen lair bosses lurk far apart, slayer monsters crawl everywhere, and now and then a superior one rises where its kind falls. The loot comes from every tier. A fresh start: its own stash, its own class. Lairs seal behind you, the roof keeps coming down, each boss slain makes the rest stronger, and only one golden chest opens a run.",
 };
 
 // What a map tier asks of you (see scripts/balance.ts): the average enemy
@@ -339,8 +341,9 @@ const ENDLESS_ENEMIES = [
 // monsters): one in SUPERIOR_ONE_IN kills of its lesser kind brings one,
 // at most SUPERIOR_MAX a run, with its lesser kind's hitpoints and hits
 // times these, and its coins times SUPERIOR_COINS
-export const SUPERIOR_ONE_IN = 30;
-export const SUPERIOR_MAX = 4;
+// (30 and 4 until version 159 made the Depths far harder)
+export const SUPERIOR_ONE_IN = 15;
+export const SUPERIOR_MAX = 8;
 const SUPERIOR_HP = 6;
 const SUPERIOR_DAMAGE = 1.6;
 const SUPERIOR_COINS = 8;
@@ -435,13 +438,52 @@ function makeWorld(w: WorldJson): WorldDef {
     };
 }
 
-// The Depths at each depth, 1 to 5: their enemies and bosses at that tier (a
-// fresh start's starter kit is one star's gear, so it begins at one), and
-// its loot of every tier at every depth
+// The Depths at each depth, 1 to 5, far harder than the regular maps
+// (version 159, as the user asked: nobody should come close to clearing more
+// than one boss in a run): their enemies a tier above the depth and their
+// bosses two, each boss with half again a regular boss's hitpoints for its
+// tier (twice, first: scripts/depths-balance.ts found a tier 3 kit, the best
+// the Depths give before a golden chest, could never kill one at depth 1),
+// and past five stars everything 1.35 times again a tier it would have gone
+// over; and food on the dead under a third as often. Loot is every tier at
+// every depth.
 export const ENDLESS_DEPTHS = 5;
-const ENDLESS_WORLDS: WorldDef[] = Array.from({ length: ENDLESS_DEPTHS }, (_, i) =>
-    makeWorld({ ...endlessJson(REGULAR_JSONS), tier: i + 1 }),
-);
+const DEPTHS_ENEMY_TIERS_UP = 1;
+const DEPTHS_BOSS_TIERS_UP = 2;
+const DEPTHS_BOSS_HP = 1.5;
+const DEPTHS_PAST_FIVE = 1.35;
+const DEPTHS_FOOD = 0.3;
+
+function depthsWorld(depth: number): WorldDef {
+    const json = endlessJson(REGULAR_JSONS);
+    const enemyTier = depth + DEPTHS_ENEMY_TIERS_UP;
+    const bossTier = depth + DEPTHS_BOSS_TIERS_UP;
+    const world = makeWorld({ ...json, tier: Math.min(5, enemyTier) });
+    const enemyPast = Math.pow(DEPTHS_PAST_FIVE, Math.max(0, enemyTier - 5));
+    const bossPast = Math.pow(DEPTHS_PAST_FIVE, Math.max(0, bossTier - 5));
+    const bossWorld = makeWorld({ ...json, tier: Math.min(5, bossTier) });
+    const enemy = (def: EnemyDef): EnemyDef => ({
+        ...def,
+        hp: Math.round(def.hp * enemyPast),
+        damage: Math.round(def.damage * enemyPast),
+        foodChance: def.foodChance * DEPTHS_FOOD,
+    });
+    const boss = (def: EnemyDef): EnemyDef => ({
+        ...def,
+        hp: Math.round(def.hp * DEPTHS_BOSS_HP * bossPast),
+        damage: Math.round(def.damage * bossPast),
+    });
+    return {
+        ...world,
+        depth,
+        enemies: world.enemies.map((e) => ({ def: enemy(e.def), weight: e.weight })),
+        superiors: Object.fromEntries(Object.entries(world.superiors ?? {}).map(([id, def]) => [id, enemy(def)])),
+        bosses: (bossWorld.bosses ?? []).map(boss),
+        boss: boss(bossWorld.boss),
+    };
+}
+
+const ENDLESS_WORLDS: WorldDef[] = Array.from({ length: ENDLESS_DEPTHS }, (_, i) => depthsWorld(i + 1));
 
 export const WORLDS: WorldDef[] = [...REGULAR_JSONS.map(makeWorld), ENDLESS_WORLDS[0]];
 

@@ -119,6 +119,10 @@ export type DownMessage =
     | { k: "kill"; u: number; by: string; boss?: 1; champion?: 1 }
     // A word for everyone, or for one
     | { k: "msg"; text: string; to?: string }
+    // The Depths (version 159): a boss grown stronger, its hitpoints and
+    // hit now; and a lair shut (on: 1) or open again, by its cell
+    | { k: "boost"; u: number; hp: number; d: number }
+    | { k: "seal"; c: number; on: 0 | 1 }
     // A hero's worn gear changed (the host's own, or a guest's passed on),
     // so everyone draws them in it (version 72)
     | { k: "gear"; id: string; e: Equipment }
