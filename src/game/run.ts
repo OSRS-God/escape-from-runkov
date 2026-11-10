@@ -859,6 +859,8 @@ const DEPTHS_PACK_SIZE: [number, number] = [3, 5];
 const DEPTHS_PACK_LEADER = 0.5;
 const SUPERIOR_ROUSE = 12;
 const BOSS_GUARDS: [number, number] = [4, 6];
+// What a tiny one (EnemyDef's tiny) drops, at any depth
+const TINY_LOOT = [{ tier: 1, weight: 1 }];
 const DEPTHS_PRAYER_DRAIN = 1.5;
 const DEPTHS_RULES =
     "The ways out are sealed in the rock until a boss falls, or six minutes have gone, and there's no genie down here. The cave wakes fast, and its roof keeps coming down.";
@@ -4514,8 +4516,12 @@ export class Run {
             this.wakeNear(at.x, at.z, SUPERIOR_ROUSE);
             this.announce(`A superior foe has appeared: ${superior.name}!`);
         }
+        // A tiny one in the Depths (EnemyDef's tiny, version 160) drops
+        // tier 1 whatever the depth: gear, food, arrows and runes
+        const tier = e.def.tiny ? 1 : this.world.tier;
+        const loot = e.def.tiny ? TINY_LOOT : this.world.lootTiers;
         if (this.rng() < e.def.foodChance) {
-            const food = [315, 2309, 333, 329, 379][Math.min(4, Math.floor(this.rng() * (this.world.tier + 1)))];
+            const food = [315, 2309, 333, 329, 379][Math.min(4, Math.floor(this.rng() * (tier + 1)))];
             this.dropPickup(food, 1, e.x + 0.3, e.z + 0.3);
         }
         if (e.def.boss) {
@@ -4543,10 +4549,10 @@ export class Run {
         // of the tier's catalyst (version 106: spells take OSRS's costs)
         if (this.rng() < AMMO_DROP_CHANCE && !(by.me && this.dropOwnAmmo(e.x + 0.3, e.z - 0.3))) {
             if (this.rng() < 0.5) {
-                const kind = ammoOfTier("arrows", this.world.tier, this.rng());
+                const kind = ammoOfTier("arrows", tier, this.rng());
                 this.dropPickup(kind, randInt(this.rng, 3, 6), e.x + 0.3, e.z - 0.3);
             } else {
-                const runes = runeDrop(this.world.tier, this.rng(), this.rng(), (lo, hi) => randInt(this.rng, lo, hi));
+                const runes = runeDrop(tier, this.rng(), this.rng(), (lo, hi) => randInt(this.rng, lo, hi));
                 this.dropPickup(runes.id, runes.count, e.x + 0.3, e.z - 0.3);
             }
         }
@@ -4564,7 +4570,7 @@ export class Run {
         }
         // A champion always carried a piece of gear, the way a chest gives it
         if (e.def.champion) {
-            this.dropGear(this.world.lootTiers, e.x - 0.3, e.z - 0.3, PRIZE_FULL);
+            this.dropGear(loot, e.x - 0.3, e.z - 0.3, PRIZE_FULL);
             if (e.key) {
                 this.dropPickup(VAULT_KEY, 1, e.x + 0.3, e.z + 0.4);
                 this.announce(`The ${e.def.name.toLowerCase()} drops its prize, and a crystal key.`);
@@ -4577,7 +4583,7 @@ export class Run {
         // way a chest gives it
         const roll = this.rng();
         if (roll < 0.02) {
-            this.dropGear(this.world.lootTiers, e.x - 0.3, e.z - 0.3);
+            this.dropGear(loot, e.x - 0.3, e.z - 0.3);
             this.announce(`The ${e.def.name.toLowerCase()} was carrying something.`);
         } else if (roll < 0.02 + PURSE_CHANCE) {
             this.dropPickup(COINS, coins * randInt(this.rng, 4, 8), e.x - 0.3, e.z + 0.3);

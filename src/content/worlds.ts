@@ -453,6 +453,20 @@ const DEPTHS_BOSS_TIERS_UP = 2;
 const DEPTHS_BOSS_HP = 1.5;
 const DEPTHS_PAST_FIVE = 1.35;
 const DEPTHS_FOOD = 0.3;
+// The Depths' tiny ones (version 160, as the user asked): rats, bats,
+// spiders, bugs, crawlers, slimes and slugs drop tier 1 only, gear, food,
+// arrows and runes alike, champions of them too (run.ts killEnemy)
+const DEPTHS_TINY = new Set([
+    "guanic_bat",
+    "giant_bat",
+    "giant_crypt_rat",
+    "crypt_spider",
+    "cave_bug",
+    "crawling_hand",
+    "cave_crawler",
+    "cave_slime",
+    "rockslug",
+]);
 
 function depthsWorld(depth: number): WorldDef {
     const json = endlessJson(REGULAR_JSONS);
@@ -467,6 +481,7 @@ function depthsWorld(depth: number): WorldDef {
         hp: Math.round(def.hp * enemyPast),
         damage: Math.round(def.damage * enemyPast),
         foodChance: def.foodChance * DEPTHS_FOOD,
+        tiny: DEPTHS_TINY.has(def.id.slice(def.id.indexOf(":") + 1)) || undefined,
     });
     const boss = (def: EnemyDef): EnemyDef => ({
         ...def,

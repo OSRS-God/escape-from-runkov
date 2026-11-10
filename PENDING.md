@@ -189,7 +189,16 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 159 (not yet deployed): the Depths made far harder than the regular maps, as the user
+Version 160 (not yet deployed), as the user asked: the Depths' tiny ones drop tier 1 only,
+whatever the depth: gear (champions' prizes too), food, arrows and runes (worlds.ts
+DEPTHS_TINY: guanic and giant bats, giant crypt rats, crypt spiders, cave bugs, crawling hands,
+cave crawlers, cave slimes, rockslugs; EnemyDef's `tiny`; run.ts killEnemy's TINY_LOOT).
+Their superiors are their own kinds and keep their hoards. About two in three of a depth 1
+cave's enemies are tiny (153 of 231 in a test run, the weakest being the commonest). Tested:
+those 153 made champions and killed dropped 153 pieces of gear, every one tier 1, shrimps
+and bread, bronze and iron arrows; the other 78 dropped tiers 1 to 3.
+
+Version 159 (deployed to the playtest 9 November 2026 as 2026.11.09.6): the Depths made far harder than the regular maps, as the user
 asked (nobody should come close to more than one boss in a run), all twelve suggestions in:
 - Depth d has enemies of tier d + 1 and bosses of tier d + 2 (worlds.ts depthsWorld), with half
   again a regular boss's hitpoints (DEPTHS_BOSS_HP; twice, first, left a tier 3 kit, the best

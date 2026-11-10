@@ -45,6 +45,9 @@ export type EnemyDef = {
     // then where one of its lesser kind falls, as OSRS's superior slayer
     // monsters do, far tougher, carrying gear and a purse
     superior?: boolean;
+    // A tiny one in the Depths, a rat, a bat or the like (worlds.ts's
+    // DEPTHS_TINY, version 160): it only ever drops tier 1
+    tiny?: boolean;
     // A boss's own move (worlds.ts's MOVES; run.ts does them): shots that
     // swap between magic and arrows each cast, with a tell; hits that go
     // through armour and protection; a second form on falling; and burning
