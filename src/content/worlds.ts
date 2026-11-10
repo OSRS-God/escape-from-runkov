@@ -78,8 +78,8 @@ const DESCRIPTIONS: Record<string, string> = {
     god_wars: "The God Wars Dungeon, where four armies have fought for an age. All of them want you dead.",
     prifddinas: "The crystal city's gauntlet and its corrupted beasts. The Hunllef hunts the deepest halls.",
     inferno: "Inside the volcano under Mor Ul Rek: TzHaar and Jal creatures on the rock, and a Jad among them.",
-    endless: "Caves that are never the same twice: thirty chambers dug anew every run, the biggest map there is. Five of fourteen lair bosses lurk far apart, slayer monsters crawl everywhere, and now and then a superior one rises where its kind falls. The loot comes from every tier. A fresh start: its own stash, its own class. Lairs seal behind you, the roof keeps coming down, each boss slain makes the rest stronger, and only one golden chest opens a run.",
-    castle: "A castle nobody remembers, its halls rebuilt in a new order every run: twenty-five rooms of great halls, overgrown courtyards, quarters, libraries, chapels and dungeons, 40 chunks a side. Its dead lords hold court far apart, and what served them still walks its halls. Past the Inferno: five stars from the first depth. A fresh start: its own stash, its own class.",
+    endless: "Caves that are never the same twice: thirty chambers dug anew every run. Five of fourteen lair bosses lurk far apart, slayer monsters crawl everywhere, and now and then a superior one rises where its kind falls. The loot comes from every tier. Lairs seal behind you, the roof keeps coming down, each boss slain makes the rest stronger, and only one golden chest opens a run.",
+    castle: "A castle nobody remembers, its halls rebuilt in a new order every run: twenty-five rooms of great halls, overgrown courtyards, quarters, libraries, chapels and dungeons, 40 chunks a side. Its dead lords hold court far apart, and what served them still walks its halls. Four stars, every lord's chest with loot of every tier.",
 };
 
 // What a map tier asks of you (see scripts/balance.ts): the average enemy
@@ -504,11 +504,10 @@ const DEPTHS_TINY = new Set([
     "rockslug",
 ]);
 
-// The Forgotten Castle starts where the Depths' hardest left off: its
-// enemies four tiers above the depth (five stars at the first) and its
-// bosses five
-const CASTLE_ENEMY_TIERS_UP = 4;
-const CASTLE_BOSS_TIERS_UP = 5;
+// The Forgotten Castle's enemies and lords, three tiers above its one depth:
+// four stars
+const CASTLE_ENEMY_TIERS_UP = 3;
+const CASTLE_BOSS_TIERS_UP = 3;
 
 function depthsWorld(depth: number, json = endlessJson(REGULAR_JSONS), enemyUp = DEPTHS_ENEMY_TIERS_UP, bossUp = DEPTHS_BOSS_TIERS_UP): WorldDef {
     const enemyTier = depth + enemyUp;
@@ -540,11 +539,15 @@ function depthsWorld(depth: number, json = endlessJson(REGULAR_JSONS), enemyUp =
 }
 
 const ENDLESS_WORLDS: WorldDef[] = Array.from({ length: ENDLESS_DEPTHS }, (_, i) => depthsWorld(i + 1));
-const CASTLE_WORLDS: WorldDef[] = Array.from({ length: ENDLESS_DEPTHS }, (_, i) =>
-    depthsWorld(i + 1, castleJson(), CASTLE_ENEMY_TIERS_UP, CASTLE_BOSS_TIERS_UP),
-);
+// The Forgotten Castle is a four star map of its own (version 164, as the
+// user asked): no depths, its enemies and lords at tier 4 (the lords with
+// the Depths' half again of a boss's hitpoints)
+const CASTLE_WORLD: WorldDef = { ...depthsWorld(1, castleJson(), CASTLE_ENEMY_TIERS_UP, CASTLE_BOSS_TIERS_UP), depth: undefined };
 
-export const WORLDS: WorldDef[] = [...REGULAR_JSONS.map(makeWorld), ENDLESS_WORLDS[0], CASTLE_WORLDS[0]];
+// The game's maps (version 164, as the user asked: the twelve regular maps
+// are gone, and these two, open from the start, share the one stash). The
+// regular maps' worlds.json is kept for the Depths' enemies from them.
+export const WORLDS: WorldDef[] = [ENDLESS_WORLDS[0], CASTLE_WORLD];
 
 export const WORLD_BY_ID: Map<string, WorldDef> = new Map(WORLDS.map((w) => [w.id, w]));
 
@@ -585,20 +588,17 @@ export function endlessWorld(depth = endlessDepth()): WorldDef {
     return ENDLESS_WORLDS[Math.min(ENDLESS_DEPTHS, Math.max(1, depth)) - 1];
 }
 
-export function castleWorld(depth = endlessDepth()): WorldDef {
-    return CASTLE_WORLDS[Math.min(ENDLESS_DEPTHS, Math.max(1, depth)) - 1];
+// The castle (it has no depths: the one map)
+export function castleWorld(): WorldDef {
+    return CASTLE_WORLD;
 }
 
-// A mode's map at a depth, by the map's id
+// A mode's map at a depth, by the map's id (the castle's always the same)
 export function modeWorld(id: string, depth = endlessDepth()): WorldDef {
-    return id === CASTLE_ID ? castleWorld(depth) : endlessWorld(depth);
+    return id === CASTLE_ID ? CASTLE_WORLD : endlessWorld(depth);
 }
 
-// The regular maps: every one but the modes' own (for the tasks that ask for
-// every map, and the pets)
-export const REGULAR_WORLDS: WorldDef[] = WORLDS.filter((w) => !isModeWorld(w.id));
-
-// A map by id (a mode's at the profile's depth)
+// A map by id (the Depths at the save's depth)
 export function getWorld(id: string): WorldDef {
     const world = isModeWorld(id) ? modeWorld(id) : WORLD_BY_ID.get(id);
     if (!world) {
@@ -610,36 +610,14 @@ export function getWorld(id: string): WorldDef {
 // Every enemy in every world, for the enemy table
 export const WORLD_ENEMIES: EnemyDef[] = WORLDS.flatMap((w) => [...w.enemies.map((e) => e.def), ...(w.bosses ?? [w.boss])]);
 
-// The maps open in WORLDS' order (worlds.json, by tier), each once the one
-// before it is beaten: escaped from in a run where its boss fell
-// (save.ts's stats.mapsBeaten). The first is always open. main.ts holds a
-// run to it and the maps screen shows it.
-export function mapBefore(id: string): WorldDef | undefined {
-    // The Depths are out of the order, and open from the start
-    const i = REGULAR_WORLDS.findIndex((w) => w.id === id);
-    return i > 0 ? REGULAR_WORLDS[i - 1] : undefined;
-}
-
-// Whether a run may go to a map: in the Depths' profile only the Depths, and
-// in the regular one every map but the Depths, in order (they're gone into from
-// the maps screen, onto its own profile, whenever the player likes)
-export function mapUnlocked(mapsBeaten: string[], id: string): boolean {
-    const mode = playingMode();
-    if (mode !== "regular") {
-        return id === MODE_WORLD[mode];
-    }
-    if (isModeWorld(id)) {
-        return false;
-    }
-    const before = mapBefore(id);
-    return before === undefined || mapsBeaten.includes(before.id);
+// Whether a run may go to a map: either of the two, whenever (version 164,
+// as the user asked: no map waits on another)
+export function mapUnlocked(_mapsBeaten: string[], id: string): boolean {
+    return WORLD_BY_ID.has(id);
 }
 
 // The highest tier with a map open: what the shop's ammunition goes up to
-// (in the Depths, their depth)
-export function tierUnlocked(mapsBeaten: string[]): number {
-    if (playingEndless()) {
-        return endlessDepth();
-    }
-    return WORLDS.filter((w) => mapUnlocked(mapsBeaten, w.id)).reduce((n, w) => Math.max(n, w.tier), 1);
+// (the castle's four, or the Depths' at their depth if more)
+export function tierUnlocked(_mapsBeaten: string[]): number {
+    return Math.max(CASTLE_WORLD.tier, Math.min(5, endlessDepth() + DEPTHS_ENEMY_TIERS_UP));
 }

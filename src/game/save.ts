@@ -23,7 +23,10 @@ export type Character = {
 
 // The save's shape. A save from an older version is dropped on load, so a
 // change that should start everyone fresh raises this.
-export const SAVE_VERSION = 3;
+// (4 since version 164, as the user asked: the regular maps are gone, the
+// Depths and the Forgotten Castle share the one stash, and everyone starts
+// fresh)
+export const SAVE_VERSION = 4;
 
 export type SaveData = {
     version: typeof SAVE_VERSION;
@@ -117,6 +120,8 @@ export type DepthsProgress = {
     shards: number;
     upgrades: Record<DepthsUpgradeKey, number>;
     cleared: number[];
+    // The Forgotten Castle escaped from with a lord slain (version 164)
+    castleCleared?: boolean;
     title?: string;
     daily?: { day: number; best: number };
 };
@@ -599,6 +604,9 @@ function cleanDepths(raw: unknown): DepthsProgress | undefined {
         out.upgrades[key] = count(d.upgrades?.[key], DEPTHS_UPGRADES[key].costs.length);
     }
     out.cleared = Array.isArray(d.cleared) ? [...new Set(d.cleared.filter((n) => Number.isInteger(n) && n >= 1 && n <= 5))].sort() : [];
+    if (d.castleCleared === true) {
+        out.castleCleared = true;
+    }
     if (typeof d.title === "string" && d.title.length <= 40) {
         out.title = d.title;
     }

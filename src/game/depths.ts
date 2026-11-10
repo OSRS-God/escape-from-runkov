@@ -25,6 +25,7 @@ export type DepthsGain = { shards: number; title?: string; cape?: boolean; daily
 // The title each depth gives, escaped from with a boss slain; and the
 // Forgotten Castle's own (version 163)
 export const DEPTH_TITLES = ["Delver", "Tunneller", "Deep delver", "Abyss walker", "Slayer of the Depths"];
+// (the castle has no depths since version 164: its last is its one)
 export const CASTLE_TITLES = ["Trespasser", "Gatebreaker", "Knight of the Ruin", "Kingslayer", "Lord of the Forgotten Castle"];
 
 export function titlesFor(worldId: string): string[] {

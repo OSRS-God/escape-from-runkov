@@ -6,7 +6,7 @@ import { RunResult } from "../game/run";
 import { SaveData, UPGRADES, packSize } from "../game/save";
 import { SLOTS, getItem, isPrize } from "./items";
 import { isBossPet } from "./crownpets";
-import { REGULAR_WORLDS, WORLDS } from "./worlds";
+import { CASTLE_ID, ENDLESS_ID, WORLDS, castleWorld, endlessWorld } from "./worlds";
 
 export type Task = {
     id: string;
@@ -15,8 +15,12 @@ export type Task = {
     done: (save: SaveData, result: RunResult) => boolean;
 };
 
-const escapedTier = (save: SaveData, tier: number) =>
-    WORLDS.some((w) => w.tier === tier && save.stats.mapsEscaped.includes(w.id));
+// (version 164: the regular maps are gone, so a star task is done by
+// escaping a run whose map was that many stars or more: the Depths' go up a
+// star a depth, the castle is four)
+const escapedTier = (r: RunResult, tier: number) => r.kind === "extracted" && r.world.tier >= tier;
+// Every boss there is to have a pet of: the Depths' and the castle's lords
+const BOSS_PETS = (endlessWorld(1).bosses?.length ?? 0) + (castleWorld().bosses?.length ?? 0);
 
 // Everything worn and packed as a run ended
 const carried = (r: RunResult): number[] => [
@@ -32,9 +36,9 @@ export const TASKS: Task[] = [
     { id: "first_escape", name: "Out alive: escape from any map", reward: 100, done: (s) => s.stats.extractions >= 1 },
     {
         id: "wise_old_man",
-        name: "Lumbridge's own: kill the Wise Old Man",
+        name: "First blood below: kill a boss in the Depths",
         reward: 200,
-        done: (s) => s.stats.bossesBeaten.includes("lumbridge"),
+        done: (s) => s.stats.bossesBeaten.includes(ENDLESS_ID),
     },
     { id: "hundred", name: "A hundred down: kill 100 enemies", reward: 250, done: (s) => s.stats.kills >= 100 },
     { id: "champion", name: "Giant killer: kill a champion", reward: 150, done: (s) => s.stats.championKills >= 1 },
@@ -57,17 +61,17 @@ export const TASKS: Task[] = [
         done: (_, r) => r.kind === "extracted" && r.report.packItems >= 10,
     },
     { id: "sharpshooter", name: "Sharpshooter: kill 20 enemies with a bow or staff", reward: 200, done: (s) => s.stats.rangedKills >= 20 },
-    { id: "tier2", name: "Two stars: escape from a two star map", reward: 300, done: (s) => escapedTier(s, 2) },
-    { id: "tier3", name: "Three stars: escape from a three star map", reward: 600, done: (s) => escapedTier(s, 3) },
-    { id: "tier4", name: "Four stars: escape from a four star map", reward: 1200, done: (s) => escapedTier(s, 4) },
-    { id: "tier5", name: "Five stars: escape from a five star map", reward: 2500, done: (s) => escapedTier(s, 5) },
+    { id: "tier2", name: "Two stars: escape from a two star map", reward: 300, done: (_, r) => escapedTier(r, 2) },
+    { id: "tier3", name: "Three stars: escape from a three star map", reward: 600, done: (_, r) => escapedTier(r, 3) },
+    { id: "tier4", name: "Four stars: escape from a four star map", reward: 1200, done: (_, r) => escapedTier(r, 4) },
+    { id: "tier5", name: "Five stars: escape from a five star map", reward: 2500, done: (_, r) => escapedTier(r, 5) },
     { id: "bosses", name: "Boss slayer: kill five bosses", reward: 500, done: (s) => s.stats.bossKills >= 5 },
     { id: "rich", name: "Well off: have 5,000 coins banked", reward: 300, done: (s) => s.coins >= 5000 },
-    { id: "tour", name: "World tour: escape from six different maps", reward: 1500, done: (s) => s.stats.mapsEscaped.length >= 6 },
+    { id: "tour", name: "Both ways down: escape from the Depths and the Forgotten Castle", reward: 1500, done: (s) => [ENDLESS_ID, CASTLE_ID].every((id) => s.stats.mapsEscaped.includes(id)) },
     { id: "clue", name: "Treasure hunter: dig up a clue scroll's casket", reward: 250, done: (s) => s.stats.clues >= 1 },
     { id: "grave", name: "Second chances: take back what you left at a gravestone", reward: 200, done: (s) => s.stats.graves >= 1 },
     { id: "pet", name: "Best friend: a boss drops a pet", reward: 400, done: (s) => s.pets.filter(isBossPet).length >= 1 },
-    { id: "night", name: "Night owl: escape from a map at night", reward: 300, done: (_, r) => r.kind === "extracted" && r.report.night },
+    { id: "night", name: "Delver: clear a depth of the Depths", reward: 300, done: (s) => (s.depths?.cleared.length ?? 0) >= 1 },
     { id: "vault", name: "Vault breaker: unlock a map's vault", reward: 350, done: (s) => s.stats.vaults >= 1 },
     // Forty more (version 75): longer roads, and things a single run can do
     { id: "five_hundred", name: "Five hundred down: kill 500 enemies", reward: 800, done: (s) => s.stats.kills >= 500 },
@@ -95,9 +99,9 @@ export const TASKS: Task[] = [
     { id: "vaults5", name: "Vault regular: unlock five vaults", reward: 1200, done: (s) => s.stats.vaults >= 5 },
     // A crown's own pet (pets.ts) is no boss's drop, so it counts for none
     { id: "pets3", name: "Menagerie: find three pets", reward: 1200, done: (s) => s.pets.filter(isBossPet).length >= 3 },
-    { id: "pets_all", name: "Zookeeper: find every boss's pet", reward: 6000, done: (s) => s.pets.filter(isBossPet).length >= REGULAR_WORLDS.length },
-    { id: "tour_all", name: "Globetrotter: escape from every map", reward: 5000, done: (s) => REGULAR_WORLDS.every((w) => s.stats.mapsEscaped.includes(w.id)) },
-    { id: "conqueror", name: "Conqueror: beat every map", reward: 8000, done: (s) => REGULAR_WORLDS.every((w) => s.stats.mapsBeaten.includes(w.id)) },
+    { id: "pets_all", name: "Zookeeper: find every boss's pet", reward: 6000, done: (s) => s.pets.filter(isBossPet).length >= BOSS_PETS },
+    { id: "tour_all", name: "Deepest delver: escape from the fifth depth", reward: 5000, done: (s) => (s.depths?.cleared ?? []).includes(5) },
+    { id: "conqueror", name: "Conqueror: beat both the Depths and the Forgotten Castle", reward: 8000, done: (s) => WORLDS.every((w) => s.stats.mapsBeaten.includes(w.id)) },
     {
         id: "upgrade",
         name: "Guild patron: buy a guild upgrade",
@@ -142,12 +146,12 @@ export const TASKS: Task[] = [
     },
     { id: "pacifist", name: "Pacifist: escape without killing anything", reward: 400, done: (_, r) => walkedOut(r) && r.report.kills === 0 },
     { id: "untouched", name: "Untouchable: escape without taking a single hit", reward: 1000, done: (_, r) => walkedOut(r) && r.report.hitsTaken === 0 },
-    { id: "night_boss", name: "Things that go bump: kill a boss at night", reward: 500, done: (_, r) => r.report.night && r.report.bossKills > 0 },
+    { id: "night_boss", name: "Things that go bump: escape the castle with a lord slain", reward: 500, done: (_, r) => escaped(r) && r.world.id === CASTLE_ID && r.report.bossKills > 0 },
     { id: "raider", name: "Chest raider: open ten chests in one run", reward: 400, done: (_, r) => r.report.chestsOpened >= 10 },
     { id: "golden", name: "Golden touch: open the boss's golden chest", reward: 600, done: (_, r) => r.report.goldenOpened },
     { id: "specials", name: "Special delivery: use a special attack five times in one run", reward: 300, done: (_, r) => r.report.specials >= 5 },
     { id: "trader", name: "Regular customer: buy something from the wandering trader", reward: 150, done: (_, r) => r.report.traderBuys >= 1 },
-    { id: "genie", name: "Three wishes: pay the genie for the way out", reward: 300, done: (_, r) => escaped(r) && r.report.genie },
+    { id: "genie", name: "Light to spare: escape with oil still in the pack", reward: 300, done: (_, r) => escaped(r) && r.carry.inventory.some((s) => getItem(s.id).oil) },
     {
         id: "last_orders",
         name: "Last orders: escape with under a minute before the ways out close",

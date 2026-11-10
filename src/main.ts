@@ -240,7 +240,7 @@ function startRun(worldId: string): void {
 // The daily cave (version 161): today's seed and depth, the same for
 // everyone, whatever this profile's own depth
 function startDaily(): void {
-    if (!runMayStart() || save.mode !== "endless") {
+    if (!runMayStart()) {
         return;
     }
     const day = dailyDay();
@@ -555,9 +555,9 @@ async function onRunEnd(result: RunResult): Promise<void> {
         // The Depths beaten at their depth go a star deeper (version 156;
         // not from the daily cave, whose depth is the day's)
         const daily = result.carry.depths?.daily !== undefined;
-        if (report.bossKills > 0 && isModeWorld(result.world.id) && !daily && (result.world.depth ?? 1) >= endlessDepth() && endlessDepth() < ENDLESS_DEPTHS) {
+        if (report.bossKills > 0 && result.world.id === ENDLESS_ID && !daily && (result.world.depth ?? 1) >= endlessDepth() && endlessDepth() < ENDLESS_DEPTHS) {
             save.endlessDepth = endlessDepth() + 1;
-            ui.message(`${result.world.id === CASTLE_ID ? "The Forgotten Castle" : "The Depths"} go${result.world.id === CASTLE_ID ? "es" : ""} deeper: depth ${save.endlessDepth} of ${ENDLESS_DEPTHS}, its enemies and bosses tougher from the next run on.`);
+            ui.message(`The Depths go deeper: depth ${save.endlessDepth} of ${ENDLESS_DEPTHS}, its enemies and bosses tougher from the next run on.`);
         }
         // And beaten at its threat level: the next level opens (version
         // 150). A party's guest, playing at the host's level, counts no
@@ -632,7 +632,13 @@ function settleDepths(result: RunResult): DepthsGain {
     const shards = shardsFor(report, depth, escaped);
     progress.shards += shards;
     const gain: DepthsGain = { shards };
-    if (escaped && report.bossKills > 0 && !daily && !progress.cleared.includes(depth)) {
+    // The castle has no depths (version 164): its own title, once
+    if (escaped && report.bossKills > 0 && result.world.id === CASTLE_ID && !progress.castleCleared) {
+        progress.castleCleared = true;
+        gain.title = titlesFor(CASTLE_ID)[titlesFor(CASTLE_ID).length - 1];
+        progress.title = gain.title;
+    }
+    if (escaped && report.bossKills > 0 && !daily && result.world.id === ENDLESS_ID && !progress.cleared.includes(depth)) {
         progress.cleared = [...progress.cleared, depth].sort((a, b) => a - b);
         gain.title = titlesFor(result.world.id)[depth - 1];
         progress.title = gain.title;

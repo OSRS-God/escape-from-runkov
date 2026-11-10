@@ -29,7 +29,7 @@ function depthsBoss(id: string): EnemyDef | undefined {
     if (id.startsWith(DEPTHS_PET_PREFIX)) {
         return endlessWorld(1).bosses?.find((b) => b.id === id);
     }
-    return id.startsWith(CASTLE_PET_PREFIX) ? castleWorld(1).bosses?.find((b) => b.id === id) : undefined;
+    return id.startsWith(CASTLE_PET_PREFIX) ? castleWorld().bosses?.find((b) => b.id === id) : undefined;
 }
 
 export function petName(worldId: string): string {

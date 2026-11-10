@@ -7,14 +7,11 @@ import {
     ENDLESS_DEPTHS,
     ENDLESS_ID,
     CASTLE_ID,
-    MODE_WORLD,
     isModeWorld,
-    REGULAR_WORLDS,
     WORLDS,
     WORLD_BY_ID,
     WorldDef,
     getWorld,
-    mapBefore,
     mapUnlocked,
     tierUnlocked,
 } from "../content/worlds";
@@ -121,16 +118,11 @@ import {
     DEPTHS_UPGRADES,
     DepthsUpgradeKey,
     MAX_LOADOUTS,
-    Mode,
     SaveData,
     UPGRADES,
     Upgrades,
     depthsOf,
     loadedSlot,
-    hasProfile,
-    modeOf,
-    restartProfile,
-    switchMode,
     newSave,
     packSize,
     parseSave,
@@ -167,10 +159,8 @@ const ELEMENTAL_RUNES = [AIR_RUNE, WATER, EARTH, FIRE];
 // What the shop sells besides in the Depths (version 161): the bullseye
 // lantern, and oil for it
 const DEPTHS_SHOP = [4550, 277];
-// The Forgotten Castle's room's icon, a knight's helm, and the map beaten to
-// open it (version 163)
+// The Forgotten Castle's room's icon, a knight's helm (version 163)
 const CASTLE_ICON = 1163;
-const CASTLE_AFTER = "inferno";
 
 type HotSlot = {
     kind: "food" | Potion;
@@ -819,47 +809,6 @@ export class UI {
         this.menu.raise = layout === "card" ? 0.14 : layout === "osrs" ? 0.08 : 0.05;
     }
 
-    // The Depths' door (version 156): what a fresh start means, before it's
-    // taken. The first time in, the profile's new (an empty stash and a
-    // starter kit to pick); after that it's as it was left.
-    showEndlessEntry(): void {
-        const first = !hasProfile(this.save, "endless");
-        this.showKeyed(
-            "endless",
-            h(
-                "div",
-                { class: "screen account" },
-                h("h1", {}, "The Depths"),
-                h(
-                    "div",
-                    { class: "panel account-panel starter-panel" },
-                    h(
-                        "div",
-                        { class: "subtitle" },
-                        first
-                            ? "A fresh start from scratch: a stash of your own with nothing in it, no coins to speak of, and a starting class to pick again. Your regular stash, gear and maps wait untouched, and you can go back to them from the title screen whenever you like."
-                            : "Back to your Depths profile, its stash and gear as you left them. Your regular stash, gear and maps wait untouched.",
-                    ),
-                    h(
-                        "div",
-                        { class: "subtitle" },
-                        `The caves are dug anew every run, thirty chambers wide, with ${ENDLESS_BOSSES} lair bosses far apart and loot from every tier. Far harder than the regular maps: two star enemies and three star bosses from the first depth, a star deeper each time you slay a boss and escape, down to ${ENDLESS_DEPTHS}. Every boss that falls makes the rest stronger, and the strongest comes hunting. No insurance, no gravestones, no genie.`,
-                    ),
-                    h("button", { class: "primary", onclick: () => this.switchProfile("endless") }, first ? "Start fresh in the Depths" : "Enter the Depths"),
-                    h("button", { onclick: () => this.showMaps() }, "Back"),
-                ),
-            ),
-        );
-    }
-
-    // The other profile out (save.ts's modes): straight to its title screen,
-    // or its starter kits on a first time into the Depths
-    private switchProfile(mode: Mode): void {
-        switchMode(this.save, mode);
-        this.persist();
-        this.showMenu();
-    }
-
     // A new character's first screen (version 127): a starter kit for each
     // combat style, each shown as what it wears and packs; the one picked is
     // theirs, and on into the guild
@@ -880,23 +829,17 @@ export class UI {
             h(
                 "div",
                 { class: "screen account" },
-                h("h1", {}, modeOf(this.save) === "endless" ? "The Depths: choose your style" : modeOf(this.save) === "castle" ? "The Forgotten Castle: choose your style" : "Choose your style"),
+                h("h1", {}, "Choose your style"),
                 h(
                     "div",
                     { class: "panel account-panel starter-panel" },
                     h(
                         "div",
                         { class: "subtitle" },
-                        modeOf(this.save) !== "regular"
-                            ? "A fresh start: the guild kits you out again for one way of fighting, and everything else comes from the caves."
-                            : "The guild kits you out for one way of fighting. Whatever else you want, you'll find in runs or buy in the shop.",
+                        "The guild kits you out for one way of fighting, with a bullseye lantern and oil for the dark. Whatever else you want, you'll find down there or buy in the shop.",
                     ),
-                    // (the Delver only for the Depths: version 162)
-                    ...STARTER_KITS.filter((kit) => !kit.depths || modeOf(this.save) === "endless").map(card),
-                    // Not ready to start over after all: back to the regular profile
-                    modeOf(this.save) !== "regular"
-                        ? h("button", { onclick: () => this.switchProfile("regular") }, "Back to regular mode")
-                        : null,
+                    // (every kit since version 164, the Delver too)
+                    ...STARTER_KITS.map(card),
                 ),
             ),
         );
@@ -921,9 +864,7 @@ export class UI {
         return {
             play: last
                 ? `Last: ${last.name} ${"★".repeat(last.tier)}${s.fastestEscape > 0 ? ` · best escape ${time(s.fastestEscape)}` : ""}`
-                : modeOf(save) !== "regular"
-                  ? `${getWorld(MODE_WORLD[modeOf(save) as "endless"]).name}, depth ${getWorld(MODE_WORLD[modeOf(save) as "endless"]).depth ?? 1} of ${ENDLESS_DEPTHS}`
-                  : `${REGULAR_WORLDS.length} maps, one star to five, then the Depths`,
+                : `The Depths, depth ${getWorld(ENDLESS_ID).depth ?? 1} of ${ENDLESS_DEPTHS}, or the Forgotten Castle`,
             stash:
                 plural(pieces, "piece") +
                 ` · ${formatCoins(vaultWorth(save.stash, save.coins))}` +
@@ -1387,81 +1328,21 @@ export class UI {
         return el;
     }
 
-    // The Depths' room, under Co-op (as the user asked): in, with a line on
-    // what they are, or out again from their own profile
-    private depthsRoom(withSub: boolean): HTMLElement | null {
-        const mode = modeOf(this.save);
-        // (none while the Forgotten Castle's out: leave it first)
-        if (mode === "castle") {
-            return null;
-        }
-        const inside = mode === "endless";
-        const sub = inside ? "Back to your regular stash, gear and maps" : "A fresh start: its own stash and class";
-        return this.roomButton(inside ? "Leave the Depths" : "The Depths", withSub ? sub : undefined, this.depthsIcon(), () =>
-            inside ? this.switchProfile("regular") : this.showEndlessEntry(),
+    // The Depths' room, under Co-op (as the user asked), and the Forgotten
+    // Castle's under it (version 163): since version 164 both maps of the
+    // one stash, each a run straight in
+    private depthsRoom(withSub: boolean): HTMLElement {
+        const depth = getWorld(ENDLESS_ID).depth ?? 1;
+        return this.roomButton("The Depths", withSub ? `Depth ${depth} of ${ENDLESS_DEPTHS}: caves dug anew every run` : undefined, this.depthsIcon(), () =>
+            this.hooks.startRun(ENDLESS_ID),
         );
     }
 
-    // The Forgotten Castle's room (version 163), under the Depths': in once
-    // the Inferno's beaten, or out again from its own profile
-    private castleRoom(withSub: boolean): HTMLElement | null {
-        const mode = modeOf(this.save);
-        if (mode === "endless") {
-            return null;
-        }
-        const inside = mode === "castle";
-        const open = this.castleOpen();
-        const sub = inside ? "Back to your regular stash, gear and maps" : open ? "Past the Inferno: a fresh start" : "Beat the Inferno to open it";
-        return this.roomButton(inside ? "Leave the Castle" : "The Forgotten Castle", withSub ? sub : undefined, this.itemIcon(CASTLE_ICON), () =>
-            inside ? this.switchProfile("regular") : this.showCastleEntry(),
+    private castleRoom(withSub: boolean): HTMLElement {
+        return this.roomButton("The Forgotten Castle", withSub ? "Four stars: its lords hold court far apart" : undefined, this.itemIcon(CASTLE_ICON), () =>
+            this.hooks.startRun(CASTLE_ID),
         );
     }
-
-    // The mode that's out, by name ("the Depths", "the Forgotten Castle")
-    private modeName(): string {
-        return modeOf(this.save) === "castle" ? "the Forgotten Castle" : "the Depths";
-    }
-
-    // The castle opens once the regular profile's beaten the Inferno
-    private castleOpen(): boolean {
-        const regular = modeOf(this.save) === "regular" ? this.save.stats : this.save.profiles?.regular?.stats;
-        return modeOf(this.save) === "castle" || !!regular?.mapsBeaten.includes(CASTLE_AFTER);
-    }
-
-    // Its door: what it is, and a fresh start or a way back in
-    showCastleEntry(): void {
-        const first = !hasProfile(this.save, "castle");
-        const open = this.castleOpen();
-        this.showKeyed(
-            "castle",
-            h(
-                "div",
-                { class: "screen account" },
-                h("h1", {}, "The Forgotten Castle"),
-                h(
-                    "div",
-                    { class: "panel account-panel starter-panel" },
-                    h(
-                        "div",
-                        { class: "subtitle" },
-                        first
-                            ? "A fresh start from scratch, as the Depths are: a stash of your own with nothing in it and a starting class to pick again. Your regular stash, gear and maps wait untouched."
-                            : "Back to your Forgotten Castle profile, its stash and gear as you left them. Your regular stash, gear and maps wait untouched.",
-                    ),
-                    h(
-                        "div",
-                        { class: "subtitle" },
-                        `A castle nobody remembers, rebuilt in a new order every run: twenty-five rooms, 40 chunks a side, of great halls, overgrown courtyards, quarters, libraries, chapels and dungeons, with ${ENDLESS_BOSSES} of its dead lords holding court far apart. Past the Inferno: five star enemies from the first depth, harder each depth down to ${ENDLESS_DEPTHS}. Every lord that falls makes the rest stronger. No insurance, no gravestones, no genie.`,
-                    ),
-                    open
-                        ? h("button", { class: "primary", onclick: () => this.switchProfile("castle") }, first ? "Start fresh in the Castle" : "Enter the Castle")
-                        : h("div", { class: "lock" }, "Locked: slay JalTok-Jad on the Inferno and escape with the loot first."),
-                    h("button", { onclick: () => this.showMaps() }, "Back"),
-                ),
-            ),
-        );
-    }
-
     // Its icon: a lit bullseye lantern (OSRS item 4550, which the game
     // doesn't otherwise have), from the cache with the icon sheet's lift
     // (public/ui/depths-lantern.png)
@@ -1610,42 +1491,22 @@ export class UI {
                 "Load code",
             ),
             fullscreenButton(),
-            // In the Depths, only the Depths start over (version 158, as the
-            // user asked): their stash, coins, gear and record, and a class to
-            // pick again; the regular profile and the look stay
-            // (the Forgotten Castle's the same: version 163)
-            modeOf(this.save) !== "regular"
-                ? h(
-                      "button",
-                      {
-                          class: "quiet",
-                          title: `Wipe your ${this.modeName()} stash, gear and progress and pick a class again; your regular character is kept`,
-                          onclick: () => {
-                              if (confirm(`Start ${this.modeName()} over? Its stash, coins, gear and progress are wiped and you pick a class again. Your regular character, stash and maps are kept.`)) {
-                                  restartProfile(this.save);
-                                  this.persist();
-                                  this.showMenu();
-                              }
-                          },
-                      },
-                      "Start over",
-                  )
-                : h(
-                      "button",
-                      {
-                          class: "quiet",
-                          title: "Wipe the stash, coins and character and begin again",
-                          onclick: () => {
-                              if (confirm(this.account?.name ? "Start over? The stash, coins and character are wiped, on every device this account is on." : "Start over? The stash, coins and character are wiped.")) {
-                                  this.replaceSave(resetSave());
-                                  this.keepAccountName();
-                                  this.persist();
-                                  this.showMenu();
-                              }
-                          },
-                      },
-                      "Start over",
-                  ),
+            h(
+                "button",
+                {
+                    class: "quiet",
+                    title: "Wipe the stash, coins and character and begin again",
+                    onclick: () => {
+                        if (confirm(this.account?.name ? "Start over? The stash, coins and character are wiped, on every device this account is on." : "Start over? The stash, coins and character are wiped.")) {
+                            this.replaceSave(resetSave());
+                            this.keepAccountName();
+                            this.persist();
+                            this.showMenu();
+                        }
+                    },
+                },
+                "Start over",
+            ),
         ].filter((b): b is HTMLButtonElement => !!b);
     }
 
@@ -1829,7 +1690,7 @@ export class UI {
             { class: "card-sub" },
             crown ? `${crown.word} · ` : "",
             // The Depths' title, for the deepest depth cleared (version 161)
-            modeOf(save) !== "regular" && save.depths?.title ? h("span", { class: "orange" }, `${save.depths.title} · `) : "",
+            save.depths?.title ? h("span", { class: "orange" }, `${save.depths.title} · `) : "",
             "combat ",
             h("span", { class: "green" }, String(combatLevel(save.equipment))),
         );
@@ -3127,25 +2988,17 @@ export class UI {
 
     showMaps(): void {
         const beaten = this.save.stats.mapsBeaten;
-        // The Depths' profile plays only the Depths, at its depth; the regular one
-        // sees it last, as the way into that profile
-        // (a mode of its own, version 163: the Depths or the Forgotten Castle,
-        // its one map)
-        const mode = modeOf(this.save);
-        const endlessMode = mode !== "regular";
-        const worlds = endlessMode ? [getWorld(MODE_WORLD[mode as "endless"])] : WORLDS;
+        // The two maps (version 164: the regular ones are gone), both open
+        // whenever, on the one stash: the Depths at their depth, and the
+        // Forgotten Castle at four stars
+        const worlds = WORLDS.map((w) => getWorld(w.id));
         const rows = worlds.map((world) => {
             // Your gravestone there, if you died on the map lately
             const grave = this.save.graves.find((g) => g.map === world.id);
             const things = grave ? grave.items.reduce((n, s) => n + s.count, 0) : 0;
-            const door = !endlessMode && isModeWorld(world.id);
-            // (the Depths are open from the start, the castle once the
-            // Inferno's beaten)
-            const open = door ? world.id !== CASTLE_ID || this.castleOpen() : mapUnlocked(beaten, world.id);
-            const before = mapBefore(world.id);
             return h(
                 "div",
-                { class: "item-row map-row" + (open ? "" : " locked") },
+                { class: "item-row map-row" },
                 h(
                     "div",
                     { class: "name" },
@@ -3153,9 +3006,9 @@ export class UI {
                         "div",
                         { class: "map-name" },
                         `${world.name} `,
-                        h("span", { class: "stats" }, door ? "" : "★".repeat(world.tier)),
-                        endlessMode ? h("span", { class: "beaten" }, ` depth ${world.depth ?? 1} of ${ENDLESS_DEPTHS}`) : null,
-                        !door && beaten.includes(world.id) ? h("span", { class: "beaten" }, " ✓ beaten") : null,
+                        h("span", { class: "stats" }, "★".repeat(world.tier)),
+                        world.depth !== undefined ? h("span", { class: "beaten" }, ` depth ${world.depth} of ${ENDLESS_DEPTHS}`) : null,
+                        beaten.includes(world.id) ? h("span", { class: "beaten" }, " ✓ beaten") : null,
                     ),
                     h("div", { class: "stats" }, world.description),
                     h(
@@ -3165,11 +3018,6 @@ export class UI {
                             ? `${world.enemies.map((e) => e.def.name).join(", ")}. Bosses: ${ENDLESS_BOSSES} of ${world.bosses.map((b) => b.name).join(", ")}, a different few each run.`
                             : `${world.enemies.map((e) => e.def.name).join(", ")}. Boss: ${world.boss.name}.`,
                     ),
-                    !open && door
-                        ? h("div", { class: "lock" }, "Locked: slay JalTok-Jad on the Inferno and escape with the loot first.")
-                        : !open && before
-                          ? h("div", { class: "lock" }, `Locked: slay ${before.boss.name} on ${before.name} and escape with the loot first.`)
-                          : null,
                     grave
                         ? h(
                               "div",
@@ -3178,20 +3026,11 @@ export class UI {
                           )
                         : null,
                 ),
-                door
-                    ? h("button", { class: "primary", disabled: !open, onclick: () => (world.id === CASTLE_ID ? this.showCastleEntry() : this.showEndlessEntry()) }, open ? "Enter" : "Locked")
-                    : h("button", { class: "primary", disabled: !open, onclick: () => this.hooks.startRun(world.id) }, open ? "Go" : "Locked"),
+                h("button", { class: "primary", onclick: () => this.hooks.startRun(world.id) }, "Go"),
             );
-        });
-        // The Depths and the castle are modes of their own, under a heading
-        // of their own
-        const endlessAt = worlds.findIndex((w) => isModeWorld(w.id));
-        if (endlessAt >= 0 && !endlessMode) {
-            rows.splice(endlessAt, 0, h("div", { class: "map-mode" }, "Modes of their own"));
-        }
-        // The daily cave (version 161): today's, the same for everyone, and
-        // its board of the day's best hauls (the Depths' alone)
-        if (mode === "endless") {
+        });        // The daily cave (version 161): today's, the same for everyone, and
+        // its board of the day's best hauls
+        {
             const progress = depthsOf(this.save);
             const day = dailyDay();
             const mine = progress.daily?.day === day ? progress.daily.best : 0;
@@ -3230,18 +3069,13 @@ export class UI {
             h(
                 "div",
                 { class: "screen" },
-                h("h2", {}, endlessMode ? worlds[0].name : "Where to?"),
+                h("h2", {}, "Where to?"),
                 h(
                     "div",
                     { class: "subtitle" },
-                    mode === "castle"
-                        ? `Your Forgotten Castle profile: its own stash and gear, and the castle alone. Slay a lord and escape to go a depth deeper, and to clear that depth: ${CASTLE_TITLES.map((t, i) => `${i + 1} ${t}${depthsOf(this.save).cleared.includes(i + 1) ? " ✓" : ""}`).join(", ")}. Leave the castle from here or the title screen to go back to your regular maps.`
-                        : endlessMode
-                        ? `Your Depths profile: its own stash and gear, and the caves alone. Slay a boss and escape to go a depth deeper, and to clear that depth: ${DEPTH_TITLES.map((t, i) => `${i + 1} ${t}${depthsOf(this.save).cleared.includes(i + 1) ? " ✓" : ""}`).join(", ")}; the fifth also gives the Slayer cape. Leave the Depths from here or the title screen to go back to your regular maps.`
-                        : "The maps open in order: slay a map's boss and escape in the same run, and the next opens. Stars are how hard a map is and how good its chests are; the guild's starter kit is good for one star.",
+                    `Both maps are open, on the one stash. In the Depths, slay a boss and escape to go a depth deeper, and to clear that depth: ${DEPTH_TITLES.map((t, i) => `${i + 1} ${t}${depthsOf(this.save).cleared.includes(i + 1) ? " ✓" : ""}`).join(", ")}; the fifth also gives the Slayer cape. Slay a lord of the Forgotten Castle and escape to be ${CASTLE_TITLES[CASTLE_TITLES.length - 1]}${depthsOf(this.save).castleCleared ? " ✓" : ""}.`,
                 ),
                 h("div", { class: "panel maps" }, h("div", { class: "item-list" }, ...rows)),
-                endlessMode ? h("button", { onclick: () => this.switchProfile("regular") }, mode === "castle" ? "Leave the Castle" : "Leave the Depths") : null,
                 h("button", { onclick: () => this.back() }, "Back"),
             ),
         );
@@ -3400,7 +3234,7 @@ export class UI {
             }
         }
         // (none in the Depths, which keep everything of a death: version 159)
-        const noInsurance = modeOf(save) !== "regular";
+        const noInsurance = true;
         const insuranceRows = (noInsurance ? [] : insurable).map((id) => {
             const item = getItem(id);
             const cost = Math.max(10, Math.round(price(item) * 0.2 * (1 - 0.25 * save.upgrades.insurance)));
@@ -4347,7 +4181,7 @@ export class UI {
             render();
         };
         // (and in the Depths, the bullseye lantern and its oil: version 161)
-        const food = [...SHOP_FOOD, ...SHOP_POTIONS, ...(modeOf(save) !== "regular" ? DEPTHS_SHOP : [])].map((id) => {
+        const food = [...SHOP_FOOD, ...SHOP_POTIONS, ...DEPTHS_SHOP].map((id) => {
             const item = getItem(id);
             const cost = price(item);
             return itemRow(
@@ -4422,7 +4256,7 @@ export class UI {
         });
         // The Depths' delvers' upgrades (version 161), bought with cave
         // shards, which every Depths run earns
-        const depthsMode = modeOf(save) !== "regular";
+        const depthsMode = true;
         const progress = depthsMode ? depthsOf(save) : undefined;
         const delvers = progress
             ? (Object.keys(DEPTHS_UPGRADES) as DepthsUpgradeKey[]).map((key) => {
@@ -4516,7 +4350,7 @@ export class UI {
                             ? h(
                                   "div",
                                   { class: "subtitle" },
-                                  `${progress.shards.toLocaleString()} ${modeOf(save) === "castle" ? "castle" : "cave"} shards. Every run here earns them, a death too: more for champions, superiors and bosses, more the deeper, half again for getting out.`,
+                                  `${progress.shards.toLocaleString()} shards. Every run earns them, a death too: more for champions, superiors and bosses, more the deeper, half again for getting out.`,
                               )
                             : null,
                         progress ? h("div", { class: "item-list" }, ...delvers) : null,
@@ -5378,7 +5212,7 @@ export class UI {
                   h(
                       "div",
                       { class: "subtitle contract-paid" },
-                      `+${gain.shards.toLocaleString()} ${result.world.id === CASTLE_ID ? "castle" : "cave"} shards (${depthsOf(this.save).shards.toLocaleString()} in all), for the delvers' upgrades in the shop.`,
+                      `+${gain.shards.toLocaleString()} shards (${depthsOf(this.save).shards.toLocaleString()} in all), for the delvers' upgrades in the shop.`,
                   ),
                   gain.title ? h("div", { class: "subtitle pet" }, `Depth cleared! You're a ${gain.title} now: the title shows by your name.`) : null,
                   gain.cape

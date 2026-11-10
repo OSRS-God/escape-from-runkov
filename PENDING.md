@@ -189,6 +189,25 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 164 (not yet deployed), as the user asked: the regular maps are gone and everyone
+starts fresh. The game is the Depths and the Forgotten Castle, both open from the start, on
+the one stash (save.ts SAVE_VERSION 4: a save from before is dropped on load, an account's
+too, the name kept; the modes' separate profiles are gone from the screens, though save.ts
+still reads them). The Forgotten Castle is a four star map (worlds.ts CASTLE_WORLD: enemies
+and lords at tier 4, the lords with the Depths' half again of a boss's hitpoints), no depths,
+its title, Lord of the Forgotten Castle, for escaping it with a lord slain. Everything that
+was the Depths' alone is everyone's: the lantern and oil in every starter kit, the Delver,
+the shop's lantern and oil and the delvers' upgrades (shards from either map), no insurance,
+the daily cave. The title screen's rooms start a run on either map; the maps screen lists
+the two and the daily cave. Tasks that wanted the regular maps are about these two now: a
+star task by escaping a run that many stars or more (the Depths' go up a star a depth),
+"Both ways down", "Deepest delver" (the fifth depth), the Conqueror for both, a pet of every
+one of the 22 bosses, and the Wise Old Man's, the night's, the night boss's and the genie's
+replaced (a Depths boss; a depth cleared; a lord slain and escaped; oil still in the pack).
+worlds.json stays for the Depths' enemies taken from the old maps. Tested on the dev server:
+a fresh save, the four classes, the title screen's rooms, the maps screen, a castle run at
+tier 4 with the lantern lit.
+
 Version 163 (not yet deployed), as the user asked: the Forgotten Castle, a new map 40 by 40
 OSRS chunks (5 by 5 map squares, 320 by 320 tiles, about 73,000 open: the biggest there is),
 a mode of its own like the Depths (the user's picks: a fresh-start profile, laid out new every
