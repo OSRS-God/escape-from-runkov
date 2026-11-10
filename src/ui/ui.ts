@@ -883,7 +883,8 @@ export class UI {
                             ? "A fresh start: the guild kits you out again for one way of fighting, and everything else comes from the caves."
                             : "The guild kits you out for one way of fighting. Whatever else you want, you'll find in runs or buy in the shop.",
                     ),
-                    ...STARTER_KITS.map(card),
+                    // (the Delver only for the Depths: version 162)
+                    ...STARTER_KITS.filter((kit) => !kit.depths || modeOf(this.save) === "endless").map(card),
                     // Not ready to start over after all: back to the regular profile
                     modeOf(this.save) === "endless"
                         ? h("button", { onclick: () => this.switchProfile("regular") }, "Back to regular mode")

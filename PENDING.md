@@ -189,7 +189,15 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 161 (not yet deployed): nine of the suggestions for the Depths, as the user asked, and
+Version 162 (not yet deployed), as the user asked: a starter class of the Depths' own, the
+Delver ("Slayer · Delver"; starter.ts, `depths` keeps it off a regular new character's
+choice). Built for the dark rather than the fight: iron knives (one held, 150 packed) and an
+iron longsword packed for close in; a spiny helmet and slayer gloves over leather, the
+lightest armour of the four; six shrimps, a prayer potion, and five cans of oil on top of the
+lantern and three every Depths start gets. Tested: the Depths' class pick shows the four, and
+the Delver's pick gave that kit, eight cans of oil and the lantern.
+
+Version 161 (deployed to the playtest 10 November 2026 as 2026.11.10.2): nine of the suggestions for the Depths, as the user asked, and
 the Slayer cape as depth 5's reward:
 - Light: a bullseye lantern (4550) in the pack burns an oil can (277) every two minutes and
   sees four tiles further in the dark (run.ts updateLantern, LANTERN_SIGHT). A Depths fresh

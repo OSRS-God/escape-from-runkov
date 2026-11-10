@@ -6,11 +6,13 @@ import { removeItem } from "./inventory";
 import { Equipment, ItemStack, SaveData } from "./save";
 
 export type StarterKit = {
-    style: "melee" | "ranged" | "magic";
+    style: "melee" | "ranged" | "magic" | "slayer";
     name: string;
     blurb: string;
     equipment: Equipment;
     backpack: ItemStack[];
+    // Only offered for the Depths' fresh start (version 162)
+    depths?: boolean;
 };
 
 const SHRIMPS = 315;
@@ -43,6 +45,26 @@ export const STARTER_KITS: StarterKit[] = [
             { id: SHRIMPS, count: 8 },
         ],
     },
+    // The Depths' own class (version 162, as the user asked): built for the
+    // dark rather than the fight. Iron knives to throw and an iron longsword
+    // in the pack for when they close in, a spiny helmet and slayer gloves
+    // over leather (the lightest armour of the four), and the most light:
+    // five more cans of oil on the three every Depths start gets, and a
+    // prayer potion
+    {
+        style: "slayer",
+        name: "Delver",
+        blurb: "The Depths' own: iron knives to throw and a longsword for when they close in, a spiny helmet and slayer gloves over leather, and light to spare: eight cans of oil and a prayer potion. The lightest armour of the four.",
+        equipment: { weapon: 863, head: 4551, body: 1129, legs: 1095, hands: 6720, feet: 1061 },
+        backpack: [
+            { id: 863, count: 150 },
+            { id: 1293, count: 1 },
+            { id: SHRIMPS, count: 6 },
+            { id: 2434, count: 1 },
+            { id: 277, count: 5 },
+        ],
+        depths: true,
+    },
 ];
 
 // The old kit newSave() still makes, swapped for the one picked
@@ -59,7 +81,13 @@ export function applyStarter(save: SaveData, kit: StarterKit): void {
     save.equipment = { ...kit.equipment };
     save.backpack = kit.backpack.map((s) => ({ ...s }));
     if (save.mode === "endless") {
-        save.backpack.push({ id: LANTERN, count: 1 }, { id: OIL, count: DEPTHS_OIL });
+        save.backpack.push({ id: LANTERN, count: 1 });
+        const oil = save.backpack.find((s) => s.id === OIL);
+        if (oil) {
+            oil.count += DEPTHS_OIL;
+        } else {
+            save.backpack.push({ id: OIL, count: DEPTHS_OIL });
+        }
     }
     delete save.pickStarter;
 }
