@@ -189,6 +189,50 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 172 (not yet deployed), as the user asked: fourteen new things for the Depths and the
+Forgotten Castle.
+- A curse on every run of either (run.ts CURSES, from the seed, so a party and the daily
+  cave share it): the dark runs deeper (two tiles less sight, a quarter more coins), blood
+  moon (everything hits a fifth harder, half again the coins), quiet halls (a quarter fewer
+  monsters and chests), restless dead (superiors twice as often), frenzy (everything faster,
+  each kill heals 3). Said at the start and on the stats page.
+- A slayer contract every run: 6 to 12 of one of the map's kinds (from the seed; each player
+  counts their own kills, a guest's from the host's word), on the HUD's clock line; done, a
+  purse on the spot and 15 shards after (depths.ts CONTRACT_SHARDS).
+- Spike traps on both maps (props.ts `trap`): hidden till you're three tiles off by lantern
+  light (one and a half without), sprung by a hero or a monster stepping on them, hurting
+  what's on them (a hero 15% of their hitpoints and held a moment), set again 20 seconds on.
+- Map scraps (item 1535) in a tenth of the chests: picked up, a room not yet seen is drawn on
+  the map, a living boss's lair or a hidden cache first.
+- The Depths: glowing fungus (tap to eat: a heal, sharper sight, strength, a haze or poison;
+  hold to pick Mort myre fungus for brewing); mine carts in pairs, a ride to the far end that
+  everything there hears, one ride in five jumping the rails half way; and the Tunneller, a
+  huge kalphite that digs off every 40 to 70 seconds and bursts up a few tiles from someone,
+  with a superior's loot.
+- The Abyss: past the fifth depth the Depths keep going (worlds.ts ABYSS_MAX 30), each depth
+  a third again as tough (6,834 hitpoint bosses at the sixth, 22,700 at the tenth); the deepest
+  beaten goes on a board (functions' /api/abyss, kept in the daily table as day -1; the maps
+  screen shows it), and the summary says so.
+- The castle: six restless ghosts that drift through walls and show only near your lantern
+  or in a lit room; night falling (the castle darkening to six tenths by ten minutes, two
+  tiles less sight, and from four minutes two feral vampyres waking every minute and a half);
+  the bell in a courtyard (once a run: everything but the lords heads for it for 45 seconds,
+  noticing less on the way); weapon racks (a weapon of the castle's tier borrowed for the run,
+  in hand, never dropped, and gone at the end); herbs in the courtyards and alchemy tables
+  (two herbs or fungus into a potion); and the Forgotten King, who wakes on his throne in a
+  great hall once three lords are slain: the castle's skeleton warlord grown huge and gilded,
+  1.5 times the strongest lord's hitpoints, his hoard three pieces at the golden chest's odds
+  and a fat purse, and out with him slain the Kingslayer title.
+- The castle's lords' deaths say "The castle stirs" now (it said the Depths).
+- Assets: 8 locs, 6 items (assets.json); the Ghost (85) and Kalphite worker (955) models
+  were in the game already.
+Tested on the dev server: every one of them in a run (the contract paid 259 coins, a cart
+went 318 tiles, a trap killed a monster, the tunneller came up 4 tiles off, the King woke at
+his throne with 5,625 hitpoints and his hoard dropped, a borrowed bow went back at the end);
+in co-op the guest had the host's curse and contract, used the herbs, alchemy and bell, and
+saw the King; the Abyss board on a local server (best kept, bad depths refused). Not tried:
+a real phone, a full played run.
+
 Version 171 (not yet deployed), as the user asked: each starter class has a perk of its own,
 for good (starter.ts `perk`; run.ts PERK_ numbers): the Squire's Steadfast, 10 more
 hitpoints; the Archer's Fletcher's eye, a fifth fewer arrows used; the Apprentice's Rune

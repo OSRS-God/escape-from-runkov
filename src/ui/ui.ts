@@ -3,10 +3,12 @@
 // character in the world behind every screen but the HUD (menu.ts).
 import { MAX_THREAT, threatName, threatOpen, threatText } from "../content/threat";
 import {
+    ABYSS_MAX,
     ENDLESS_BOSSES,
     ENDLESS_DEPTHS,
     ENDLESS_ID,
     CASTLE_ID,
+    depthName,
     isModeWorld,
     WORLDS,
     WORLD_BY_ID,
@@ -880,7 +882,7 @@ export class UI {
         return {
             play: last
                 ? `Last: ${last.name} ${"★".repeat(last.tier)}${s.fastestEscape > 0 ? ` · best escape ${time(s.fastestEscape)}` : ""}`
-                : `The Depths, depth ${getWorld(ENDLESS_ID).depth ?? 1} of ${ENDLESS_DEPTHS}, or the Forgotten Castle`,
+                : `The Depths, ${depthName(getWorld(ENDLESS_ID).depth ?? 1)}, or the Forgotten Castle`,
             stash:
                 plural(pieces, "piece") +
                 ` · ${formatCoins(vaultWorth(save.stash, save.coins))}` +
@@ -1349,7 +1351,7 @@ export class UI {
     // one stash, each a run straight in
     private depthsRoom(withSub: boolean): HTMLElement {
         const depth = getWorld(ENDLESS_ID).depth ?? 1;
-        return this.roomButton("The Depths", withSub ? `Depth ${depth} of ${ENDLESS_DEPTHS}: caves dug anew every run` : undefined, this.depthsIcon(), () =>
+        return this.roomButton("The Depths", withSub ? `${capitalize(depthName(depth))}: caves dug anew every run` : undefined, this.depthsIcon(), () =>
             this.hooks.startRun(ENDLESS_ID),
         );
     }
@@ -2937,8 +2939,11 @@ export class UI {
             h(
                 "div",
                 { class: "item-list" },
-                // The class's perk (version 171)
+                // The class's perk (version 171), the run's curse and its
+                // contract (version 172)
                 ...(run.classPerk ? [line(run.classPerk.cls, run.classPerk.name, run.classPerk.text)] : []),
+                ...(run.curseWord ? [line("Curse", run.curseWord.name, run.curseWord.text)] : []),
+                ...(run.contractWord ? [line("Contract", run.contractWord, "a purse when it's done, and shards once you're out")] : []),
                 line("Max hit", String(s.damage), "a hit that lands is 60% to 100% of it"),
                 line(
                     "Accuracy",
@@ -3025,7 +3030,7 @@ export class UI {
                         { class: "map-name" },
                         `${world.name} `,
                         h("span", { class: "stats" }, "★".repeat(world.tier)),
-                        world.depth !== undefined ? h("span", { class: "beaten" }, ` depth ${world.depth} of ${ENDLESS_DEPTHS}`) : null,
+                        world.depth !== undefined ? h("span", { class: "beaten" }, ` ${depthName(world.depth)}`) : null,
                         beaten.includes(world.id) ? h("span", { class: "beaten" }, " ✓ beaten") : null,
                     ),
                     h("div", { class: "stats" }, world.description),
@@ -3080,6 +3085,37 @@ export class UI {
                         board,
                     ),
                     h("button", { class: "primary", onclick: () => this.hooks.startDaily() }, "Go"),
+                ),
+            );
+            // The Abyss (version 172): past the fifth depth, and its board of
+            // the deepest beaten
+            const abyss = h("div", { class: "stats daily-board" }, "Loading the board...");
+            void this.account?.abyssBoard().then((result) => {
+                abyss.replaceChildren(
+                    ...(result.ok
+                        ? result.data.top.length > 0
+                            ? result.data.top.map((row, i) => h("div", {}, `${i + 1}. ${row.name}: depth ${row.score}`))
+                            : [h("div", {}, "Nobody's beaten a depth of the Abyss yet.")]
+                        : [h("div", {}, "The board can't be reached right now.")]),
+                );
+            });
+            rows.push(
+                h("div", { class: "map-mode" }, "The Abyss"),
+                h(
+                    "div",
+                    { class: "item-row map-row" },
+                    h(
+                        "div",
+                        { class: "name" },
+                        h("div", { class: "map-name" }, "Past the fifth depth"),
+                        h(
+                            "div",
+                            { class: "stats" },
+                            `Beat the fifth depth and the Depths keep going: every depth below a third again as tough, as deep as ${ABYSS_MAX}. The deepest beaten goes on the board (an account's, logged in).`,
+                        ),
+                        h("div", { class: "stats" }, progress.abyss ? `Your deepest: depth ${progress.abyss}.` : "You haven't beaten a depth of the Abyss yet."),
+                        abyss,
+                    ),
                 ),
             );
         }
@@ -4738,9 +4774,12 @@ export class UI {
         // (and in the Depths, the boss hunting you, which way and how far:
         // version 161)
         const hunt = run.huntWord;
+        // (and the run's slayer contract: version 172)
+        const contract = run.contractWord;
         hud.clock.textContent =
             (run.closed ? "Way out closed" : `Way out closes in ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`) +
-            (hunt ? ` · ${hunt.text}` : "");
+            (hunt ? ` · ${hunt.text}` : "") +
+            (contract ? ` · ${contract}` : "");
         hud.clock.classList.toggle("urgent", run.closed || left < 60 || !!hunt?.near);
         hud.boss.hidden = !run.boss;
         if (run.boss) {
@@ -5232,9 +5271,17 @@ export class UI {
                       { class: "subtitle contract-paid" },
                       `+${gain.shards.toLocaleString()} shards (${depthsOf(this.save).shards.toLocaleString()} in all), for the delvers' upgrades in the shop.`,
                   ),
-                  gain.title ? h("div", { class: "subtitle pet" }, `Depth cleared! You're a ${gain.title} now: the title shows by your name.`) : null,
+                  gain.title ? h("div", { class: "subtitle pet" }, `A new title! You're a ${gain.title} now: the title shows by your name.`) : null,
                   gain.cape
                       ? h("div", { class: "subtitle pet" }, "The guild hands you the Slayer cape for clearing the fifth depth. It's in your bank, and nothing else in the game gives one.")
+                      : null,
+                  // (the Abyss's deepest, version 172)
+                  gain.abyss
+                      ? h(
+                            "div",
+                            { class: "subtitle pet" },
+                            `Your deepest yet: ${depthName(gain.abyss)}.${this.account?.state ? "" : " Log in to an account to go on the Abyss's board."}`,
+                        )
                       : null,
                   gain.daily
                       ? h(

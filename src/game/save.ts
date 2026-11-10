@@ -123,8 +123,12 @@ export type DepthsProgress = {
     shards: number;
     upgrades: Record<DepthsUpgradeKey, number>;
     cleared: number[];
-    // The Forgotten Castle escaped from with a lord slain (version 164)
+    // The Forgotten Castle escaped from with a lord slain (version 164), and
+    // with its Forgotten King slain (version 172: the Kingslayer title)
     castleCleared?: boolean;
+    kingslayer?: boolean;
+    // The deepest depth beaten past the fifth, the Abyss (version 172)
+    abyss?: number;
     title?: string;
     daily?: { day: number; best: number };
 };

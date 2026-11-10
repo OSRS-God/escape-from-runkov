@@ -13,6 +13,8 @@
 //   POST /api/logout       (Bearer token)
 //   GET  /api/daily?day=   the day's daily cave board -> { day, top: [{ name, score }] }
 //   POST /api/daily        { day, score } (Bearer token) -> { best, rank }
+//   GET  /api/abyss        the Abyss's board, deepest beaten -> { top: [{ name, score }] }
+//   POST /api/abyss        { score } (Bearer token) -> { best, rank }
 //
 // The daily cave (version 161): the Depths' cave of the day, the same for
 // everyone; each account's best haul escaped from it that day, today's or
@@ -70,6 +72,10 @@ const SCHEMA = [
 // The board's length, and the most a haul out of one cave can be worth
 const DAILY_TOP = 20;
 const DAILY_MAX_SCORE = 5_000_000_000;
+// The Abyss's board's day in the daily table (no day of a daily cave is
+// below zero), and its deepest depth (worlds.ts ABYSS_MAX)
+const ABYSS_DAY = -1;
+const ABYSS_MAX = 30;
 
 // Days since 1970, by UTC: the daily cave's number
 function today(): number {
@@ -396,6 +402,38 @@ export async function onRequest(context: Context): Promise<Response> {
             const above = await db
                 .prepare("SELECT COUNT(*) AS n FROM daily WHERE day = ? AND score > ?")
                 .bind(day, best?.score ?? score)
+                .first<{ n: number }>();
+            return json(200, { best: best?.score ?? score, rank: (above?.n ?? 0) + 1 });
+        }
+        // The Abyss's board (version 172): the deepest depth past the fifth
+        // each account has beaten, kept in the daily table as day ABYSS_DAY
+        if (route === "abyss" && request.method === "GET") {
+            const rows = await db
+                .prepare("SELECT name, score FROM daily WHERE day = ? ORDER BY score DESC, at ASC LIMIT ?")
+                .bind(ABYSS_DAY, DAILY_TOP)
+                .all<{ name: string; score: number }>();
+            return json(200, { top: rows.results ?? [] });
+        }
+        if (route === "abyss" && request.method === "POST") {
+            const account = await signedIn(db, request);
+            if (!account) {
+                return fail(401, "Log in to go on the Abyss's board.");
+            }
+            const body = await readJson(request);
+            const score = Math.floor(Number(body?.score));
+            if (!Number.isFinite(score) || score < 6 || score > ABYSS_MAX) {
+                return fail(400, "That isn't a depth of the Abyss.");
+            }
+            await db
+                .prepare(
+                    "INSERT INTO daily (day, account, name, score, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (day, account) DO UPDATE SET score = excluded.score, name = excluded.name, at = excluded.at WHERE excluded.score > daily.score",
+                )
+                .bind(ABYSS_DAY, account.id, account.name, score, Date.now())
+                .run();
+            const best = await db.prepare("SELECT score FROM daily WHERE day = ? AND account = ?").bind(ABYSS_DAY, account.id).first<{ score: number }>();
+            const above = await db
+                .prepare("SELECT COUNT(*) AS n FROM daily WHERE day = ? AND score > ?")
+                .bind(ABYSS_DAY, best?.score ?? score)
                 .first<{ n: number }>();
             return json(200, { best: best?.score ?? score, rank: (above?.n ?? 0) + 1 });
         }

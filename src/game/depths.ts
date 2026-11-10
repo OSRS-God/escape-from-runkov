@@ -11,6 +11,8 @@ import type { RunReport } from "./run";
 const SHARDS = { kill: 1, champion: 2, superior: 8, boss: 30 };
 const SHARDS_PER_DEPTH = 0.25;
 const SHARDS_ESCAPED = 1.5;
+// A run's slayer contract done (version 172), on top
+export const CONTRACT_SHARDS = 15;
 
 export function shardsFor(report: Pick<RunReport, "kills" | "championKills" | "superiorKills" | "bossKills">, depth: number, escaped: boolean): number {
     const base =
@@ -20,7 +22,8 @@ export function shardsFor(report: Pick<RunReport, "kills" | "championKills" | "s
 
 // What a run gave, for the summary: shards, a depth's title and the cape
 // if it cleared one, and the daily cave's day and haul if it was that
-export type DepthsGain = { shards: number; title?: string; cape?: boolean; daily?: { day: number; haul: number } };
+// (and the Abyss's deepest, version 172)
+export type DepthsGain = { shards: number; title?: string; cape?: boolean; daily?: { day: number; haul: number }; abyss?: number };
 
 // The title each depth gives, escaped from with a boss slain; and the
 // Forgotten Castle's own (version 163)

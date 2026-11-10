@@ -48,6 +48,10 @@ export type EnemyDef = {
     // A tiny one in the Depths, a rat, a bat or the like (worlds.ts's
     // DEPTHS_TINY, version 160): it only ever drops tier 1
     tiny?: boolean;
+    // Version 172: the castle's ghosts walk through walls and are seen only
+    // by light; the Depths' tunneller burrows from room to room
+    ghostly?: boolean;
+    tunneller?: boolean;
     // A boss's own move (worlds.ts's MOVES; run.ts does them): shots that
     // swap between magic and arrows each cast, with a tell; hits that go
     // through armour and protection; a second form on falling; and burning

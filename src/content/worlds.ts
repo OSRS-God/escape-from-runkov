@@ -595,13 +595,34 @@ export function playingMode(): ModeId {
     return modeSource().mode;
 }
 
-// The depth of the mode that's out (each mode's profile has its own)
+// The depth of the mode that's out (each mode's profile has its own; past
+// the fifth, the Abyss, since version 172)
 export function endlessDepth(): number {
-    return Math.min(ENDLESS_DEPTHS, Math.max(1, modeSource().depth || 1));
+    return Math.min(ABYSS_MAX, Math.max(1, modeSource().depth || 1));
 }
 
+// The Abyss (version 172, as the user asked): past the fifth depth, deeper
+// each time a boss falls there, everything 1.35 times again each depth
+// (DEPTHS_PAST_FIVE), as deep as ABYSS_MAX; its maps made when they're wanted
+export const ABYSS_MAX = 30;
+const ABYSS_WORLDS = new Map<number, WorldDef>();
+
 export function endlessWorld(depth = endlessDepth()): WorldDef {
-    return ENDLESS_WORLDS[Math.min(ENDLESS_DEPTHS, Math.max(1, depth)) - 1];
+    const d = Math.min(ABYSS_MAX, Math.max(1, depth));
+    if (d <= ENDLESS_DEPTHS) {
+        return ENDLESS_WORLDS[d - 1];
+    }
+    let world = ABYSS_WORLDS.get(d);
+    if (!world) {
+        world = depthsWorld(d);
+        ABYSS_WORLDS.set(d, world);
+    }
+    return world;
+}
+
+// A depth as the screens name it
+export function depthName(depth: number): string {
+    return depth > ENDLESS_DEPTHS ? `the Abyss, depth ${depth}` : `depth ${depth} of ${ENDLESS_DEPTHS}`;
 }
 
 // The castle (it has no depths: the one map)

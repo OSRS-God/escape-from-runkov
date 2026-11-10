@@ -26,7 +26,18 @@ export type PropKind =
     | "armour"
     | "font"
     | "cell"
-    | "banquet";
+    | "banquet"
+    // Version 172: both maps' floor traps; the Depths' glowing fungus and
+    // mine carts; the castle's courtyard herbs, alchemy tables, weapon racks,
+    // bell and throne
+    | "trap"
+    | "fungus"
+    | "cart"
+    | "herbs"
+    | "alchemy"
+    | "rack"
+    | "bell"
+    | "throne";
 
 // The kinds in order: a kind's place here is its code over the wire (party.ts)
 export const PROP_KINDS: PropKind[] = [
@@ -48,6 +59,14 @@ export const PROP_KINDS: PropKind[] = [
     "font",
     "cell",
     "banquet",
+    "trap",
+    "fungus",
+    "cart",
+    "herbs",
+    "alchemy",
+    "rack",
+    "bell",
+    "throne",
 ];
 
 export type Prop = {
@@ -101,6 +120,14 @@ export const PROP_PLANS: PropPlan[] = [
     { kind: "font", caves: 0, castle: 2, rooms: ["chapel"] },
     { kind: "cell", caves: 0, castle: 3, rooms: ["dungeon"], room: 1 },
     { kind: "banquet", caves: 0, castle: 2, rooms: ["hall"], room: 1.6 },
+    { kind: "trap", caves: 10, castle: 10 },
+    { kind: "fungus", caves: 8, castle: 0 },
+    { kind: "cart", caves: 2, castle: 0, room: 0.8 },
+    { kind: "herbs", caves: 0, castle: 6, rooms: ["court"] },
+    { kind: "alchemy", caves: 0, castle: 2, rooms: ["library", "quarters"], room: 1 },
+    { kind: "rack", caves: 0, castle: 3, rooms: ["hall", "dungeon"], room: 0.9 },
+    { kind: "bell", caves: 0, castle: 1, rooms: ["court"], room: 1 },
+    { kind: "throne", caves: 0, castle: 1, rooms: ["hall"], room: 1.6 },
 ];
 
 // Their models (cache loc ids; the pool's is drawn: water)
@@ -126,6 +153,25 @@ export const CELL_LOC = 648;
 export const CELL_SCALE = 1;
 export const PRISONER_NPC = 3014;
 export const BANQUET_LOC = 12315;
+// Version 172's: a spike trap, glowing mushrooms, a mine cart, herbs, a
+// chemistry table, a weapon rack, a bell in its frame and a stone throne
+export const TRAP_LOC = 13356;
+export const FUNGUS_LOC = 3913;
+export const CART_LOC = 637;
+export const HERBS_LOC = 4675;
+export const ALCHEMY_LOC = 618;
+export const RACK_LOC = 13994;
+export const BELL_LOC = 6847;
+export const THRONE_LOC = 1109;
+export const MORT_MYRE = 2970;
+// The courtyard herbs, by weight: guam, marrentill, tarromin, ranarr
+export const HERBS: [number, number][] = [
+    [199, 40],
+    [201, 30],
+    [203, 20],
+    [207, 10],
+];
+export const MAP_SCRAP = 1535;
 
 // The Depths' veins: each ore's rock and what it gives (gems by GEMS)
 export const VEINS: { loc: number; item?: number; name: string }[] = [
@@ -193,4 +239,11 @@ export const PROP_DOTS: Partial<Record<PropKind, string>> = {
     font: "#8ae0ff",
     cell: "#c8a878",
     banquet: "#ffd27a",
+    fungus: "#60e8ff",
+    cart: "#c8a060",
+    herbs: "#6ad070",
+    alchemy: "#8ae0a0",
+    rack: "#d0d0d0",
+    bell: "#ffd27a",
+    throne: "#ffd700",
 };

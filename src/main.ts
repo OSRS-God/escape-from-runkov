@@ -3,8 +3,22 @@ import * as THREE from "three";
 import { COINS, FOOD_BY_TIER, ITEMS, PRIZES, SLOTS, getItem, price, rollGear, rollShopStock } from "./content/items";
 import { TASKS } from "./content/tasks";
 import { clampThreat, threatOpen } from "./content/threat";
-import { CASTLE_ID, ENDLESS_DEPTHS, ENDLESS_ID, WORLD_BY_ID, WorldDef, endlessDepth, endlessWorld, getWorld, isModeWorld, mapUnlocked, setModeSource } from "./content/worlds";
-import { DepthsGain, SLAYER_CAPE, dailyDay, dailyDepth, dailySeed, shardsFor, titlesFor } from "./game/depths";
+import {
+    ABYSS_MAX,
+    CASTLE_ID,
+    ENDLESS_DEPTHS,
+    ENDLESS_ID,
+    WORLD_BY_ID,
+    WorldDef,
+    depthName,
+    endlessDepth,
+    endlessWorld,
+    getWorld,
+    isModeWorld,
+    mapUnlocked,
+    setModeSource,
+} from "./content/worlds";
+import { CONTRACT_SHARDS, DepthsGain, SLAYER_CAPE, dailyDay, dailyDepth, dailySeed, shardsFor, titlesFor } from "./game/depths";
 import { Account } from "./game/account";
 import { recordAttempt } from "./game/contract";
 import { GameStart, Session } from "./game/coop";
@@ -556,9 +570,14 @@ async function onRunEnd(result: RunResult): Promise<void> {
         // The Depths beaten at their depth go a star deeper (version 156;
         // not from the daily cave, whose depth is the day's)
         const daily = result.carry.depths?.daily !== undefined;
-        if (report.bossKills > 0 && result.world.id === ENDLESS_ID && !daily && (result.world.depth ?? 1) >= endlessDepth() && endlessDepth() < ENDLESS_DEPTHS) {
+        // (past the fifth into the Abyss, since version 172)
+        if (report.bossKills > 0 && result.world.id === ENDLESS_ID && !daily && (result.world.depth ?? 1) >= endlessDepth() && endlessDepth() < ABYSS_MAX) {
             save.endlessDepth = endlessDepth() + 1;
-            ui.message(`The Depths go deeper: depth ${save.endlessDepth} of ${ENDLESS_DEPTHS}, its enemies and bosses tougher from the next run on.`);
+            ui.message(
+                save.endlessDepth > ENDLESS_DEPTHS
+                    ? `The Depths go deeper still: ${depthName(save.endlessDepth)}. Everything down there is a third again as tough.`
+                    : `The Depths go deeper: ${depthName(save.endlessDepth)}, its enemies and bosses tougher from the next run on.`,
+            );
         }
         // And beaten at its threat level: the next level opens (version
         // 150). A party's guest, playing at the host's level, counts no
@@ -630,7 +649,8 @@ function settleDepths(result: RunResult): DepthsGain {
     const escaped = result.kind === "extracted";
     const day = result.carry.depths?.daily;
     const daily = day !== undefined;
-    const shards = shardsFor(report, depth, escaped);
+    // (and the run's slayer contract's: version 172)
+    const shards = shardsFor(report, depth, escaped) + (report.contract ? CONTRACT_SHARDS : 0);
     progress.shards += shards;
     const gain: DepthsGain = { shards };
     // The castle has no depths (version 164): its own title, once
@@ -639,14 +659,35 @@ function settleDepths(result: RunResult): DepthsGain {
         gain.title = titlesFor(CASTLE_ID)[titlesFor(CASTLE_ID).length - 1];
         progress.title = gain.title;
     }
+    // Out with the Forgotten King slain (version 172): Kingslayer, once
+    if (escaped && report.kingSlain && result.world.id === CASTLE_ID && !progress.kingslayer) {
+        progress.kingslayer = true;
+        gain.title = "Kingslayer";
+        progress.title = gain.title;
+    }
     if (escaped && report.bossKills > 0 && !daily && result.world.id === ENDLESS_ID && !progress.cleared.includes(depth)) {
         progress.cleared = [...progress.cleared, depth].sort((a, b) => a - b);
-        gain.title = titlesFor(result.world.id)[depth - 1];
-        progress.title = gain.title;
+        // (no title past the fifth: the Abyss has its board instead)
+        const title = titlesFor(result.world.id)[depth - 1];
+        if (title) {
+            gain.title = title;
+            progress.title = title;
+        }
         // (the Slayer cape is the Depths' alone)
         if (depth === ENDLESS_DEPTHS && result.world.id === ENDLESS_ID) {
             addItem(save.stash, SLAYER_CAPE, 1);
             gain.cape = true;
+        }
+    }
+    // The Abyss (version 172): the deepest beaten, on its board for a
+    // logged in account
+    if (escaped && report.bossKills > 0 && !daily && result.world.id === ENDLESS_ID && depth > ENDLESS_DEPTHS && depth > (progress.abyss ?? 0)) {
+        progress.abyss = depth;
+        gain.abyss = depth;
+        if (account.state) {
+            void account.submitAbyss(depth).then((r) => {
+                ui.message(r.ok ? `The Abyss's board has you at number ${r.data.rank}, ${depthName(r.data.best)}.` : r.error);
+            });
         }
     }
     if (day !== undefined) {

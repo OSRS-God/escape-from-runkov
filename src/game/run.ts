@@ -31,6 +31,8 @@ import {
     iconUrl,
     pluralName,
     rollGear,
+    GEAR_BY_TIER,
+    PRIZES,
     CRYSTAL_PURPLE_CHANCE,
     FOUND_TIER_MAX,
     specialOf,
@@ -173,6 +175,17 @@ import {
     SHRINE_TRADES,
     VEINS,
     VEIN_WEIGHTS,
+    ALCHEMY_LOC,
+    BELL_LOC,
+    CART_LOC,
+    FUNGUS_LOC,
+    HERBS,
+    HERBS_LOC,
+    MAP_SCRAP,
+    MORT_MYRE,
+    RACK_LOC,
+    THRONE_LOC,
+    TRAP_LOC,
 } from "./props";
 import { Character, DepthsUpgradeKey, Equipment, Grave, ItemStack } from "./save";
 import { ZOOM_MAX, ZOOM_MIN, saveSettings, settings } from "./settings";
@@ -217,6 +230,110 @@ const PERK_AMMO = 0.2;
 const PERK_SIGHT = 1;
 const PERK_OIL = 1.25;
 const PERK_PRAYER = 0.8;
+
+// Version 172 (as the user asked): a curse on every Depths and Forgotten
+// Castle run, from the run's seed so a party, and the daily cave, share it:
+// its name, what it does and what it pays for it (the coins' share)
+type CurseId = "dark" | "blood" | "quiet" | "restless" | "frenzy";
+const CURSES: Record<CurseId, { name: string; text: string; coins: number }> = {
+    dark: { name: "The dark runs deeper", text: "two tiles less sight, and a quarter more coins", coins: 1.25 },
+    blood: { name: "Blood moon", text: "everything hits a fifth harder, and the coins are half again", coins: 1.5 },
+    quiet: { name: "Quiet halls", text: "a quarter fewer monsters, and a quarter fewer chests", coins: 1 },
+    restless: { name: "Restless dead", text: "superiors rise twice as often", coins: 1 },
+    frenzy: { name: "Frenzy", text: "everything moves faster, and every kill heals you", coins: 1 },
+};
+const CURSE_IDS = Object.keys(CURSES) as CurseId[];
+const CURSE_SIGHT = 2;
+const CURSE_HIT = 1.2;
+const CURSE_FEWER = 0.75;
+const CURSE_SPEED = 1.15;
+const CURSE_HEAL = 3;
+
+function curseOf(seed: number): CurseId {
+    return CURSE_IDS[(Math.imul(seed ^ 0xc0ffee, 2654435761) >>> 0) % CURSE_IDS.length];
+}
+
+// The map as its curse leaves it: a blood moon's harder hits, quiet halls'
+// fewer monsters and chests
+function curseWorld(world: WorldDef, curse: CurseId | undefined): WorldDef {
+    if (curse === "blood") {
+        const hit = (def: EnemyDef): EnemyDef => ({ ...def, damage: Math.round(def.damage * CURSE_HIT) });
+        return {
+            ...world,
+            enemies: world.enemies.map((e) => ({ def: hit(e.def), weight: e.weight })),
+            boss: hit(world.boss),
+            bosses: world.bosses?.map(hit),
+            superiors: world.superiors ? Object.fromEntries(Object.entries(world.superiors).map(([id, def]) => [id, hit(def)])) : undefined,
+        };
+    }
+    if (curse === "quiet") {
+        return { ...world, enemyCount: Math.round(world.enemyCount * CURSE_FEWER), chests: Math.round(world.chests * CURSE_FEWER) };
+    }
+    return world;
+}
+
+// A slayer contract on every such run (version 172): so many of one kind
+// (from the seed, the same for a party; each counts their own kills), paid
+// this purse (and 2.2 times more a tier) on the spot and shards after
+const CONTRACT_COUNT: [number, number] = [6, 12];
+const CONTRACT_COINS: [number, number] = [150, 300];
+// The floor's spike traps: seen this near by lantern light (less without),
+// sprung by a step this close, hurting what's this near (a share of a hero's
+// hitpoints, an enemy so much and 1.8 times more a tier), a hero held a
+// moment, set again after a while
+const SPIKE_SEEN = 3;
+const SPIKE_SEEN_DARK = 1.5;
+const SPIKE_STEP = 0.7;
+const SPIKE_REACH = 1.1;
+const SPIKE_HURT = 0.15;
+const SPIKE_HIT = 25;
+const SPIKE_HELD = 1;
+const SPIKE_REARM = 20;
+// The Depths' glowing fungus: bites a patch, the hold to pick some, how long
+// a bite's sight or haze lasts and how far, and its heal
+const FUNGUS_BITES = 2;
+const FUNGUS_HOLD = 1.5;
+const FUNGUS_SECONDS = 45;
+const FUNGUS_SIGHT = 3;
+const FUNGUS_HEAL = 0.2;
+// Courtyard herbs; a mine cart's odds of jumping the rails, its fall, and
+// how far its arrival is heard; the bell's pull and how much less a lured
+// monster notices on the way
+const HERBS_PICKS = 2;
+const HERBS_HOLD = 2;
+const CART_DERAIL = 0.2;
+const CART_HURT = 0.1;
+const CART_NOISE = 12;
+const BELL_SECONDS = 45;
+const BELL_AGGRO = 0.3;
+// The Depths' tunneller: so often it digs, for so long, coming up this far
+// from someone
+const TUNNEL_EVERY: [number, number] = [40, 70];
+const TUNNEL_UNDER = 5;
+const TUNNEL_NEAR: [number, number] = [6, 9];
+// The castle's ghosts: how many, their model (the Ghost's)
+const GHOSTS = 6;
+const GHOST_NPC = 85;
+// Night falling in the castle: the dark at its deepest by then, how much
+// darker and how much less is seen, how often it deepens, and the vampyres
+// waking from then on, so many so often
+const NIGHT_FULL = 600;
+const NIGHT_DARKEN = 0.4;
+const NIGHT_SIGHT = 2;
+const NIGHT_STEP = 20;
+const NIGHT_VAMPYRES_FROM = 240;
+const NIGHT_VAMPYRES_EVERY = 90;
+const NIGHT_VAMPYRES = 2;
+// The Forgotten King: wakes with this many lords slain; the strongest lord's
+// hitpoints and hit this many times, his size, and his hoard's pieces
+const KING_AFTER = 3;
+const KING_ID = "castle:forgotten_king";
+const KING_HP = 1.5;
+const KING_DAMAGE = 1.2;
+const KING_SCALE = 1.9;
+const KING_GEAR = 3;
+// A chest's odds of a map scrap
+const SCRAP_CHANCE = 0.1;
 
 // A style to protect from: enemies hit with it do half while the prayer
 // bar lasts (Z, X, C, or the Pray button)
@@ -282,6 +399,10 @@ export type RunReport = {
     party: number;
     // Party balloons this player burst (version 129)
     balloons: number;
+    // Version 172: the run's slayer contract done, and the Forgotten King
+    // slain
+    contract?: boolean;
+    kingSlain?: boolean;
 };
 
 export type RunHooks = {
@@ -382,6 +503,8 @@ type Enemy = {
     sigStep?: number;
     sigMarks?: number[];
     burrowed?: number;
+    // When the Depths' tunneller next digs off (version 172)
+    tunnelAt?: number;
     adds?: Enemy[];
     mends?: Enemy;
     // A patrol: the tiles it walks between while idle, which it's heading
@@ -1744,7 +1867,11 @@ export class Run {
     ) {
         this.rng = makeRng(seed);
         this.carry = carry;
-        this.threat = threatOf(carry.threat ?? 0);
+        // (and the run's curse's coins on it: version 172)
+        this.curse = world.caves ? curseOf(seed) : undefined;
+        const threat = threatOf(carry.threat ?? 0);
+        this.threat = this.curse ? { ...threat, coins: threat.coins * CURSES[this.curse].coins } : threat;
+        this.contract = world.caves ? Run.contractOf(seed, world) : undefined;
         this.autocast = carry.autocast && SPELL_BY_ID.has(carry.autocast) ? carry.autocast : undefined;
         this.spellbook = carry.spellbook === "ancient" ? "ancient" : "standard";
         this.coop = coop;
@@ -1828,6 +1955,8 @@ export class Run {
         }
         // And more again at a threat level (version 150)
         world = threatWorld(world, threatOf(carry.threat ?? 0));
+        // And as its curse leaves it (version 172)
+        world = curseWorld(world, world.caves ? curseOf(seed) : undefined);
         const run = new Run(renderer, world, region, carry, character, seed, hooks, coop);
         // The map comes in a square at a time, the ones round the spawn
         // first: the run starts on those, and the rest join as they arrive
@@ -1904,7 +2033,7 @@ export class Run {
                 if (!this.nightSeen.has(material) && material.color) {
                     this.nightSeen.add(material);
                     this.nightMaterials.push({ material, color: material.color.clone() });
-                    material.color.multiply(gloom);
+                    material.color.multiply(this.gloomNow());
                 }
             }
         });
@@ -1965,7 +2094,7 @@ export class Run {
         torchesOut();
         this.renderer.render(this.scene, camera);
         for (const { material } of dimmed) {
-            material.color.multiply(this.gloom ?? WHITE);
+            material.color.multiply(this.gloomNow());
         }
         for (const child of hidden) {
             child.visible = true;
@@ -2572,6 +2701,8 @@ export class Run {
         }
         if (this.cave) {
             this.placeRooms(reach, taken, jobs, bossTiles);
+            // The Depths' tunneller and the castle's ghosts (version 172)
+            jobs.push(...this.placeHaunts(reach, taken));
         }
         bossTiles.forEach((tile, i) => {
             jobs.push(this.spawnEnemy(bossDefs[i], tile).then(() => undefined));
@@ -2752,7 +2883,8 @@ export class Run {
         const lit = new Set<number>();
         for (const plan of PROP_PLANS) {
             const count = castle ? plan.castle : plan.caves;
-            if (plan.kind === "passage") {
+            // (a passage's and a mine cart's two ends go below)
+            if (plan.kind === "passage" || plan.kind === "cart") {
                 continue;
             }
             const free = rooms.filter((c) => anywhere.has(plan.kind) || !busy.has(c));
@@ -2787,28 +2919,38 @@ export class Run {
                 this.props.push(this.makeProp(plan.kind, tile, data));
             }
         }
-        // The passage's two ends, the farthest apart of a few pairs of rooms
-        const plan = PROP_PLANS.find((p) => p.kind === "passage")!;
+        // A passage's two ends, and each mine cart line's (version 172), the
+        // farthest apart of a few pairs of rooms
         const free = rooms.filter((c) => !busy.has(c));
-        let ends: [number, number] | undefined;
-        let apart = 0;
-        for (let i = 0; i < 24 && free.length > 1; i++) {
-            const a = pick(free)!;
-            const b = pick(free)!;
-            const d = Math.hypot((a % cave.cellsX) - (b % cave.cellsX), Math.floor(a / cave.cellsX) - Math.floor(b / cave.cellsX));
-            if (d > apart) {
-                apart = d;
-                ends = [a, b];
+        const pairUp = (kind: PropKind): boolean => {
+            const plan = PROP_PLANS.find((p) => p.kind === kind)!;
+            let ends: [number, number] | undefined;
+            let apart = 0;
+            for (let i = 0; i < 24 && free.length > 1; i++) {
+                const a = pick(free)!;
+                const b = pick(free)!;
+                const d = Math.hypot((a % cave.cellsX) - (b % cave.cellsX), Math.floor(a / cave.cellsX) - Math.floor(b / cave.cellsX));
+                if (d > apart) {
+                    apart = d;
+                    ends = [a, b];
+                }
             }
-        }
-        const a = ends ? tileIn(ends[0], plan.room) : undefined;
-        const b = ends ? tileIn(ends[1], plan.room) : undefined;
-        if (a && b) {
+            const a = ends ? tileIn(ends[0], plan.room) : undefined;
+            const b = ends ? tileIn(ends[1], plan.room) : undefined;
+            if (!a || !b) {
+                return false;
+            }
             const first = this.props.length;
-            this.props.push(this.makeProp("passage", a, first + 1), this.makeProp("passage", b, first));
-        } else {
-            // No passage, no lever for it
+            this.props.push(this.makeProp(kind, a, first + 1), this.makeProp(kind, b, first));
+            return true;
+        };
+        // (no passage, no lever for it)
+        if ((castle ? PROP_PLANS.find((p) => p.kind === "passage")!.castle : 1) > 0 && !pairUp("passage")) {
             this.props = this.props.filter((p) => p.kind !== "lever");
+        }
+        const carts = PROP_PLANS.find((p) => p.kind === "cart")!;
+        for (let i = 0; i < (castle ? carts.castle : carts.caves) / 2; i++) {
+            pairUp("cart");
         }
         // The library's books, each a different one; the lectern names the
         // one the vault's behind
@@ -2828,7 +2970,19 @@ export class Run {
 
     private makeProp(kind: PropKind, tile: Tile, data: number): Prop {
         const uses =
-            kind === "vein" ? VEIN_LOADS : kind === "pool" ? POOL_EELS : kind === "font" ? FONT_VIALS : kind === "banquet" ? BANQUET_BITES : 1;
+            kind === "vein"
+                ? VEIN_LOADS
+                : kind === "pool"
+                  ? POOL_EELS
+                  : kind === "font"
+                    ? FONT_VIALS
+                    : kind === "banquet"
+                      ? BANQUET_BITES
+                      : kind === "fungus"
+                        ? FUNGUS_BITES
+                        : kind === "herbs"
+                          ? HERBS_PICKS
+                          : 1;
         return { kind, x: tile.x, z: tile.z, rotation: Math.floor(this.rng() * 4) * (Math.PI / 2), uses, data };
     }
 
@@ -2872,6 +3026,22 @@ export class Run {
                 return CELL_LOC;
             case "banquet":
                 return BANQUET_LOC;
+            case "trap":
+                return TRAP_LOC;
+            case "fungus":
+                return FUNGUS_LOC;
+            case "cart":
+                return CART_LOC;
+            case "herbs":
+                return HERBS_LOC;
+            case "alchemy":
+                return ALCHEMY_LOC;
+            case "rack":
+                return RACK_LOC;
+            case "bell":
+                return BELL_LOC;
+            case "throne":
+                return THRONE_LOC;
         }
     }
 
@@ -2893,8 +3063,12 @@ export class Run {
             this.scene.remove(p.actor.root);
         }
         this.placeActor(actor, p.x, p.z, p.rotation, p.kind === "cell" ? CELL_SCALE : p.kind === "lever" ? 1.4 : 1);
-        // (none under what's flat on the floor: a trapdoor, a hole)
-        const flat = p.kind === "ladder" || (p.kind === "passage" && this.world.id === CASTLE_ID);
+        // (none under what's flat on the floor: a trapdoor, a hole, a trap,
+        // which is hidden till it's near: updateHaunts)
+        const flat = p.kind === "ladder" || p.kind === "trap" || (p.kind === "passage" && this.world.id === CASTLE_ID);
+        if (p.kind === "trap") {
+            actor.root.visible = !!p.on;
+        }
         if (!flat) {
             addShadow(actor.root, p.kind === "banquet" ? 1.6 : p.kind === "passage" ? 1.2 : 0.6);
         }
@@ -2969,7 +3143,9 @@ export class Run {
     // lever's pulled), grey when it's spent
     private propDot(p: Prop): string | undefined {
         const colour = PROP_DOTS[p.kind];
-        if (!colour || p.gone || !(this.isExplored(p.x, p.z) || (p.kind === "passage" && p.on))) {
+        // (a passage once open, the bell once rung and the king's throne once
+        // he wakes, wherever they are: version 172)
+        if (!colour || p.gone || !(this.isExplored(p.x, p.z) || (p.on && (p.kind === "passage" || p.kind === "bell" || p.kind === "throne")))) {
             return undefined;
         }
         if (p.kind === "brazier") {
@@ -3084,6 +3260,35 @@ export class Run {
                 return this.eatIn > 0
                     ? { prompt: "You're still chewing." }
                     : { prompt: `Press E to eat from the banquet (${p.uses} bite${p.uses === 1 ? "" : "s"} left; some of it's gone bad)`, tap: true };
+            // Version 172's
+            case "trap":
+                return { prompt: p.actor?.root.visible ? (p.uses > 0 ? "A spike trap. Step round it, or lead something onto it." : "A spike trap, sprung. It'll set itself again.") : "" };
+            case "fungus":
+                return searched
+                    ? { prompt: "Picked bare." }
+                    : {
+                          prompt: "Press E to eat the glowing fungus · hold E to pick some for brewing",
+                          tap: true,
+                          hold: { seconds: FUNGUS_HOLD, doing: "Picking fungus" },
+                      };
+            case "cart":
+                return { prompt: "Press E to ride the mine cart to the end of its line (loud)", tap: true };
+            case "herbs":
+                return searched
+                    ? { prompt: "Picked bare." }
+                    : { prompt: "Hold E to pick herbs (the alchemy tables brew them)", hold: { seconds: HERBS_HOLD, doing: "Picking herbs" } };
+            case "alchemy": {
+                const have = this.inventory.filter((s) => getItem(s.id).ingredient).reduce((n, s) => n + s.count, 0);
+                return have >= 2
+                    ? { prompt: "Press E to brew a potion from two of your herbs and fungus", tap: true }
+                    : { prompt: "An alchemy table. Two herbs or fungus would brew a potion." };
+            }
+            case "rack":
+                return p.mine ? { prompt: "You've had a weapon off this rack." } : { prompt: "Press E to borrow a weapon from the rack (this run only)", tap: true };
+            case "bell":
+                return searched ? { prompt: "The bell's still humming." } : { prompt: "Press E to ring the bell: everything in the castle comes to it", tap: true };
+            case "throne":
+                return { prompt: this.kingWoke || p.on ? "The Forgotten King's throne." : "An empty throne, cold as a grave. Something sleeps under the castle." };
         }
     }
 
@@ -3109,7 +3314,8 @@ export class Run {
         let p: Prop | undefined;
         let best = PROP_REACH;
         for (const q of this.props) {
-            if (q.gone) {
+            // (a spike trap's nothing to use: version 172)
+            if (q.gone || q.kind === "trap") {
                 continue;
             }
             const d = Math.hypot(q.x - this.px, q.z - this.pz) - this.propSize(q);
@@ -3212,7 +3418,13 @@ export class Run {
             case "portrait":
             case "lectern":
             case "armour":
+            case "rack":
+            case "trap":
+            case "throne":
                 return false;
+            case "cart":
+            case "alchemy":
+                return true;
             default:
                 return p.uses > 0;
         }
@@ -3286,6 +3498,19 @@ export class Run {
                 }
                 this.hooks.onChanged();
                 return true;
+            // Version 172's
+            case "fungus":
+                if (!hold) {
+                    this.eatFungus();
+                }
+                return true;
+            case "cart":
+                return this.rideCart(p);
+            case "alchemy":
+                return this.brew();
+            case "rack":
+                this.borrowWeapon(p);
+                return false;
             default:
                 return true;
         }
@@ -3613,6 +3838,46 @@ export class Run {
             case "banquet":
                 p.uses--;
                 this.sendProp(p);
+                return;
+            // Version 172's
+            case "fungus":
+                p.uses--;
+                this.sendProp(p);
+                if (hold) {
+                    give(MORT_MYRE, 1);
+                    this.tell(by, "You pick a handful of the glowing fungus.");
+                }
+                return;
+            case "cart": {
+                const far = this.props[p.data];
+                if (far) {
+                    this.wakeNear(far.x, far.z, CART_NOISE);
+                }
+                return;
+            }
+            case "herbs": {
+                p.uses--;
+                this.sendProp(p);
+                let roll = this.rng() * HERBS.reduce((n, [, w]) => n + w, 0);
+                let herb = HERBS[0][0];
+                for (const [id, w] of HERBS) {
+                    roll -= w;
+                    if (roll <= 0) {
+                        herb = id;
+                        break;
+                    }
+                }
+                give(herb, 1);
+                return;
+            }
+            case "alchemy":
+                give(potion(), 1);
+                return;
+            case "bell":
+                p.uses = 0;
+                p.on = true;
+                this.sendProp(p);
+                this.ringBell(p);
                 return;
             default:
                 return;
@@ -3970,6 +4235,545 @@ export class Run {
                 a.x = x;
                 a.z = z;
                 return;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Version 172 (as the user asked): the run's curse and slayer contract,
+    // map scraps, the Depths' tunneller and fungus and mine carts, the
+    // castle's ghosts, night, bell, racks, herbs, alchemy and the Forgotten
+    // King, and both maps' spike traps
+
+    private readonly curse?: CurseId;
+    private contract?: { name: string; count: number; have: number; done: boolean };
+    private borrowed: number[] = [];
+    private fungusSight = 0;
+    private fungusDim = 0;
+    private lure?: { x: number; z: number; until: number; flow: Int16Array };
+    private gloomShade = 1;
+    private nightStepIn = NIGHT_STEP;
+    private vampyresIn = 0;
+    private nightTold = false;
+    private kingWoke = false;
+    private kingSlain = false;
+    private readonly trapsRearm = new Map<Prop, number>();
+
+    // The run's contract: one of the map's kinds (the commoner the likelier,
+    // never a tiny one), so many of it, from the seed
+    private static contractOf(seed: number, world: WorldDef): { name: string; count: number; have: number; done: boolean } | undefined {
+        const rng = makeRng((seed ^ 0x51a7e) >>> 0);
+        const kinds = world.enemies.filter((e) => !e.def.tiny && !e.def.passive);
+        if (kinds.length === 0) {
+            return undefined;
+        }
+        let roll = rng() * kinds.reduce((n, e) => n + e.weight, 0);
+        let def = kinds[0].def;
+        for (const e of kinds) {
+            roll -= e.weight;
+            if (roll <= 0) {
+                def = e.def;
+                break;
+            }
+        }
+        return { name: def.name, count: randInt(rng, CONTRACT_COUNT[0], CONTRACT_COUNT[1]), have: 0, done: false };
+    }
+
+    private static plural(name: string): string {
+        const lower = name.toLowerCase();
+        return lower.endsWith("s") ? lower : `${lower}s`;
+    }
+
+    // One of this player's kills: the contract's count, a frenzy's heal
+    private killedOne(def: EnemyDef): void {
+        if (this.curse === "frenzy") {
+            this.hp = Math.min(this.maxHp, this.hp + CURSE_HEAL);
+        }
+        const c = this.contract;
+        if (!c || c.done || def.name.replace(/^Champion /i, "").toLowerCase() !== c.name.toLowerCase()) {
+            return;
+        }
+        c.have++;
+        if (c.have >= c.count) {
+            c.done = true;
+            const reward = Math.round(randInt(this.rng, CONTRACT_COINS[0], CONTRACT_COINS[1]) * Math.pow(2.2, this.world.tier - 1) * this.threat.coins);
+            this.coins += reward;
+            this.coinsFound += reward;
+            playChime(true);
+            this.hooks.onMessage(`Slayer contract done: ${c.count} ${Run.plural(c.name)}. The guild pays ${reward.toLocaleString()} coins, and shards once you're out.`);
+        }
+        this.hooks.onChanged();
+    }
+
+    // The HUD's word on the contract, and the stats page's on the curse
+    get contractWord(): string | undefined {
+        const c = this.contract;
+        return c ? (c.done ? "Contract done" : `Slayer: ${c.have}/${c.count} ${Run.plural(c.name)}`) : undefined;
+    }
+
+    get curseWord(): { name: string; text: string } | undefined {
+        return this.curse ? CURSES[this.curse] : undefined;
+    }
+
+    // The map's light now: its gloom, deepened as the castle's night falls
+    private gloomNow(): THREE.Color {
+        return this.gloom ? this.gloom.clone().multiplyScalar(this.gloomShade) : WHITE;
+    }
+
+    // A map scrap read: a room not yet seen (a living boss's lair or a
+    // hidden cache first) drawn on the map
+    private readScrap(): void {
+        const cave = this.cave;
+        const g = this.region;
+        if (!cave) {
+            return;
+        }
+        const centre = (c: number) => ({ x: g.baseX + (c % cave.cellsX) * 64 + 32, z: -(g.baseY + Math.floor(c / cave.cellsX) * 64 + 32) });
+        const unseen = cave.cells.map((_, c) => c).filter((c) => cave.cells[c] !== cave.empty && !this.isExplored(centre(c).x, centre(c).z));
+        const worth = new Set([
+            ...this.enemies.filter((e) => e.def.boss && e.state !== "dead").map((e) => cave.cellAt(e.x, e.z)),
+            ...this.props.filter((p) => p.kind === "crack" && !p.gone).map((p) => cave.cellAt(p.x, p.z)),
+        ]);
+        const best = unseen.filter((c) => worth.has(c));
+        const pool = best.length > 0 && this.rng() < 0.6 ? best : unseen;
+        const cell = pool[Math.floor(this.rng() * pool.length)];
+        if (cell === undefined) {
+            this.hooks.onMessage("You pick up a scrap of an old map, but it shows nothing you haven't seen.");
+            return;
+        }
+        this.revealCell(cell);
+        const at = centre(cell);
+        const words: Record<string, string> = {
+            plain: "a cave",
+            pillars: "a pillared cave",
+            camp: "an old camp",
+            lair: "a lair",
+            hall: "a great hall",
+            court: "a courtyard",
+            quarters: "some quarters",
+            library: "a library",
+            chapel: "a chapel",
+            dungeon: "a dungeon",
+        };
+        const what = worth.has(cell) ? "with something marked in it" : (words[cave.cells[cell].split("_").pop() ?? ""] ?? "a room");
+        this.hooks.onMessage(`You pick up a scrap of an old map. It shows ${worth.has(cell) ? "a room" : what} ${Math.round(Math.hypot(at.x - this.px, at.z - this.pz))} tiles to the ${this.compassTo(at.x, at.z)}${worth.has(cell) ? `, ${what}` : ""}: it's on your map now.`);
+    }
+
+    // The host's: the Depths' tunneller, far from where you arrive, and the
+    // castle's ghosts about it
+    private placeHaunts(reach: Int16Array, taken: Set<number>): Promise<void>[] {
+        const jobs: Promise<void>[] = [];
+        const kinds = this.world.enemies;
+        if (kinds.length === 0) {
+            return jobs;
+        }
+        const base = kinds[Math.floor(kinds.length / 2)].def;
+        if (this.world.id === ENDLESS_ID) {
+            const def: EnemyDef = {
+                ...base,
+                id: `${this.world.id}:tunneller`,
+                name: "Tunneller",
+                npcId: 955,
+                hp: Math.round(base.hp * 6),
+                damage: Math.round(base.damage * 1.6),
+                scale: 1.8,
+                radius: 0.9,
+                superior: true,
+                tunneller: true,
+                shoots: undefined,
+                tiny: undefined,
+                passive: undefined,
+            };
+            const tile = this.region.randomTile(this.rng, reach, 40, taken);
+            if (tile) {
+                jobs.push(this.spawnEnemy(def, tile).then(() => undefined));
+            }
+        }
+        if (this.world.id === CASTLE_ID) {
+            const def: EnemyDef = {
+                ...base,
+                id: `${this.world.id}:restless_ghost`,
+                name: "Restless ghost",
+                npcId: GHOST_NPC,
+                scale: 1.1,
+                radius: 0.5,
+                ghostly: true,
+                shoots: undefined,
+                tiny: undefined,
+                passive: undefined,
+            };
+            for (let i = 0; i < GHOSTS; i++) {
+                const tile = this.region.randomTile(this.rng, reach, 20, taken);
+                if (tile) {
+                    jobs.push(this.spawnEnemy(def, tile).then(() => undefined));
+                }
+            }
+        }
+        return jobs;
+    }
+
+    // The tunneller's dig: under for TUNNEL_UNDER seconds, up again a few
+    // tiles from someone; true while it's digging
+    private tunnel(e: Enemy, heroes: Hero[]): boolean {
+        if (e.state === "attack" || heroes.length === 0) {
+            return false;
+        }
+        e.tunnelAt ??= this.time + randInt(this.rng, TUNNEL_EVERY[0], TUNNEL_EVERY[1]);
+        if (this.time < e.tunnelAt) {
+            return false;
+        }
+        e.tunnelAt = this.time + randInt(this.rng, TUNNEL_EVERY[0], TUNNEL_EVERY[1]);
+        const h = heroes[Math.floor(this.rng() * heroes.length)];
+        for (let tries = 0; tries < 40; tries++) {
+            const angle = this.rng() * Math.PI * 2;
+            const d = TUNNEL_NEAR[0] + this.rng() * (TUNNEL_NEAR[1] - TUNNEL_NEAR[0]);
+            const x = h.x + Math.cos(angle) * d;
+            const z = h.z + Math.sin(angle) * d;
+            if (this.region.fits(x, z, e.def.radius) && this.region.lineOfSight(h.x, h.z, x, z)) {
+                e.homeX = x;
+                e.homeZ = z;
+                e.burrowed = TUNNEL_UNDER;
+                e.state = "chase";
+                e.noIdleUntil = this.time + 20;
+                e.actor.root.visible = false;
+                this.tell(h, "The rock shudders under your feet: something is digging toward you!");
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // A ghost's way: straight at whoever it's after, walls or no
+    private drift(e: Enemy, t: Hero, dt: number): void {
+        const dx = t.x - e.x;
+        const dz = t.z - e.z;
+        const d = Math.hypot(dx, dz);
+        if (d <= 0.8) {
+            play(e.actor, "idle");
+            return;
+        }
+        const step = Math.min(d - 0.8, this.speedOf(e) * dt);
+        e.x += (dx / d) * step;
+        e.z += (dz / d) * step;
+        e.facing = Math.atan2(dx, dz);
+        play(e.actor, "walk");
+    }
+
+    // A step down a flow field (the bell's): to the next tile nearer
+    private walkFlow(e: Enemy, flow: Int16Array, dt: number): void {
+        const region = this.region;
+        const tx = region.tileX(e.x);
+        const ty = region.tileY(e.z);
+        let best = region.flowAt(flow, e.x, e.z);
+        if (best <= 0) {
+            play(e.actor, "idle");
+            return;
+        }
+        let bx = tx;
+        let by = ty;
+        for (const [ox, oy] of [
+            [1, 0],
+            [-1, 0],
+            [0, 1],
+            [0, -1],
+        ]) {
+            if (region.crossesWall(tx, ty, tx + ox, ty + oy)) {
+                continue;
+            }
+            const n = region.flowAt(flow, tx + ox + 0.5, -(ty + oy + 0.5));
+            if (n !== -1 && n < best) {
+                best = n;
+                bx = tx + ox;
+                by = ty + oy;
+            }
+        }
+        const dx = bx + 0.5 - e.x;
+        const dz = -(by + 0.5) - e.z;
+        const len = Math.hypot(dx, dz);
+        if (len < 0.01) {
+            return;
+        }
+        const step = this.speedOf(e) * dt;
+        [e.x, e.z] = this.moveCircle(e.x, e.z, (dx / len) * step, (dz / len) * step, COLLISION_RADIUS);
+        e.facing = Math.atan2(dx, dz);
+        play(e.actor, "walk");
+    }
+
+    // The bell rung: everything but the lords heads for it a while, those
+    // after someone further off breaking away
+    private ringBell(p: Prop): void {
+        this.lure = { x: p.x, z: p.z, until: this.time + BELL_SECONDS, flow: this.region.flowField({ x: p.x, z: p.z }) };
+        for (const e of this.enemies) {
+            if (e.def.boss || e.def.passive || e.state === "dead") {
+                continue;
+            }
+            const t = e.target;
+            if (e.state === "idle" || !t || Math.hypot(t.x - e.x, t.z - e.z) > 6) {
+                e.state = "idle";
+                e.noIdleUntil = 0;
+            }
+        }
+        this.shake(0.2);
+        this.announce("The bell's toll rolls through the castle. Everything that hears it is heading for the courtyard: it's on your map.");
+    }
+
+    // The Forgotten King wakes on his throne (the host's), the strongest of
+    // the castle's lords and more, the castle's skeleton warlord grown huge
+    private wakeKing(): void {
+        this.kingWoke = true;
+        const throne = this.props.find((p) => p.kind === "throne");
+        const kinds = this.world.enemies;
+        const base = kinds.find((e) => e.def.id.endsWith("skeleton_warlord"))?.def ?? kinds[kinds.length - 1].def;
+        const lords = this.world.bosses ?? [this.world.boss];
+        const top = lords.reduce((a, b) => (b.hp > a.hp ? b : a));
+        const def: EnemyDef = {
+            ...base,
+            id: KING_ID,
+            name: "The Forgotten King",
+            boss: true,
+            champion: undefined,
+            superior: undefined,
+            hp: Math.round(top.hp * KING_HP),
+            damage: Math.round(top.damage * KING_DAMAGE),
+            scale: (base.scale ?? 1) * KING_SCALE,
+            radius: 1.1,
+            coins: top.coins,
+            aggro: top.aggro,
+            attackInterval: top.attackInterval,
+        };
+        const at = throne ? { x: throne.x, z: throne.z + 1.5 } : { x: this.px, z: this.pz };
+        if (throne) {
+            throne.on = true;
+            this.sendProp(throne);
+        }
+        void this.spawnEnemy(def, this.region.fits(at.x, at.z, 0.8) ? at : throne ?? at).then((king) => {
+            king.tint = new THREE.Color(1.5, 1.25, 0.6);
+            tint(king.actor, king.tint);
+        });
+        this.shake(0.5);
+        this.announce("The castle groans. In the great hall, the Forgotten King rises from his throne: it's on your map.");
+    }
+
+    // What the castle lends goes back: one of each borrowed weapon, worn or
+    // packed
+    private returnBorrowed(): void {
+        for (const id of this.borrowed) {
+            if (this.equipment.weapon === id) {
+                delete this.equipment.weapon;
+            } else {
+                removeItem(this.inventory, id, 1);
+            }
+        }
+        this.borrowed = [];
+    }
+
+    // A weapon off a rack: one of the map's tier, in hand, the old one packed
+    private borrowWeapon(p: Prop): boolean {
+        const tier = Math.min(5, Math.max(1, this.world.tier));
+        const weapons = (GEAR_BY_TIER.get(tier) ?? []).filter((i) => i.slot === "weapon" && !PRIZES.has(i.id) && !i.exclusive && !i.reward);
+        const item = weapons[Math.floor(this.rng() * weapons.length)];
+        if (!item) {
+            return false;
+        }
+        if (!addItem(this.inventory, item.id, 1, this.packSize)) {
+            this.hooks.onMessage("Your pack is too full to swap a weapon in.");
+            return false;
+        }
+        this.equipFromInventory(item.id);
+        if (this.equipment.weapon !== item.id) {
+            removeItem(this.inventory, item.id, 1);
+            this.hooks.onMessage("Your pack is too full to swap a weapon in.");
+            return false;
+        }
+        this.borrowed.push(item.id);
+        p.mine = true;
+        this.hooks.onMessage(`You take ${item.name} from the rack. It's the castle's: it goes back when you leave.`);
+        return true;
+    }
+
+    // A bite of glowing fungus: a heal, sharper eyes, strength, a haze, or poison
+    private eatFungus(): void {
+        const say = (text: string) => this.hooks.onMessage(text);
+        const roll = this.rng();
+        if (roll < 0.25) {
+            this.hp = Math.min(this.maxHp, this.hp + Math.round(this.maxHp * FUNGUS_HEAL));
+            say("The fungus is bitter, but you feel better.");
+        } else if (roll < 0.45) {
+            this.fungusSight = FUNGUS_SECONDS;
+            say("Your eyes sharpen: you see further in the dark for a while.");
+        } else if (roll < 0.65) {
+            this.boosts.strength = Math.max(this.boosts.strength, FUNGUS_SECONDS);
+            this.applyStats();
+            say("A rush of strength runs through you.");
+        } else if (roll < 0.85) {
+            this.fungusDim = FUNGUS_SECONDS;
+            this.shake(0.6);
+            say("The cave swims and the dark closes in. That one was bad.");
+        } else {
+            say("It tastes of rot.");
+            this.poison();
+        }
+        this.hooks.onChanged();
+    }
+
+    // Two of what's packed for brewing go into the flask (the potion's the
+    // table's: propWorld)
+    private brew(): boolean {
+        const have = this.inventory.filter((s) => getItem(s.id).ingredient).reduce((n, s) => n + s.count, 0);
+        if (have < 2) {
+            this.hooks.onMessage("You need two herbs or fungus to brew anything.");
+            return false;
+        }
+        let left = 2;
+        for (const s of this.inventory.filter((x) => getItem(x.id).ingredient)) {
+            const n = Math.min(left, s.count);
+            removeItem(this.inventory, s.id, n);
+            left -= n;
+            if (left === 0) {
+                break;
+            }
+        }
+        this.hooks.onMessage("You grind them together on the table, and a potion bubbles up in the flask.");
+        this.hooks.onChanged();
+        return true;
+    }
+
+    // A ride down the mine cart's line: to its far end, or thrown out half
+    // way when it jumps the rails
+    private rideCart(p: Prop): boolean {
+        const far = this.props[p.data];
+        if (!far) {
+            return false;
+        }
+        if (this.rng() < CART_DERAIL) {
+            const mx = (p.x + far.x) / 2;
+            const mz = (p.z + far.z) / 2;
+            const flow = this.region.flowField({ x: far.x, z: far.z });
+            for (let r = 0; r < 12; r++) {
+                for (let a = 0; a < 8; a++) {
+                    const x = Math.floor(mx + Math.cos((a / 8) * Math.PI * 2) * r) + 0.5;
+                    const z = Math.floor(mz + Math.sin((a / 8) * Math.PI * 2) * r) + 0.5;
+                    if (this.region.fits(x, z, 0.4) && this.region.flowAt(flow, x, z) >= 0) {
+                        this.moveSelfNear(x, z);
+                        this.hp = Math.max(1, this.hp - Math.max(1, Math.round(this.maxHp * CART_HURT)));
+                        this.lastHurt = this.time;
+                        this.rooted = Math.max(this.rooted, 1);
+                        this.hooks.onMessage("The cart jumps the rails half way and throws you out!");
+                        this.hooks.onChanged();
+                        return true;
+                    }
+                }
+            }
+        }
+        this.moveSelfNear(far.x, far.z);
+        this.hooks.onMessage("The cart rattles down the line and slams to a stop at its far end. Everything near heard it.");
+        return true;
+    }
+
+    // A spike trap sprung (the host's): what's on it hurt, a hero held
+    private springTrap(p: Prop): void {
+        const tier = this.world.tier;
+        const spikes: EnemyDef = { ...this.world.enemies[0].def, name: "The spike trap" };
+        for (const h of this.heroes()) {
+            if (Math.hypot(h.x - p.x, h.z - p.z) <= SPIKE_REACH) {
+                this.hurtHero(h, spikes, 0, "melee", true, Math.max(1, Math.round(h.maxHp * SPIKE_HURT)));
+                if (h.me) {
+                    this.rooted = Math.max(this.rooted, SPIKE_HELD);
+                }
+                this.tell(h, "Spikes shoot up out of the floor!");
+            }
+        }
+        for (const e of [...this.enemies]) {
+            if (e.state !== "dead" && !e.def.boss && Math.hypot(e.x - p.x, e.z - p.z) <= SPIKE_REACH + e.def.radius) {
+                this.damageEnemy(e, Math.round(SPIKE_HIT * Math.pow(1.8, tier - 1)), this.self);
+            }
+        }
+        p.uses = 0;
+        p.on = true;
+        this.trapsRearm.set(p, this.time + SPIKE_REARM);
+        this.sendProp(p);
+    }
+
+    // Every frame: the ghosts seen only by light, the fungus wearing off,
+    // the castle's night deepening (and its vampyres waking: the host's),
+    // and the spike traps seen, sprung and set again
+    private updateHaunts(dt: number): void {
+        const host = this.coop?.role !== "guest";
+        if (this.fungusSight > 0) {
+            this.fungusSight -= dt;
+        }
+        if (this.fungusDim > 0) {
+            this.fungusDim -= dt;
+        }
+        if (this.lure && this.time >= this.lure.until) {
+            this.lure = undefined;
+        }
+        if (this.world.id === CASTLE_ID) {
+            for (const e of this.enemies) {
+                if (e.def.npcId !== GHOST_NPC || e.state === "dead") {
+                    continue;
+                }
+                const d = Math.hypot(e.x - this.px, e.z - this.pz);
+                const lit = d < 1.8 || (this.lanternLit && d < this.sightShown * 0.75) || this.litCells.has(this.cave?.cellAt(e.x, e.z) ?? -1);
+                e.actor.root.visible = lit;
+                if (!lit && e.bar) {
+                    e.bar.group.visible = false;
+                }
+            }
+            this.nightStepIn -= dt;
+            if (this.nightStepIn <= 0 && this.gloom) {
+                this.nightStepIn = NIGHT_STEP;
+                this.gloomShade = 1 - NIGHT_DARKEN * Math.min(1, this.time / NIGHT_FULL);
+                const light = this.gloomNow();
+                for (const { material, color } of this.nightMaterials) {
+                    material.color.copy(color).multiply(light);
+                }
+                setWorldLight(light);
+                setTorchNight(light);
+            }
+            if (host && this.time >= NIGHT_VAMPYRES_FROM) {
+                if (!this.nightTold) {
+                    this.nightTold = true;
+                    this.announce("Night has fallen on the castle. The vampyres are waking.");
+                }
+                this.vampyresIn -= dt;
+                if (this.vampyresIn <= 0) {
+                    this.vampyresIn = NIGHT_VAMPYRES_EVERY;
+                    const vampyre = this.world.enemies.find((e) => e.def.id.endsWith("feral_vampyre"))?.def;
+                    const reach = this.flows.get(this.self.id) ?? this.region.flowField({ x: this.px, z: this.pz });
+                    for (let i = 0; vampyre && i < NIGHT_VAMPYRES; i++) {
+                        const tile = this.region.randomTile(this.rng, reach, 20, new Set());
+                        if (tile) {
+                            void this.spawnEnemy(vampyre, tile);
+                        }
+                    }
+                }
+            }
+        }
+        for (const p of this.props) {
+            if (p.kind !== "trap" || p.gone) {
+                continue;
+            }
+            const d = Math.hypot(p.x - this.px, p.z - this.pz);
+            if (p.actor) {
+                p.actor.root.visible = !!p.on || d < (this.lanternLit ? SPIKE_SEEN : SPIKE_SEEN_DARK);
+            }
+            if (!host) {
+                continue;
+            }
+            const rearm = this.trapsRearm.get(p);
+            if (rearm !== undefined && this.time >= rearm) {
+                this.trapsRearm.delete(p);
+                p.uses = 1;
+                this.sendProp(p);
+            }
+            if (p.uses > 0) {
+                const stepped =
+                    this.heroes().some((h) => Math.hypot(h.x - p.x, h.z - p.z) < SPIKE_STEP) ||
+                    this.enemies.some((e) => e.state !== "dead" && !e.def.boss && !e.def.ghostly && !(e.burrowed && e.burrowed > 0) && Math.hypot(e.x - p.x, e.z - p.z) < SPIKE_STEP);
+                if (stepped) {
+                    this.springTrap(p);
+                }
             }
         }
     }
@@ -4394,6 +5198,13 @@ export class Run {
         const coop = this.coop;
         if (this.threat.level > 0) {
             this.hooks.onMessage(`${threatName(this.threat.level)}. ${threatText(this.threat.level)}`);
+        }
+        // The run's curse and slayer contract (version 172)
+        if (this.curse) {
+            this.hooks.onMessage(`This run's curse, ${CURSES[this.curse].name}: ${CURSES[this.curse].text}.`);
+        }
+        if (this.contract) {
+            this.hooks.onMessage(`The guild's slayer contract: kill ${this.contract.count} ${Run.plural(this.contract.name)} for a purse and shards.`);
         }
         if (coop?.role === "guest") {
             const host = coop.heroes.find((h) => h.id !== coop.me)?.name ?? "the host";
@@ -5164,6 +5975,8 @@ export class Run {
         if (this.coop?.role === "host" && !this.partyOver) {
             this.coop.send({ k: "over" } satisfies DownMessage);
         }
+        // The castle's borrowed weapons go back on their racks (version 172)
+        this.returnBorrowed();
         // A clue scroll or a key is no use anywhere else
         if (kind === "extracted") {
             this.inventory = this.inventory.filter((s) => {
@@ -5205,6 +6018,8 @@ export class Run {
                 secondsLeft: Math.round(this.timeLeft),
                 party: 1 + this.mates.size,
                 balloons: this.balloonsBurst,
+                contract: this.contract?.done,
+                kingSlain: this.kingSlain,
             },
         });
     }
@@ -5614,6 +6429,9 @@ export class Run {
         } else {
             this.updateEnemies(dt);
         }
+        // (after the enemies: a ghost out of the light stays hidden, its bar
+        // too; version 172)
+        this.updateHaunts(dt);
         this.updateProjectiles(dt);
         this.updateHazards(dt);
         this.updateSplats(dt);
@@ -5771,7 +6589,12 @@ export class Run {
     private caveSight(): number {
         const lair = this.themeAt(this.px, this.pz)?.theme.sight ?? 0;
         const delver = this.isClass("Delver") ? PERK_SIGHT : 0;
-        return Math.max(3, CAVE_SIGHT + (this.carry.depths?.upgrades.sight ?? 0) + (this.lanternLit ? LANTERN_SIGHT : 0) + lair + delver);
+        // (version 172: the deeper dark's curse, a bite of fungus either way,
+        // and the castle's night falling)
+        const curse = this.curse === "dark" ? -CURSE_SIGHT : 0;
+        const fungus = (this.fungusSight > 0 ? FUNGUS_SIGHT : 0) - (this.fungusDim > 0 ? FUNGUS_SIGHT : 0);
+        const night = this.world.id === CASTLE_ID ? -Math.round(NIGHT_SIGHT * Math.min(1, this.time / NIGHT_FULL)) : 0;
+        return Math.max(3, CAVE_SIGHT + (this.carry.depths?.upgrades.sight ?? 0) + (this.lanternLit ? LANTERN_SIGHT : 0) + lair + delver + curse + fungus + night);
     }
 
     // The Depths' own on the gear's numbers: the Hardiness upgrade's
@@ -6788,9 +7611,15 @@ export class Run {
             if (this.stats.ranged) {
                 this.rangedKills++;
             }
+            this.killedOne(e.def);
         }
         if (e.def.boss) {
             this.bossKills++;
+            // With enough of its lords slain, the castle's king wakes
+            // (version 172)
+            if (this.world.id === CASTLE_ID && e.def.id !== KING_ID && this.bossKills >= KING_AFTER && !this.kingWoke) {
+                this.wakeKing();
+            }
         }
         if (this.coop?.role === "host") {
             this.coop.send({ k: "kill", u: e.uid, by: by.id, boss: e.def.boss ? 1 : undefined, champion: e.def.champion ? 1 : undefined } satisfies DownMessage);
@@ -6811,7 +7640,8 @@ export class Run {
         // then where one of its lesser kind falls, a superior rises and goes
         // for whoever's nearest, as in OSRS
         const superior = this.world.superiors?.[e.def.id.replace(/:champion$/, "")];
-        if (superior && this.superiorsRisen < SUPERIOR_MAX && this.rng() < 1 / SUPERIOR_ONE_IN) {
+        // (twice as often under the restless dead's curse: version 172)
+        if (superior && this.superiorsRisen < SUPERIOR_MAX && this.rng() < (this.curse === "restless" ? 2 : 1) / SUPERIOR_ONE_IN) {
             this.superiorsRisen++;
             const at = { x: e.x, z: e.z };
             void this.spawnEnemy(superior, at).then((s) => {
@@ -6831,6 +7661,16 @@ export class Run {
             this.dropPickup(food, 1, e.x + 0.3, e.z + 0.3);
         }
         if (e.def.boss) {
+            // The Forgotten King's own hoard (version 172): pieces as the
+            // golden chest gives them, purple and gold among them, and a purse
+            if (e.def.id === KING_ID) {
+                this.kingSlain = true;
+                for (let i = 0; i < KING_GEAR; i++) {
+                    this.dropGear(this.world.lootTiers, e.x + (i - 1) * 0.5, e.z - 0.3, PRIZE_BOSS_CHEST, 0, "boss");
+                }
+                this.dropPickup(COINS, Math.round(randInt(this.rng, 1000, 2000) * Math.pow(2.2, this.world.tier - 1) * this.threat.coins), e.x, e.z + 0.4);
+                this.announce("The Forgotten King falls, and his hoard spills across the great hall.");
+            }
             this.revealNearestExit();
             // The golden chest's key, every time
             this.dropPickup(BOSS_KEY, 1, e.x - 0.3, e.z + 0.3);
@@ -7023,6 +7863,11 @@ export class Run {
                 }
                 continue;
             }
+            // The Depths' tunneller digs off toward someone now and then
+            // (version 172)
+            if (e.def.tunneller && this.tunnel(e, heroes)) {
+                continue;
+            }
             const t = this.targetFor(e, heroes);
             e.target = t;
             const dist = t ? Math.hypot(e.x - t.x, e.z - t.z) : Infinity;
@@ -7035,9 +7880,17 @@ export class Run {
                 if (e.def.boss) {
                     aggro = Math.min(aggro, this.bossGiveUp(e) * BOSS_NOTICE_SHARE);
                 }
+                // The castle's bell rung (version 172): everything but the
+                // lords heads for it, and notices less on the way
+                const lure = this.lure && this.time < this.lure.until && !e.def.boss ? this.lure : undefined;
+                if (lure) {
+                    aggro *= BELL_AGGRO;
+                }
                 // A passive one never comes at you on sight
                 if (t && dist < aggro && !e.def.passive) {
                     this.rouse(e);
+                } else if (lure && Math.hypot(e.x - lure.x, e.z - lure.z) > 3) {
+                    this.walkFlow(e, lure.flow, dt);
                 } else if (e.def.boss && Math.hypot(e.x - e.homeX, e.z - e.homeZ) > 1) {
                     this.walkHome(e, dt);
                 } else if (e.route) {
@@ -7179,7 +8032,8 @@ export class Run {
             e.trait === "fast" || e.riled > 0
                 ? Math.max(base, Math.min(base * (e.riled > 0 ? RILE_SPEED : 1.5), BOSS_CHASE_SPEED))
                 : base;
-        return fast * (e.slow > 0 ? 0.5 : 1);
+        // (and quicker under a frenzy's curse: version 172)
+        return fast * (e.slow > 0 ? 0.5 : 1) * (this.curse === "frenzy" ? CURSE_SPEED : 1);
     }
 
     // Running for help: away from whoever it's after at full tilt, rousing
@@ -7303,8 +8157,10 @@ export class Run {
         if (this.coop?.role === "host") {
             this.coop.send({ k: "boost", u: hunter.uid, hp: hunter.def.hp, d: hunter.def.damage, h: 1 } satisfies DownMessage);
         }
-        const others = left.length > 1 ? `the ${left.length} bosses left grow stronger` : `${hunter.def.name} grows stronger`;
-        this.announce(`The Depths stir: ${others}, and ${hunter.def.name} is hunting you!`);
+        // (the castle's in its own words: version 172)
+        const castle = this.world.id === CASTLE_ID;
+        const others = left.length > 1 ? `the ${left.length} ${castle ? "lords" : "bosses"} left grow stronger` : `${hunter.def.name} grows stronger`;
+        this.announce(`${castle ? "The castle stirs" : "The Depths stir"}: ${others}, and ${hunter.def.name} is hunting you!`);
     }
 
     // The Depths' lairs (LAIR_THEMES): each boss by the cell it stands
@@ -8016,6 +8872,11 @@ export class Run {
     }
 
     private chase(e: Enemy, t: Hero, dt: number): void {
+        // A ghost drifts straight through whatever's between (version 172)
+        if (e.def.ghostly) {
+            this.drift(e, t, dt);
+            return;
+        }
         const region = this.region;
         const flow = this.flows.get(t.id);
         let dx = t.x - e.x;
@@ -8599,6 +9460,11 @@ export class Run {
             this.coinsFound += count;
             return true;
         }
+        // A map scrap is read as it's picked up (version 172)
+        if (getItem(id).scrap) {
+            this.readScrap();
+            return true;
+        }
         if (!canCarry(this.inventory, id, count)) {
             if (this.time - this.fullMessageAt > 2) {
                 this.hooks.onMessage(carryLimitText(id));
@@ -8642,7 +9508,8 @@ export class Run {
     // limits allow (food, arrows, runes) and its slots hold (version 100:
     // a stack was all or nothing, so 14 food turned down a stack of 2)
     private roomInPack(id: number, count: number): number {
-        if (id === COINS) {
+        // (a map scrap is read, never packed: version 172)
+        if (id === COINS || getItem(id).scrap) {
             return count;
         }
         const allowed = roomFor(this.inventory, id, count);
@@ -9091,6 +9958,10 @@ export class Run {
             drop(COINS, purse(150, 300));
             this.announce("The golden chest creaks open.");
             return;
+        }
+        // Now and then a scrap of an old map under the rest (version 172)
+        if (this.world.caves && this.rng() < SCRAP_CHANCE) {
+            drop(MAP_SCRAP, 1);
         }
         // About half the chests hold gear, mostly the map's own tier; the
         // rest supplies, or a purse
@@ -9855,6 +10726,10 @@ export class Run {
                     if (message.champion) {
                         this.championKills++;
                     }
+                    // (the contract and a frenzy's heal, version 172)
+                    if (e) {
+                        this.killedOne(e.def);
+                    }
                     if (e?.def.superior) {
                         this.superiorKills++;
                     }
@@ -9866,6 +10741,10 @@ export class Run {
                     this.bossKills++;
                     this.revealNearestExit();
                     const name = e?.def.name ?? "The boss";
+                    // (the party's king slain: version 172)
+                    if (name === "The Forgotten King") {
+                        this.kingSlain = true;
+                    }
                     this.hooks.onMessage(`${name} falls. The golden chest is yours. The nearest way out is ${this.exitDirection()}.`);
                     const pets = this.carry.pets ?? [];
                     if (!this.world.bosses && !pets.includes(this.world.id) && !this.petFound && this.rng() < 1 / PET_ONE_IN) {
@@ -10217,6 +11096,11 @@ export class Run {
         // aren't put down where a mate could take one (version 83)
         if (getItem(id).exclusive) {
             this.hooks.onMessage(`${getItem(id).name} stays with you.`);
+            return;
+        }
+        // Nor a weapon borrowed from the castle's racks (version 172)
+        if (this.borrowed.includes(id)) {
+            this.hooks.onMessage(`The ${getItem(id).name.toLowerCase()} is the castle's: it stays with you till you're out, then goes back on its rack.`);
             return;
         }
         if (this.dead || this.done || !removeItem(this.inventory, id, count)) {

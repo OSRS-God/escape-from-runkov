@@ -139,6 +139,10 @@ export type ItemDef = {
     oil?: boolean;
     // The key to the Depths' brimstone chest, which a superior drops
     brimstone?: boolean;
+    // Version 172: a map scrap (shows a room when picked up), and what an
+    // alchemy table brews from
+    scrap?: boolean;
+    ingredient?: boolean;
 };
 export const BRIMSTONE_KEY = 23083;
 
@@ -1481,6 +1485,15 @@ export const ITEMS: ItemDef[] = [
     { id: 1617, name: "Uncut diamond", tier: 0, value: 4000, stackable: true },
     food(5003, "Cave eel", 35, 600),
     potion(732, "Holy water", "holy", 300),
+    // Version 172: a scrap of an old map, found in chests (it shows a room
+    // as it's picked up), and what the alchemy tables brew from: the Depths'
+    // glowing fungus and the castle's courtyard herbs
+    { id: 1535, name: "Map part", tier: 0, value: 0, scrap: true },
+    { id: 2970, name: "Mort myre fungus", tier: 0, value: 200, stackable: true, ingredient: true },
+    { id: 199, name: "Grimy guam leaf", tier: 0, value: 150, stackable: true, ingredient: true },
+    { id: 201, name: "Grimy marrentill", tier: 0, value: 250, stackable: true, ingredient: true },
+    { id: 203, name: "Grimy tarromin", tier: 0, value: 400, stackable: true, ingredient: true },
+    { id: 207, name: "Grimy ranarr weed", tier: 0, value: 1200, stackable: true, ingredient: true },
     // Version 59: ranged and magic filled out. Thrown weapons, which need no
     // ammunition: darts (fastest, lightest), knives, throwing axes (the
     // heaviest), chinchompas (what they hit, everything beside it takes

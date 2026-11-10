@@ -212,6 +212,18 @@ export class Account {
         return call("POST", "daily", { day, score }, this.state.token);
     }
 
+    // The Abyss's board (version 172): the deepest each account has beaten
+    abyssBoard(): Promise<ApiResult<{ top: { name: string; score: number }[] }>> {
+        return call("GET", "abyss");
+    }
+
+    submitAbyss(depth: number): Promise<ApiResult<{ best: number; rank: number }>> {
+        if (!this.state) {
+            return Promise.resolve({ ok: false, status: 401, error: "Log in to go on the Abyss's board." });
+        }
+        return call("POST", "abyss", { score: depth }, this.state.token);
+    }
+
     // Logged out on purpose: nobody's told this device was logged out
     async logOut(): Promise<void> {
         const token = this.state?.token;
