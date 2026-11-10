@@ -4893,7 +4893,7 @@ export class Run {
             m.hero.dead = true;
             m.bar.group.visible = false;
             m.look?.play("death", { once: true });
-            this.hooks.onMessage(`${m.name} the ${m.def.title.toLowerCase()} falls. The hall will have to send someone new.`);
+            this.hooks.onMessage(`${m.name} the ${m.def.title.toLowerCase()} falls. They'll be patched up for your next run.`);
         }
     }
 
@@ -5416,7 +5416,7 @@ export class Run {
         // (and who's with you: version 173)
         if (this.merc) {
             this.hooks.onMessage(
-                `${this.merc.name} the ${this.merc.def.title.toLowerCase()} (level ${this.merc.level}) is with you, for a tenth of the coins you find if you both get out.`,
+                `${this.merc.name} the ${this.merc.def.title.toLowerCase()} (level ${this.merc.level}) is with you, for a tenth of the coins you find.`,
             );
         }
         if (coop?.role === "guest") {
@@ -6190,11 +6190,12 @@ export class Run {
         }
         // The castle's borrowed weapons go back on their racks (version 172)
         this.returnBorrowed();
-        // The mercenary out alive takes their cut of what was found (version
-        // 173)
+        // The mercenary takes their share of what was found (version 173),
+        // at the end of every run since version 174, fallen or not (out of
+        // what you're carrying: a death leaves none to take)
         const mercAlive = !!this.merc && !this.merc.hero.dead;
         let mercCut = 0;
-        if (kind === "extracted" && mercAlive) {
+        if (kind === "extracted" && this.merc) {
             mercCut = Math.min(this.coins, Math.floor(this.coinsFound * MERC_CUT));
             this.coins -= mercCut;
         }

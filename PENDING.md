@@ -189,6 +189,19 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 174 (not yet deployed), as the user asked: mercenaries are yours for good, and every
+starter class can afford one.
+- Hired once for the fee, a mercenary comes on every solo run till let go (save.ts `hired`
+  stays). A fall costs them only that run: they're patched up for the next, keeping their
+  level. They take their share, a tenth of the coins found, at the end of every run you get
+  out of, fallen or not (a death leaves nothing to take). Let go, they keep their level, but
+  hiring them again costs the fee again. The hall lists yours whatever the day's three are.
+- A new character starts with 500 coins (starter.ts STARTER_COINS: the dearest kind's first
+  fee, so any can be hired), and the starter screen says so.
+Tested on the dev server, muted: a new Squire with 500 coins and every kind affordable, a
+hedge mage hired for 500, falling, still taking a 200 coin share and still hired, and back at
+full health the next run.
+
 Version 173 (not yet deployed), as the user asked: mercenaries for solo runs (mercs.ts).
 - The Mercenaries' Hall, a new room in the guild: three of four kinds a day (sellsword,
   bowman, hedge mage, field medic), each the hall's hand of that kind by name and level, hired

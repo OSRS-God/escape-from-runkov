@@ -605,8 +605,8 @@ async function onRunEnd(result: RunResult): Promise<void> {
     save.insured = undefined;
     save.insuredPaid = undefined;
     save.activeRun = undefined;
-    // The mercenary's one run is over (version 173): out alive he's a level
-    // better; fallen, the hall's next of his kind starts from the first
+    // The mercenary's share and level (version 173; theirs for good since
+    // version 174)
     const mercGain = settleMerc(result);
     // The owner's kept kit comes home whatever happened (kit.ts), and a
     // crown's pet stays its own
@@ -646,25 +646,22 @@ async function onRunEnd(result: RunResult): Promise<void> {
     ui.showSummary(result, kept, { tasks: done, insured, grave: graveMade, graveHalved, pet, contract, depths: depthsGain, merc: mercGain });
 }
 
-// The hired mercenary after his run (version 173): what's become of him,
-// for the summary
+// The hired mercenary after a run (version 173), for the summary. Since
+// version 174, as the user asked, they're yours for good once hired: they
+// come on every solo run till let go, a fall costs them only that run, and
+// they take their share at the end of every run
 function settleMerc(result: RunResult): MercGain | undefined {
     const went = result.report.merc;
-    if (!went) {
-        return undefined;
-    }
-    save.hired = undefined;
-    const record = save.mercs?.[went.kind];
-    if (!record) {
+    const record = went ? save.mercs?.[went.kind] : undefined;
+    if (!went || !record) {
         return undefined;
     }
     const title = MERC_DEFS[went.kind].title.toLowerCase();
-    if (!went.survived) {
-        delete save.mercs![went.kind];
-        return { text: `${record.name} the ${title} fell. The hall will have a new ${title}, starting from the first level.` };
-    }
     const cut = result.report.mercCut ?? 0;
-    const paid = cut > 0 ? ` Their cut: ${cut.toLocaleString()} coins.` : "";
+    const paid = cut > 0 ? ` Their share: ${cut.toLocaleString()} coins.` : "";
+    if (!went.survived) {
+        return { text: `${record.name} the ${title} fell, but they'll be patched up for your next run.${paid}` };
+    }
     if (result.kind === "extracted" && record.level < MERC_MAX_LEVEL) {
         record.level++;
         return { text: `${record.name} the ${title} got out with you, and is level ${record.level} now.${paid}` };

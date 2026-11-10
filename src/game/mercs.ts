@@ -1,8 +1,9 @@
 // Mercenaries (version 173, as the user asked): a follower hired at the
-// guild's Mercenaries' Hall for one solo run. Each kind fights its own way;
-// one who comes back alive is a level better next time (MERC_MAX_LEVEL), and
-// one who falls is gone, his kind starting again from the first. He takes
-// MERC_CUT of the coins found on a run he gets out of. run.ts moves him.
+// guild's Mercenaries' Hall. Each kind fights its own way; one who comes
+// back alive is a level better next time (MERC_MAX_LEVEL). Since version 174
+// one hired is the player's for good, for the fee once: on every solo run
+// till let go, a fall costing only that run, and MERC_CUT of the coins found
+// taken at the end of every run. run.ts moves them.
 import { AttackStyle, GEAR_BY_TIER, ItemDef, PRIZES, Slot } from "../content/items";
 import type { Equipment } from "./save";
 
@@ -113,7 +114,7 @@ export const MERC_MAX_LEVEL = 5;
 // this much more on the fee
 export const MERC_LEVEL_UP = 0.1;
 export const MERC_LEVEL_FEE = 0.5;
-// His cut of the coins found on a run he gets out of
+// Their share of the coins found, at the end of every run
 export const MERC_CUT = 0.1;
 // The hall has three of the four in a day (by UTC day), turn about
 const MERCS_OFFERED = 3;

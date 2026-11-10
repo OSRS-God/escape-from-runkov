@@ -76,7 +76,7 @@ import {
 } from "../content/spells";
 import { TASKS, Task } from "../content/tasks";
 import { isKept, restoreCrownPets } from "../game/kit";
-import { STARTER_KITS, StarterKit, applyStarter, pickClass } from "../game/starter";
+import { STARTER_COINS, STARTER_KITS, StarterKit, applyStarter, pickClass } from "../game/starter";
 import { MERC_DEFS, MERC_MAX_LEVEL, MercGain, MercKind, mercPrice, mercsOffered } from "../game/mercs";
 import { Chat } from "./chat";
 import { FullMap } from "./fullmap";
@@ -855,7 +855,7 @@ export class UI {
                         { class: "subtitle" },
                         classOnly
                             ? "Each class has a perk of its own now. Pick the one you are: its perk is yours for good, and you keep everything you have."
-                            : "The guild kits you out for one way of fighting, with a bullseye lantern and oil for the dark, and its class's perk for good. Whatever else you want, you'll find down there or buy in the shop.",
+                            : `The guild kits you out for one way of fighting, with a bullseye lantern and oil for the dark, its class's perk for good, and ${formatCoins(STARTER_COINS)} coins, enough to hire a mercenary at the hall. Whatever else you want, you'll find down there or buy in the shop.`,
                     ),
                     // (every kit since version 164, the Delver too)
                     ...STARTER_KITS.map(card),
@@ -5358,11 +5358,13 @@ export class UI {
     // -----------------------------------------------------------------------
     // The Mercenaries' Hall (version 173, as the user asked; mercs.ts): three
     // of the four kinds today, each the hall's hand of that kind at their
-    // level, hired for the next solo run (paid now, back if let go first)
+    // level. Since version 174 one hired is yours for good, for a fee once:
+    // on every solo run till let go (and listed here whatever the day)
 
     showMercs(): void {
         const save = this.save;
-        const offered = mercsOffered(dailyDay());
+        const today = mercsOffered(dailyDay());
+        const offered = save.hired && !today.includes(save.hired) ? [save.hired, ...today] : today;
         const hire = (kind: MercKind) => {
             const mercs = (save.mercs ??= {});
             const def = MERC_DEFS[kind];
@@ -5374,15 +5376,11 @@ export class UI {
             save.coins -= price;
             save.hired = kind;
             this.persist();
-            this.message(`${record.name} the ${def.title.toLowerCase()} will come on your next solo run.`);
+            this.message(`${record.name} the ${def.title.toLowerCase()} is yours now, and comes on every solo run.`);
             this.showMercs();
         };
+        // Let go: no fee back, but they keep their level for another day
         const dismiss = () => {
-            const kind = save.hired;
-            const record = kind ? save.mercs?.[kind] : undefined;
-            if (kind && record) {
-                save.coins += mercPrice(kind, record.level);
-            }
             save.hired = undefined;
             this.persist();
             this.showMercs();
@@ -5404,7 +5402,7 @@ export class UI {
                     h("div", { class: "stats" }, def.blurb),
                 ),
                 hired
-                    ? h("button", { onclick: dismiss }, `Let go (${formatCoins(price)} back)`)
+                    ? h("button", { onclick: dismiss }, "Let go")
                     : h(
                           "button",
                           { class: "primary", disabled: !!save.hired || save.coins < price, onclick: () => hire(kind) },
@@ -5423,7 +5421,7 @@ export class UI {
                 h(
                     "div",
                     { class: "subtitle" },
-                    `A follower for your next solo run, paid now. They fight at your side, the monsters go for them too, and they take a tenth of the coins you find if you both get out. Back alive, they're a level better next time (to ${MERC_MAX_LEVEL}); if they fall, their kind starts again from the first. A party's runs go without them: they wait for a solo one.`,
+                    `A follower of your own, for a fee once: they come on every solo run till you let them go. They fight at your side, the monsters go for them too, and at the end of every run they take a tenth of the coins you found. Back alive, they're a level better (to ${MERC_MAX_LEVEL}); if they fall, they're patched up for the next run. Let go, they keep their level, but hiring them again costs the fee again. A party's runs go without them.`,
                 ),
                 h(
                     "div",
@@ -5443,7 +5441,7 @@ export class UI {
     private mercsFact(): string {
         const kind = this.save.hired;
         const record = kind ? this.save.mercs?.[kind] : undefined;
-        return kind && record ? `${record.name} the ${MERC_DEFS[kind].title.toLowerCase()} is hired` : "A follower for a solo run";
+        return kind && record ? `${record.name} the ${MERC_DEFS[kind].title.toLowerCase()}, level ${record.level}, is with you` : "A follower of your own";
     }
 
     // -----------------------------------------------------------------------

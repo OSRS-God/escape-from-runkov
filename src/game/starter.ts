@@ -3,6 +3,7 @@
 // shrimps. Each is that style's tier 1 gear, matched (bronze, leather, blue
 // wizard), with food, and the arrows or runes its weapon needs.
 import { removeItem } from "./inventory";
+import { MERC_KINDS, mercPrice } from "./mercs";
 import { Equipment, ItemStack, SaveData } from "./save";
 
 export type StarterKit = {
@@ -123,8 +124,15 @@ export function applyStarter(save: SaveData, kit: StarterKit): void {
         }
     }
     save.starterClass = kit.name;
+    // Every class starts with enough to hire any mercenary at the hall
+    // (version 174, as the user asked): the dearest's first-level fee
+    save.coins = Math.max(save.coins, STARTER_COINS);
     delete save.pickStarter;
 }
+
+// What a new character has to start with: any kind of mercenary's fee at
+// the first level
+export const STARTER_COINS = Math.max(...MERC_KINDS.map((kind) => mercPrice(kind, 1)));
 
 // A character from before version 171 picks the class it is, for its perk,
 // and keeps the gear it has
