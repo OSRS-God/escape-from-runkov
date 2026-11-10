@@ -189,6 +189,16 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 168 (not yet deployed), as the user asked: a fifth starter class for the Forgotten
+Castle, "Prayer · Monk" (starter.ts), with nothing in it that sells for much (version 167's
+Initiate was scrapped for its 11,000 coins of armour): an iron warhammer and monk's robes,
+200 coins of gear in all (about 50 at the shop), three vials of holy water, two prayer
+potions and eight shrimps, with the lantern and oil every kit gets. The robes give +11 prayer
+bonus, the most of the five, and 5 defence, the least; they count as magic, so the hammer
+hits 8% less in them. The Delver's blurb says "Light armour" now (it was "the lightest of
+the four"). Tested on the dev server: the card shows with its six items, picking it gives
+the kit, and in the castle its stats are as above with the lantern lit.
+
 Version 166 (not yet deployed), as the user asked: sixteen kinds of thing to use about the two
 maps (props.ts says what and how many; run.ts placeProps puts them in rooms of their own kind
 first, propActions says what E does, propSelf and propWorld do it). E is a tap, or a hold of
