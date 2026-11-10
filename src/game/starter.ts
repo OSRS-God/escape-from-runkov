@@ -49,17 +49,18 @@ export const STARTER_KITS: StarterKit[] = [
     // dark rather than the fight. Iron knives to throw and an iron longsword
     // in the pack for when they close in, a spiny helmet and slayer gloves
     // over leather (the lightest armour of the four), and the most light:
-    // five more cans of oil on the three every Depths start gets, and a
-    // prayer potion
+    // five more cans of oil on the three every Depths start gets, a full
+    // pack's fifteen shrimps (the user asked: six at first) and a prayer
+    // potion
     {
         style: "slayer",
         name: "Delver",
-        blurb: "The Depths' own: iron knives to throw and a longsword for when they close in, a spiny helmet and slayer gloves over leather, and light to spare: eight cans of oil and a prayer potion. The lightest armour of the four.",
+        blurb: "The Depths' own: iron knives to throw and a longsword for when they close in, a spiny helmet and slayer gloves over leather, and supplies to spare: eight cans of oil, fifteen shrimps and a prayer potion. The lightest armour of the four.",
         equipment: { weapon: 863, head: 4551, body: 1129, legs: 1095, hands: 6720, feet: 1061 },
         backpack: [
             { id: 863, count: 150 },
             { id: 1293, count: 1 },
-            { id: SHRIMPS, count: 6 },
+            { id: SHRIMPS, count: 15 },
             { id: 2434, count: 1 },
             { id: 277, count: 5 },
         ],

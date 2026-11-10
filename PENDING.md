@@ -193,8 +193,9 @@ Version 162 (not yet deployed), as the user asked: a starter class of the Depths
 Delver ("Slayer · Delver"; starter.ts, `depths` keeps it off a regular new character's
 choice). Built for the dark rather than the fight: iron knives (one held, 150 packed) and an
 iron longsword packed for close in; a spiny helmet and slayer gloves over leather, the
-lightest armour of the four; six shrimps, a prayer potion, and five cans of oil on top of the
-lantern and three every Depths start gets. Tested: the Depths' class pick shows the four, and
+lightest armour of the four; fifteen shrimps (a full pack's food; six at first, the user asked
+for fifteen), a prayer potion, and five cans of oil on top of the lantern and three every
+Depths start gets. Tested: the Depths' class pick shows the four, and
 the Delver's pick gave that kit, eight cans of oil and the lantern.
 
 Version 161 (deployed to the playtest 10 November 2026 as 2026.11.10.2): nine of the suggestions for the Depths, as the user asked, and
