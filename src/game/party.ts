@@ -98,6 +98,9 @@ export type DownMessage =
           chests: [number, number, 0 | 1 | 2 | 3 | 4][];
           // The Depths' altars (version 161)
           altars?: [number, number][];
+          // The maps' own things (version 166, props.ts): kind (its place in
+          // PROP_KINDS), x, z, which way it faces, its data and uses left
+          props?: [number, number, number, number, number, number][];
           trader?: [number, number, number];
           // The genie beside the spawn: x, z, which way he faces
           ferry?: [number, number, number];
@@ -113,6 +116,11 @@ export type DownMessage =
     | { k: "taken"; u: number; to?: string; n?: number; left?: number }
     // A chest opened (by whom, for their count of vaults)
     | { k: "opened"; c: number; by: string }
+    // One of the map's things used (version 166): its uses left, lit or
+    // pulled, and what came of it (r: a barrel's fuse lit 1, burst 2; a
+    // prisoner who fights for `by` 1, or turns on them 2; a suit of armour
+    // awake 1)
+    | { k: "prop"; i: number; u: number; on?: 1; r?: number; by?: string }
     // A patch of ground about to hurt
     | { k: "hazard"; x: number; z: number; r: number; l: number }
     // An enemy's shot at a hero, from here, and a hero's at an enemy
@@ -184,6 +192,8 @@ export type UpMessage =
     // Something put down from the pack, here, for anyone to take
     | { k: "drop"; i: number; n: number; x: number; z: number }
     | { k: "open"; c: number }
+    // One of the map's things used, its tap (a: 0) or its hold (a: 1)
+    | { k: "use"; i: number; a: 0 | 1 }
     | { k: "dig"; x: number; z: number }
     // Holding E at the way out: what's near hears it
     | { k: "wake"; x: number; z: number }

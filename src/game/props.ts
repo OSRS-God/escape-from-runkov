@@ -1,0 +1,196 @@
+// The maps' own things to use (version 166, as the user asked): what stands
+// about the Depths and the Forgotten Castle besides the chests, the altar and
+// the camps. run.ts places them (placeProps), draws them and does what they
+// do; this is what each one is and how many of them a map has.
+import type * as THREE from "three";
+import type { Actor } from "./assets";
+
+export type PropKind =
+    // Both maps
+    | "barrel"
+    | "search"
+    | "brazier"
+    | "lever"
+    | "passage"
+    | "shrine"
+    | "corpse"
+    // The Depths
+    | "vein"
+    | "pool"
+    | "crack"
+    | "ladder"
+    // The Forgotten Castle
+    | "portrait"
+    | "bookcase"
+    | "lectern"
+    | "armour"
+    | "font"
+    | "cell"
+    | "banquet";
+
+// The kinds in order: a kind's place here is its code over the wire (party.ts)
+export const PROP_KINDS: PropKind[] = [
+    "barrel",
+    "search",
+    "brazier",
+    "lever",
+    "passage",
+    "shrine",
+    "corpse",
+    "vein",
+    "pool",
+    "crack",
+    "ladder",
+    "portrait",
+    "bookcase",
+    "lectern",
+    "armour",
+    "font",
+    "cell",
+    "banquet",
+];
+
+export type Prop = {
+    kind: PropKind;
+    x: number;
+    z: number;
+    rotation: number;
+    // What's left of it to everyone: an oil barrel's one use, a vein's
+    // loads, a pool's eels, the banquet's bites (the host's count)
+    uses: number;
+    // Its own: a search spot's or corpse's look, a vein's ore, the shrine's
+    // trade, a bookcase's book (the lectern's is the right one), the far end
+    // of a passage, whether a suit of armour wakes
+    data: number;
+    // A brazier lit, the lever pulled (and the passages it opens)
+    on?: boolean;
+    // What this player's had of it already: a drink from a pool, a vial from
+    // the font, the shrine's trade, a look at the portraits
+    mine?: boolean;
+    // Gone from the map: a barrel burst, a crack broken through, a suit of
+    // armour awake, a cage opened, a corpse up and walking
+    gone?: boolean;
+    actor?: Actor;
+    // Which load of its model is the latest (a brazier lit while its cold
+    // model was still loading keeps the lit one)
+    loads?: number;
+    // A pool's water, a cell's prisoner
+    extra?: { mesh?: THREE.Mesh; actor?: Actor };
+};
+
+// Where a kind goes: on which map, how many, in which rooms first (by their
+// kind, caves.ts's), and how much open ground it wants round it
+type PropPlan = { kind: PropKind; caves: number; castle: number; rooms?: string[]; room?: number };
+
+export const PROP_PLANS: PropPlan[] = [
+    { kind: "barrel", caves: 6, castle: 6 },
+    { kind: "search", caves: 16, castle: 16 },
+    { kind: "brazier", caves: 8, castle: 8 },
+    { kind: "lever", caves: 1, castle: 1 },
+    { kind: "passage", caves: 2, castle: 2, room: 1 },
+    { kind: "shrine", caves: 1, castle: 1, room: 0.9 },
+    { kind: "corpse", caves: 8, castle: 8, room: 0.9 },
+    { kind: "vein", caves: 10, castle: 0 },
+    { kind: "pool", caves: 4, castle: 0, room: 1.4 },
+    { kind: "crack", caves: 3, castle: 0, room: 1 },
+    { kind: "ladder", caves: 3, castle: 0 },
+    { kind: "portrait", caves: 0, castle: 3, rooms: ["hall", "quarters"] },
+    { kind: "bookcase", caves: 0, castle: 3, rooms: ["library"] },
+    { kind: "lectern", caves: 0, castle: 1, rooms: ["chapel"] },
+    { kind: "armour", caves: 0, castle: 10, rooms: ["hall", "court"] },
+    { kind: "font", caves: 0, castle: 2, rooms: ["chapel"] },
+    { kind: "cell", caves: 0, castle: 3, rooms: ["dungeon"], room: 1 },
+    { kind: "banquet", caves: 0, castle: 2, rooms: ["hall"], room: 1.6 },
+];
+
+// Their models (cache loc ids; the pool's is drawn: water)
+export const BARREL_LOC = 362;
+export const SEARCH_LOCS = { caves: [357, 365, 12746], castle: [357, 365, 380] };
+export const SEARCH_NAMES = { caves: ["crate", "pile of sacks", "rubble"], castle: ["crate", "pile of sacks", "bookshelf"] };
+export const BRAZIER_LOC = 11018;
+export const BRAZIER_LIT_LOC = 11020;
+export const LEVER_LOC = 20038;
+export const PASSAGE_LOCS = { caves: 748, castle: 1579 };
+export const SHRINE_LOC = 30851;
+export const CORPSE_LOCS = [20788, 664, 6297];
+export const CRACK_LOC = 28786;
+export const LADDER_LOC = 2336;
+export const PORTRAIT_LOC = 9610;
+export const BOOKCASE_LOC = 380;
+export const LECTERN_LOC = 13642;
+export const ARMOUR_LOC = 817;
+export const FONT_LOC = 915;
+// The stocks the prisoner (the Man's model) is locked in (a hanging cage
+// hid him from the camera)
+export const CELL_LOC = 648;
+export const CELL_SCALE = 1;
+export const PRISONER_NPC = 3014;
+export const BANQUET_LOC = 12315;
+
+// The Depths' veins: each ore's rock and what it gives (gems by GEMS)
+export const VEINS: { loc: number; item?: number; name: string }[] = [
+    { loc: 11364, item: 440, name: "iron" },
+    { loc: 11366, item: 453, name: "coal" },
+    { loc: 11372, item: 447, name: "mithril" },
+    { loc: 11374, item: 449, name: "adamantite" },
+    { loc: 11376, item: 451, name: "runite" },
+    { loc: 11380, name: "gem" },
+];
+// How often each vein is found, by the map's tier (its enemies'): the
+// better ores deeper down
+export const VEIN_WEIGHTS: Record<number, number[]> = {
+    2: [4, 3, 2, 1, 0, 1],
+    3: [2, 3, 3, 2, 0.5, 1.5],
+    4: [1, 2, 3, 3, 1, 2],
+    5: [0, 1, 2, 3, 2, 2],
+};
+// A gem rock's gems: sapphire, emerald, ruby and diamond, by weight
+export const GEMS: [number, number][] = [
+    [1623, 50],
+    [1621, 30],
+    [1619, 15],
+    [1617, 5],
+];
+export const CAVE_EEL = 5003;
+export const HOLY_WATER = 732;
+
+// The shrine's trades: what it asks, and what it gives for the rest of the
+// run (one a shrine, one a hero)
+export type ShrineTrade = "blood" | "gold" | "prayer" | "flesh";
+export const SHRINE_TRADES: ShrineTrade[] = ["blood", "gold", "prayer", "flesh"];
+export const SHRINE_DAMAGE = 1.2;
+export const SHRINE_DEFENCE = 25;
+
+// The library's books, three on the shelves a run; the lectern's prayer book
+// names the one with the vault behind it
+export const BOOKS = [
+    "The Fall of House Draynor",
+    "A Treatise on Vampyres",
+    "Saradomin's Light",
+    "The Black Knights' Muster",
+    "Hymns of the Hallowed",
+    "Notes on Gargoyles",
+    "The Lords of Morytania",
+    "The Lost Heir",
+];
+
+// What holy water's blessing bites: the castle's undead and vampyres, by id
+export const HOLY_BANE = /vampyre|ankou|zombie|undead|skelet|vyrewatch|ghost|shade|wight|revenant|banshee|count_draynor|vanstrom|verzik|arrav/;
+
+// The map's dot for each kind once it's been seen (none for a crack, found
+// by sight alone), and grey once there's nothing left of it
+export const PROP_DOTS: Partial<Record<PropKind, string>> = {
+    barrel: "#c8642a",
+    brazier: "#ff9a3c",
+    lever: "#d0d0d0",
+    passage: "#9ad0ff",
+    shrine: "#d070ff",
+    vein: "#b0b0b0",
+    pool: "#4aa8ff",
+    ladder: "#c8a878",
+    portrait: "#e8d8a8",
+    lectern: "#e8d8a8",
+    font: "#8ae0ff",
+    cell: "#c8a878",
+    banquet: "#ffd27a",
+};

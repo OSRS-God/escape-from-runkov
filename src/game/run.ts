@@ -13,7 +13,9 @@ import {
     COINS,
     EAT_DELAY,
     FOOD_BY_TIER,
+    HOLY_SECONDS,
     ITEM_BY_ID,
+    POTION_EFFECT,
     POTION_SECONDS,
     PRAYER_RESTORE,
     PRAYER_BONUS_SCALE,
@@ -134,6 +136,43 @@ import { PlayerLook, RUN_CLIP_SPEED } from "./player";
 import { isKept } from "./kit";
 import { Region, Tile, TileSet, loadRegion } from "./region";
 import { CASTLE_ROOMS, CAVE_ROOMS, CaveLayout, layoutCave } from "./caves";
+import {
+    ARMOUR_LOC,
+    BANQUET_LOC,
+    BARREL_LOC,
+    BOOKCASE_LOC,
+    BOOKS,
+    BRAZIER_LIT_LOC,
+    BRAZIER_LOC,
+    CAVE_EEL,
+    CELL_LOC,
+    CELL_SCALE,
+    CORPSE_LOCS,
+    CRACK_LOC,
+    FONT_LOC,
+    GEMS,
+    HOLY_BANE,
+    HOLY_WATER,
+    LADDER_LOC,
+    LECTERN_LOC,
+    LEVER_LOC,
+    PASSAGE_LOCS,
+    PORTRAIT_LOC,
+    PRISONER_NPC,
+    PROP_DOTS,
+    PROP_KINDS,
+    PROP_PLANS,
+    Prop,
+    PropKind,
+    SEARCH_LOCS,
+    SEARCH_NAMES,
+    SHRINE_DAMAGE,
+    SHRINE_DEFENCE,
+    SHRINE_LOC,
+    SHRINE_TRADES,
+    VEINS,
+    VEIN_WEIGHTS,
+} from "./props";
 import { Character, DepthsUpgradeKey, Equipment, Grave, ItemStack } from "./save";
 import { ZOOM_MAX, ZOOM_MIN, saveSettings, settings } from "./settings";
 
@@ -497,6 +536,10 @@ type Chest = {
     room?: "trap" | "brimstone";
 };
 
+// A freed prisoner fighting at this player's side (version 166): where,
+// for how long yet, the next swing, and how long the last one plays
+type Ally = { actor: Actor; x: number; z: number; facing: number; left: number; swingIn: number; busy: number };
+
 const PLAYER_RADIUS = 0.35;
 // What the ground stops: narrower than the body, so a one tile gap between
 // trees, or a doorway, can be walked through without lining up on it
@@ -822,6 +865,65 @@ const REMAINS = 526;
 const TRAP_RINGS = 6;
 const TRAP_HIT = 0.15;
 const TRAP_ROUSE = 14;
+
+// The maps' own things (version 166, props.ts). E used on one: a tap (let go
+// within PROP_TAP seconds) or a hold of its own length; a hold is broken by
+// a hit. How close is close enough, and how far off a crack hides.
+const PROP_REACH = 1.7;
+const PROP_TAP = 0.35;
+// An oil barrel: the cans it fills, the fuse once lit, how far its burst
+// reaches, what it does to an enemy (and 1.8 times more a tier) and to a hero
+// (that share of their hitpoints)
+const BARREL_OIL = 2;
+const BARREL_HOLD = 1;
+const BARREL_FUSE = 3;
+const BARREL_REACH = 3;
+const BARREL_HIT = 30;
+const BARREL_HURT = 0.25;
+// Searching a crate, sacks, rubble or a shelf, and a dead adventurer: how
+// long, and how often a corpse gets back up
+const SEARCH_HOLD = 3;
+const CORPSE_HOLD = 2;
+const CORPSE_RISE = 0.2;
+// A vein's loads, each a hold, heard this far; a pool's eels, a fish a hold,
+// a drink's heal (of your hitpoints) and its odds of clean water or foul;
+// a crack's hold and how far its fall is heard
+const VEIN_LOADS = 3;
+const VEIN_HOLD = 3;
+const VEIN_NOISE = 9;
+const POOL_EELS = 3;
+const POOL_HOLD = 4;
+const POOL_HEAL = 0.15;
+const POOL_CLEAN = 0.45;
+const POOL_FOUL = 0.25;
+const CRACK_HOLD = 4;
+const CRACK_NOISE = 12;
+// A rope ladder: at least this many steps from where you went down, a hard
+// landing (that share of your hitpoints, and a moment held)
+const LADDER_STEPS = 60;
+const LADDER_HURT = 0.05;
+const LADDER_HELD = 1.2;
+// A suit of armour wakes with a hero this near; one in ARMOUR_ONE_IN does
+const ARMOUR_WAKE = 2.2;
+const ARMOUR_ONE_IN = 5;
+// A font's vials (one a hero), a banquet's bites, each one's heal and its
+// odds of poison, and a prisoner's odds of fighting for you
+const FONT_VIALS = 4;
+const BANQUET_BITES = 10;
+const BANQUET_HEAL = 12;
+const BANQUET_POISON = 0.2;
+const PRISONER_ALLY = 0.6;
+// A freed prisoner at your side: for so long, keeping this near, going for
+// what's this near them, a swing so often, hitting up to ALLY_HIT (and so
+// much more a tier)
+const ALLY_SECONDS = 90;
+const ALLY_FOLLOW = 2.2;
+const ALLY_REACH = 8;
+const ALLY_EVERY = 1.6;
+const ALLY_HIT = 8;
+const ALLY_HIT_TIER = 6;
+// A lit brazier keeps the weakest third of the map's kinds out of its room
+const LIT_WEAK_SHARE = 1 / 3;
 
 // The Depths' bosses' own moves (version 161, as the user asked: each of
 // the fourteen fights like itself, after its OSRS fight), by the boss's id
@@ -1507,7 +1609,7 @@ export class Run {
     private roofClearFor = 0;
     // Seconds left on each potion (a prayer potion works at once instead),
     // and until the next bite can be taken
-    readonly boosts: Record<Potion, number> = { strength: 0, defence: 0, brew: 0, prayer: 0 };
+    readonly boosts: Record<Potion, number> = { strength: 0, defence: 0, brew: 0, prayer: 0, holy: 0 };
     private eatIn = 0;
     // The whole map from above, for the minimap
     private minimap?: { image: HTMLCanvasElement; pxPerTile: number };
@@ -2006,8 +2108,14 @@ export class Run {
                 dot(camp.x, camp.z, "#c8a878", 2.5);
             }
         }
+        for (const p of this.props) {
+            const colour = this.propDot(p);
+            if (colour) {
+                dot(p.x, p.z, colour, 2.2);
+            }
+        }
         for (const e of this.enemies) {
-            if (e.state !== "dead" && (this.isExplored(e.x, e.z) || e.hunting)) {
+            if (e.state !== "dead" && (this.isExplored(e.x, e.z) || e.hunting || (e.def.boss && this.lairsShown))) {
                 dot(e.x, e.z, e.def.boss ? "#ff0000" : e.def.superior ? "#ff8c00" : "#ffff00", e.def.boss ? 4 : e.def.superior ? 3 : 2);
             }
         }
@@ -2116,8 +2224,14 @@ export class Run {
                 dot(camp.x, camp.z, "#c8a878", 0.9);
             }
         }
+        for (const p of this.props) {
+            const colour = this.propDot(p);
+            if (colour) {
+                dot(p.x, p.z, colour, 0.8);
+            }
+        }
         for (const e of this.enemies) {
-            if (e.state !== "dead" && (this.isExplored(e.x, e.z) || e.hunting)) {
+            if (e.state !== "dead" && (this.isExplored(e.x, e.z) || e.hunting || (e.def.boss && this.lairsShown))) {
                 dot(e.x, e.z, e.def.boss ? "#ff0000" : e.def.superior ? "#ff8c00" : "#ffff00", e.def.boss ? 1.4 : e.def.superior ? 1 : 0.6);
             }
         }
@@ -2456,8 +2570,9 @@ export class Run {
             .filter((c) => c.name !== cave.empty && !busy.has(c.cell))
             .sort((a, b) => a.roll - b.roll)
             .map((c) => c.cell);
-        // An open, reachable tile well inside a room
-        const tileIn = (cell: number | undefined): Tile | undefined => {
+        // An open, reachable tile well inside a room (with this much open
+        // ground round it)
+        const tileIn = (cell: number | undefined, radius = 0.7): Tile | undefined => {
             if (cell === undefined) {
                 return undefined;
             }
@@ -2467,13 +2582,14 @@ export class Run {
                 const x = ox + 12 + Math.floor(this.rng() * 40) + 0.5;
                 const z = -(oy + 12 + Math.floor(this.rng() * 40) + 0.5);
                 const i = g.tileX(x) - g.baseX + (g.tileY(z) - g.baseY) * g.sizeX;
-                if (g.flowAt(reach, x, z) >= 0 && !taken.has(i) && g.fits(x, z, 0.7)) {
+                if (g.flowAt(reach, x, z) >= 0 && !taken.has(i) && g.fits(x, z, radius)) {
                     taken.add(i);
                     return { x, z };
                 }
             }
             return undefined;
         };
+        this.placeProps(tileIn, busy, jobs);
         const altar = tileIn(cells.shift());
         if (altar) {
             this.altars.push({ ...altar, used: false });
@@ -2534,6 +2650,1146 @@ export class Run {
             }
             chest.actor = actor;
         });
+    }
+
+    // -----------------------------------------------------------------------
+    // The maps' own things (version 166, as the user asked; props.ts): oil
+    // barrels, things to search, braziers, a lever and its passage, a shrine,
+    // dead adventurers; the Depths' veins, pools, cracked rock and rope
+    // ladders; the castle's portraits, its library's secret, suits of armour,
+    // fonts, prisoners' cages and banquets
+
+    private props: Prop[] = [];
+    // The rooms a brazier's lit, by cell, and the hitpoints at or under which
+    // a kind's too weak to walk into one
+    private litCells = new Set<number>();
+    private weakHp = 0;
+    // The shrine's gifts this player has, and the bosses' lairs on their map
+    // (the shrine's prayer trade, or the castle's portraits)
+    private shrineGifts = new Set<string>();
+    private lairsShown = false;
+    // E held on one: which, for how long, since when (a hit breaks a hold)
+    private holdProp?: Prop;
+    private holdFor = 0;
+    private holdFrom = 0;
+    private allies: Ally[] = [];
+    private readonly humanFoes = new Map<string, EnemyDef>();
+    private poolDisc?: THREE.CircleGeometry;
+    private poolWater?: THREE.MeshBasicMaterial;
+
+    // Each kind's share of the map: in rooms of its own kind first, then any.
+    // The lit, the rare and the big stay out of where you arrive and the
+    // lairs; barrels, search spots, the dead, veins and armour go anywhere.
+    private placeProps(tileIn: (cell: number | undefined, radius?: number) => Tile | undefined, busy: Set<number>, jobs: Promise<void>[]): void {
+        const cave = this.cave!;
+        const castle = this.world.id === CASTLE_ID;
+        const kindOf = (cell: number) => cave.cells[cell].split("_").pop() ?? "";
+        const rooms = cave.cells.map((_, c) => c).filter((c) => cave.cells[c] !== cave.empty);
+        const pick = <T>(list: T[]): T | undefined => list[Math.floor(this.rng() * list.length)];
+        const anywhere = new Set<PropKind>(["barrel", "search", "corpse", "vein", "armour"]);
+        const tier = Math.min(5, Math.max(2, this.world.tier));
+        const weights = VEIN_WEIGHTS[tier];
+        const weighed = () => {
+            let roll = this.rng() * weights.reduce((a, b) => a + b, 0);
+            for (let i = 0; i < weights.length; i++) {
+                roll -= weights[i];
+                if (roll <= 0) {
+                    return i;
+                }
+            }
+            return 0;
+        };
+        const lit = new Set<number>();
+        for (const plan of PROP_PLANS) {
+            const count = castle ? plan.castle : plan.caves;
+            if (plan.kind === "passage") {
+                continue;
+            }
+            const free = rooms.filter((c) => anywhere.has(plan.kind) || !busy.has(c));
+            const own = plan.rooms ? free.filter((c) => plan.rooms!.includes(kindOf(c))) : [];
+            for (let n = 0; n < count; n++) {
+                let tile: Tile | undefined;
+                let cell: number | undefined;
+                for (let tries = 0; tries < 6 && !tile; tries++) {
+                    // A brazier to a room
+                    const from = plan.kind === "brazier" ? free.filter((c) => !lit.has(c)) : own.length > 0 && tries < 4 ? own : free;
+                    cell = pick(from);
+                    tile = tileIn(cell, plan.room ?? 0.6);
+                }
+                if (!tile) {
+                    continue;
+                }
+                if (plan.kind === "brazier") {
+                    lit.add(cell!);
+                }
+                const data =
+                    plan.kind === "search" || plan.kind === "corpse"
+                        ? Math.floor(this.rng() * 3)
+                        : plan.kind === "vein"
+                          ? weighed()
+                          : plan.kind === "shrine"
+                            ? Math.floor(this.rng() * SHRINE_TRADES.length)
+                            : plan.kind === "armour"
+                              ? this.rng() < 1 / ARMOUR_ONE_IN
+                                  ? 1
+                                  : 0
+                              : 0;
+                this.props.push(this.makeProp(plan.kind, tile, data));
+            }
+        }
+        // The passage's two ends, the farthest apart of a few pairs of rooms
+        const plan = PROP_PLANS.find((p) => p.kind === "passage")!;
+        const free = rooms.filter((c) => !busy.has(c));
+        let ends: [number, number] | undefined;
+        let apart = 0;
+        for (let i = 0; i < 24 && free.length > 1; i++) {
+            const a = pick(free)!;
+            const b = pick(free)!;
+            const d = Math.hypot((a % cave.cellsX) - (b % cave.cellsX), Math.floor(a / cave.cellsX) - Math.floor(b / cave.cellsX));
+            if (d > apart) {
+                apart = d;
+                ends = [a, b];
+            }
+        }
+        const a = ends ? tileIn(ends[0], plan.room) : undefined;
+        const b = ends ? tileIn(ends[1], plan.room) : undefined;
+        if (a && b) {
+            const first = this.props.length;
+            this.props.push(this.makeProp("passage", a, first + 1), this.makeProp("passage", b, first));
+        } else {
+            // No passage, no lever for it
+            this.props = this.props.filter((p) => p.kind !== "lever");
+        }
+        // The library's books, each a different one; the lectern names the
+        // one the vault's behind
+        const books = [...BOOKS.keys()].sort(() => this.rng() - 0.5);
+        const shelves = this.props.filter((p) => p.kind === "bookcase");
+        shelves.forEach((p, i) => (p.data = books[i % books.length]));
+        for (const lectern of this.props.filter((p) => p.kind === "lectern")) {
+            lectern.data = shelves.length > 0 ? pick(shelves)!.data : -1;
+        }
+        // The weakest third of the map's kinds keep out of a lit room
+        const kinds = this.world.enemies;
+        this.weakHp = kinds.length > 0 ? kinds[Math.floor((kinds.length - 1) * LIT_WEAK_SHARE)].def.hp : 0;
+        for (const p of this.props) {
+            jobs.push(this.loadProp(p));
+        }
+    }
+
+    private makeProp(kind: PropKind, tile: Tile, data: number): Prop {
+        const uses =
+            kind === "vein" ? VEIN_LOADS : kind === "pool" ? POOL_EELS : kind === "font" ? FONT_VIALS : kind === "banquet" ? BANQUET_BITES : 1;
+        return { kind, x: tile.x, z: tile.z, rotation: Math.floor(this.rng() * 4) * (Math.PI / 2), uses, data };
+    }
+
+    // A thing's model: its kind's, its look's, a brazier's lit or cold
+    private propLoc(p: Prop): number | undefined {
+        const castle = this.world.id === CASTLE_ID;
+        switch (p.kind) {
+            case "barrel":
+                return BARREL_LOC;
+            case "search":
+                return (castle ? SEARCH_LOCS.castle : SEARCH_LOCS.caves)[p.data];
+            case "brazier":
+                return p.on ? BRAZIER_LIT_LOC : BRAZIER_LOC;
+            case "lever":
+                return LEVER_LOC;
+            case "passage":
+                return castle ? PASSAGE_LOCS.castle : PASSAGE_LOCS.caves;
+            case "shrine":
+                return SHRINE_LOC;
+            case "corpse":
+                return CORPSE_LOCS[p.data];
+            case "vein":
+                return VEINS[p.data].loc;
+            case "pool":
+                return undefined;
+            case "crack":
+                return CRACK_LOC;
+            case "ladder":
+                return LADDER_LOC;
+            case "portrait":
+                return PORTRAIT_LOC;
+            case "bookcase":
+                return BOOKCASE_LOC;
+            case "lectern":
+                return LECTERN_LOC;
+            case "armour":
+                return ARMOUR_LOC;
+            case "font":
+                return FONT_LOC;
+            case "cell":
+                return CELL_LOC;
+            case "banquet":
+                return BANQUET_LOC;
+        }
+    }
+
+    private async loadProp(p: Prop): Promise<void> {
+        if (p.kind === "pool") {
+            this.drawPool(p);
+            return;
+        }
+        const loc = this.propLoc(p);
+        if (loc === undefined) {
+            return;
+        }
+        const load = (p.loads = (p.loads ?? 0) + 1);
+        const actor = await createActor("locs", loc);
+        if (this.ended || p.gone || load !== p.loads) {
+            return;
+        }
+        if (p.actor) {
+            this.scene.remove(p.actor.root);
+        }
+        this.placeActor(actor, p.x, p.z, p.rotation, p.kind === "cell" ? CELL_SCALE : p.kind === "lever" ? 1.4 : 1);
+        // (none under what's flat on the floor: a trapdoor, a hole)
+        const flat = p.kind === "ladder" || (p.kind === "passage" && this.world.id === CASTLE_ID);
+        if (!flat) {
+            addShadow(actor.root, p.kind === "banquet" ? 1.6 : p.kind === "passage" ? 1.2 : 0.6);
+        }
+        p.actor = actor;
+        this.refreshProp(p);
+        // The prisoner in the cage
+        if (p.kind === "cell" && !p.extra) {
+            p.extra = {};
+            const prisoner = await createActor("npcs", PRISONER_NPC);
+            if (this.ended || p.gone) {
+                return;
+            }
+            this.placeActor(prisoner, p.x, p.z, p.rotation);
+            prisoner.root.position.y = this.groundY(p.x, p.z) + 0.1;
+            play(prisoner, "idle");
+            p.extra.actor = prisoner;
+        }
+    }
+
+    // A pool: still, dark water a couple of tiles across
+    private drawPool(p: Prop): void {
+        if (!this.poolDisc) {
+            this.poolDisc = new THREE.CircleGeometry(1.3, 24);
+            this.poolWater = new THREE.MeshBasicMaterial({ color: 0x0e2f4a, transparent: true, opacity: 0.85, depthWrite: false });
+            this.disposables.push(this.poolDisc, this.poolWater);
+        }
+        const mesh = new THREE.Mesh(this.poolDisc, this.poolWater);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set(p.x, this.groundY(p.x, p.z) + 0.06, p.z);
+        this.scene.add(mesh);
+        p.extra = { mesh };
+    }
+
+    // A thing's colour for what's left of it: a spent one dulled, the dark
+    // ones darker
+    private refreshProp(p: Prop): void {
+        if (!p.actor) {
+            return;
+        }
+        const spent =
+            (p.kind === "vein" || p.kind === "search" || p.kind === "corpse" || p.kind === "barrel" || p.kind === "banquet") && p.uses <= 0;
+        const own =
+            p.kind === "passage" && this.world.id !== CASTLE_ID
+                ? new THREE.Color(0.32, 0.3, 0.29)
+                : p.kind === "crack"
+                  ? new THREE.Color(0.6, 0.56, 0.54)
+                  : p.kind === "bookcase"
+                    ? new THREE.Color(0.85, 0.8, 0.75)
+                    : WHITE;
+        tint(p.actor, spent ? own.clone().multiplyScalar(p.kind === "vein" ? 0.45 : 0.65) : own);
+    }
+
+    private removeProp(p: Prop): void {
+        p.gone = true;
+        if (p.actor) {
+            this.scene.remove(p.actor.root);
+        }
+        if (p.extra?.actor) {
+            this.scene.remove(p.extra.actor.root);
+        }
+        if (p.extra?.mesh) {
+            this.scene.remove(p.extra.mesh);
+        }
+    }
+
+    // How far out from its middle a thing reaches (the big ones)
+    private propSize(p: Prop): number {
+        return p.kind === "banquet" ? 1.2 : p.kind === "pool" ? 1 : p.kind === "passage" ? 0.8 : p.kind === "cell" ? 0.6 : p.kind === "corpse" ? 0.4 : 0;
+    }
+
+    // Its dot on the map, once its spot's been seen (a passage's once the
+    // lever's pulled), grey when it's spent
+    private propDot(p: Prop): string | undefined {
+        const colour = PROP_DOTS[p.kind];
+        if (!colour || p.gone || !(this.isExplored(p.x, p.z) || (p.kind === "passage" && p.on))) {
+            return undefined;
+        }
+        if (p.kind === "brazier") {
+            return p.on ? colour : "#8a6a4a";
+        }
+        const spent =
+            p.kind === "lever"
+                ? p.on
+                : p.kind === "shrine" || p.kind === "portrait"
+                  ? p.mine
+                  : p.kind === "font"
+                    ? p.mine || p.uses <= 0
+                    : p.kind === "pool"
+                      ? p.mine && p.uses <= 0
+                      : p.kind === "passage" || p.kind === "lectern"
+                        ? false
+                        : p.uses <= 0;
+        return spent ? "#8a8a8a" : colour;
+    }
+
+    // What's said of the nearest thing, and what E does there: a tap, a hold
+    // of so long, both (a barrel, a pool), or neither
+    private propActions(p: Prop): { prompt: string; tap?: boolean; hold?: { seconds: number; doing: string } } {
+        const castle = this.world.id === CASTLE_ID;
+        const searched = p.uses <= 0;
+        switch (p.kind) {
+            case "barrel":
+                if (p.on) {
+                    return { prompt: "The fuse is burning! Run!" };
+                }
+                return searched
+                    ? { prompt: "An empty oil barrel." }
+                    : {
+                          prompt: `Press E to fill ${BARREL_OIL} cans of oil from the barrel · hold E to light its fuse and run`,
+                          tap: true,
+                          hold: { seconds: BARREL_HOLD, doing: "Lighting the fuse" },
+                      };
+            case "search": {
+                const name = (castle ? SEARCH_NAMES.castle : SEARCH_NAMES.caves)[p.data];
+                return searched
+                    ? { prompt: `You've searched this ${name}.` }
+                    : { prompt: `Hold E to search the ${name} (anything near can catch you at it)`, hold: { seconds: SEARCH_HOLD, doing: `Searching the ${name}` } };
+            }
+            case "brazier":
+                if (p.on) {
+                    return { prompt: "The brazier burns bright: nothing weak comes in here." };
+                }
+                return this.lanternLit
+                    ? { prompt: "Press E to light the brazier from your lantern: the room stays lit, and the weakest things keep out", tap: true }
+                    : { prompt: "A cold brazier. A lit lantern would light it." };
+            case "lever":
+                return p.on ? { prompt: "The lever's been pulled." } : { prompt: "Press E to pull the lever", tap: true };
+            case "passage":
+                return p.on
+                    ? { prompt: castle ? "Press E to go down the trapdoor, to the passage's far end" : "Press E to crawl through the passage to its far end", tap: true }
+                    : { prompt: `A sealed ${castle ? "trapdoor" : "passage"}. A lever somewhere opens it.` };
+            case "shrine": {
+                if (p.mine) {
+                    return { prompt: "The shrine has nothing more for you." };
+                }
+                const [ask, give] = this.shrineTerms(SHRINE_TRADES[p.data]);
+                return { prompt: `Press E to make the shrine's trade: ${ask}, for ${give}`, tap: true };
+            }
+            case "corpse":
+                return searched
+                    ? { prompt: "Picked clean." }
+                    : { prompt: "Hold E to search the dead adventurer", hold: { seconds: CORPSE_HOLD, doing: "Searching the body" } };
+            case "vein":
+                return searched
+                    ? { prompt: "The vein's worked out." }
+                    : {
+                          prompt: `Hold E to mine the ${VEINS[p.data].name} rocks (${p.uses} left; the noise carries)`,
+                          hold: { seconds: VEIN_HOLD, doing: "Mining" },
+                      };
+            case "pool": {
+                const drink = !p.mine;
+                const fish = p.uses > 0;
+                if (!drink && !fish) {
+                    return { prompt: "A still, dark pool, fished out." };
+                }
+                const eels = `${p.uses} eel${p.uses === 1 ? "" : "s"} left`;
+                return {
+                    prompt: drink && fish ? `Press E to drink · hold E to fish (${eels})` : drink ? "Press E to drink from the pool" : `Hold E to fish (${eels})`,
+                    tap: drink,
+                    hold: fish ? { seconds: POOL_HOLD, doing: "Fishing" } : undefined,
+                };
+            }
+            case "crack":
+                return { prompt: "A cracked rock face, hollow behind. Hold E to break through (loud)", hold: { seconds: CRACK_HOLD, doing: "Breaking through" } };
+            case "ladder":
+                return searched
+                    ? { prompt: "The rope's snapped." }
+                    : { prompt: "Press E to climb down the rope ladder: one way, and who knows where it comes out", tap: true };
+            case "portrait":
+                return p.mine ? { prompt: "You've studied the portraits." } : { prompt: "Press E to study the portraits of the castle's lords", tap: true };
+            case "bookcase":
+                return searched ? { prompt: "Just books." } : { prompt: `Press E to pull out "${BOOKS[p.data]}"`, tap: true };
+            case "lectern":
+                return { prompt: "Press E to read the open prayer book", tap: true };
+            case "armour":
+                return { prompt: "An old suit of armour, rusted stiff." };
+            case "font":
+                return p.mine || p.uses <= 0
+                    ? { prompt: p.uses <= 0 ? "The font is dry." : "You've had your vial from the font." }
+                    : { prompt: "Press E to fill a vial with holy water", tap: true };
+            case "cell":
+                return { prompt: "Press E to free the prisoner from the stocks (he may not thank you)", tap: true };
+            case "banquet":
+                if (searched) {
+                    return { prompt: "Nothing left of the banquet but bones." };
+                }
+                return this.eatIn > 0
+                    ? { prompt: "You're still chewing." }
+                    : { prompt: `Press E to eat from the banquet (${p.uses} bite${p.uses === 1 ? "" : "s"} left; some of it's gone bad)`, tap: true };
+        }
+    }
+
+    // What the shrine asks, and what it gives
+    private shrineTerms(trade: (typeof SHRINE_TRADES)[number]): [string, string] {
+        const lairs = this.world.id === CASTLE_ID ? "every lord's hall" : "every boss's lair";
+        switch (trade) {
+            case "blood":
+                return ["half your hitpoints", "a fifth harder hits for the rest of the run"];
+            case "gold":
+                return ["half the coins you carry", "a piece of gear"];
+            case "prayer":
+                return ["your whole prayer bar", `${lairs} shown on your map`];
+            case "flesh":
+                return ["all the food you carry", `${SHRINE_DEFENCE} more defence for the rest of the run`];
+        }
+    }
+
+    // The nearest thing in reach: its prompt, and E on it. True when E's
+    // taken here (a thing with nothing to do only says so, and lets a chest
+    // beside it have E).
+    private propInteraction(dt: number, pressed: boolean): boolean {
+        let p: Prop | undefined;
+        let best = PROP_REACH;
+        for (const q of this.props) {
+            if (q.gone) {
+                continue;
+            }
+            const d = Math.hypot(q.x - this.px, q.z - this.pz) - this.propSize(q);
+            if (d < best) {
+                p = q;
+                best = d;
+            }
+        }
+        if (!p) {
+            this.holdProp = undefined;
+            this.holdFor = 0;
+            return false;
+        }
+        const act = this.propActions(p);
+        if (!act.tap && !act.hold) {
+            this.prompt = act.prompt;
+            this.holdFor = 0;
+            return false;
+        }
+        if (this.holdProp !== p) {
+            this.holdProp = p;
+            this.holdFor = 0;
+        }
+        if (pressed) {
+            if (this.holdFor === 0) {
+                this.holdFrom = this.time;
+            }
+            // A hit breaks a hold: start again
+            if (act.hold && this.lastHurt > this.holdFrom) {
+                this.holdFor = 0;
+                this.keys.delete("KeyE");
+                this.hooks.onMessage("You're hit, and lose your grip on it.");
+                this.prompt = act.prompt;
+                return true;
+            }
+            this.holdFor += dt;
+            if (!act.hold) {
+                this.keys.delete("KeyE");
+                this.holdFor = 0;
+                this.useProp(p, false);
+                return true;
+            }
+            if (this.holdFor >= act.hold.seconds) {
+                this.keys.delete("KeyE");
+                this.holdFor = 0;
+                this.useProp(p, true);
+                return true;
+            }
+            if (this.holdFor > PROP_TAP || !act.tap) {
+                if (this.swingIn < 0) {
+                    this.player.play("idle");
+                }
+                this.prompt = `${act.hold.doing}... ${Math.max(0, act.hold.seconds - this.holdFor).toFixed(1)}s`;
+                return true;
+            }
+            this.prompt = act.prompt;
+            return true;
+        }
+        // Let go soon enough: a tap
+        if (act.tap && this.holdFor > 0 && this.holdFor <= PROP_TAP) {
+            this.holdFor = 0;
+            this.useProp(p, false);
+            return true;
+        }
+        this.holdFor = 0;
+        this.prompt = act.prompt;
+        return true;
+    }
+
+    // E on a thing: this player's own part of it here, then the map's (the
+    // host's, asked by a guest)
+    private useProp(p: Prop, hold: boolean): void {
+        if (!this.propSelf(p, hold) || !this.propReady(p, hold)) {
+            return;
+        }
+        if (this.coop?.role === "guest") {
+            this.coop.send({ k: "use", i: this.props.indexOf(p), a: hold ? 1 : 0 } satisfies UpMessage);
+        } else {
+            this.propWorld(p, this.self, hold);
+        }
+    }
+
+    // Whether the map has a part in it still: the host's check (a guest's
+    // ask can come after someone else took the last of it)
+    private propReady(p: Prop, hold: boolean): boolean {
+        if (p.gone) {
+            return false;
+        }
+        switch (p.kind) {
+            case "barrel":
+                return p.uses > 0 && !p.on;
+            case "brazier":
+            case "lever":
+                return !p.on;
+            case "shrine":
+                return SHRINE_TRADES[p.data] === "gold";
+            case "pool":
+                return hold && p.uses > 0;
+            case "passage":
+            case "portrait":
+            case "lectern":
+            case "armour":
+                return false;
+            default:
+                return p.uses > 0;
+        }
+    }
+
+    // This player's own part: what they drink, eat, trade, read or climb;
+    // false if nothing comes of it
+    private propSelf(p: Prop, hold: boolean): boolean {
+        const say = (text: string) => this.hooks.onMessage(text);
+        switch (p.kind) {
+            case "barrel":
+                say(hold ? "You light the barrel's fuse. Run!" : `You fill ${BARREL_OIL} cans of oil from the barrel.`);
+                return true;
+            case "brazier":
+                return this.lanternLit;
+            case "passage": {
+                const far = this.props[p.data];
+                if (!far) {
+                    return false;
+                }
+                this.moveSelfNear(far.x, far.z);
+                say(this.world.id === CASTLE_ID ? "You climb down the trapdoor, along a dark passage and up through another." : "You crawl through the passage and out its far end.");
+                return false;
+            }
+            case "shrine":
+                return this.shrineTrade(p);
+            case "pool":
+                if (hold) {
+                    return true;
+                }
+                p.mine = true;
+                this.hp = Math.min(this.maxHp, this.hp + Math.round(this.maxHp * POOL_HEAL));
+                {
+                    const roll = this.rng();
+                    if (roll < POOL_FOUL) {
+                        say("The water tastes foul.");
+                        this.poison();
+                    } else if (roll < POOL_FOUL + POOL_CLEAN) {
+                        this.poisonTicks = 0;
+                        say("The water's cold and clean, and settles any poison in you.");
+                    } else {
+                        say("The water's cold, and does you good.");
+                    }
+                }
+                this.hooks.onChanged();
+                return false;
+            case "ladder":
+                return this.climbDown();
+            case "portrait":
+                this.studyPortraits();
+                return false;
+            case "lectern":
+                say(
+                    p.data >= 0
+                        ? `A prayer book lies open on the lectern, one line underlined: "What the faithful keep, they keep behind ${BOOKS[p.data]}."`
+                        : "A prayer book lies open on the lectern, its pages torn out.",
+                );
+                return false;
+            case "font":
+                p.mine = true;
+                say("You fill a vial with holy water at the font.");
+                return true;
+            case "banquet":
+                this.eatIn = EAT_DELAY;
+                this.hp = Math.min(this.maxHp, this.hp + BANQUET_HEAL);
+                if (this.rng() < BANQUET_POISON) {
+                    say("You eat from the banquet. Something in it had gone bad.");
+                    this.poison();
+                } else {
+                    say("You eat from the banquet. It's cold, but it's good.");
+                }
+                this.hooks.onChanged();
+                return true;
+            default:
+                return true;
+        }
+    }
+
+    // The shrine's trade, paid and given here (the gold's gear is the map's:
+    // propWorld); false if this player can't pay
+    private shrineTrade(p: Prop): boolean {
+        const trade = SHRINE_TRADES[p.data];
+        const say = (text: string) => this.hooks.onMessage(text);
+        switch (trade) {
+            case "blood":
+                if (this.hp < 10) {
+                    say("You're too weak to give the shrine blood.");
+                    return false;
+                }
+                this.hp = Math.ceil(this.hp / 2);
+                this.shrineGifts.add("blood");
+                this.applyStats();
+                say("The shrine drinks half your blood. Your arms burn with its strength.");
+                break;
+            case "gold":
+                if (this.coins < 100) {
+                    say("The shrine wants more gold than you carry.");
+                    return false;
+                }
+                this.coins -= Math.floor(this.coins / 2);
+                say("The shrine takes half your coins, and gives something back.");
+                break;
+            case "prayer":
+                if (this.prayer < 50) {
+                    say("The shrine wants a fuller prayer bar than yours.");
+                    return false;
+                }
+                this.prayer = 0;
+                this.lairsShown = true;
+                say(`The shrine drains your prayer, and shows you ${this.world.id === CASTLE_ID ? "every lord's hall" : "every boss's lair"}: they're on your map.`);
+                break;
+            case "flesh": {
+                const food = this.inventory.filter((s) => getItem(s.id).heal);
+                if (food.length === 0) {
+                    say("The shrine wants food, and you carry none.");
+                    return false;
+                }
+                for (const s of food) {
+                    removeItem(this.inventory, s.id, s.count);
+                }
+                this.shrineGifts.add("flesh");
+                this.applyStats();
+                say("The shrine takes all your food. Your skin hardens like bark.");
+                break;
+            }
+        }
+        p.mine = true;
+        this.hooks.onChanged();
+        return true;
+    }
+
+    // The portraits: every lord still holding court, and where
+    private studyPortraits(): void {
+        for (const p of this.props) {
+            if (p.kind === "portrait") {
+                p.mine = true;
+            }
+        }
+        this.lairsShown = true;
+        const lords = this.enemies.filter((e) => e.def.boss && e.state !== "dead");
+        this.hooks.onMessage(
+            lords.length > 0
+                ? `The portraits show the lords still holding court: ${lords
+                      .map((e) => `${e.def.name}, ${Math.round(Math.hypot(e.x - this.px, e.z - this.pz))} tiles to the ${this.compassTo(e.x, e.z)}`)
+                      .join("; ")}. Their halls are on your map now.`
+                : "Every lord in the portraits has fallen.",
+        );
+    }
+
+    // A rope ladder down: somewhere a long walk off, never a living boss's
+    // lair, and a hard landing
+    private climbDown(): boolean {
+        const g = this.region;
+        const cave = this.cave;
+        const flow = g.flowField({ x: this.px, z: this.pz });
+        const lairs = new Set(this.enemies.filter((e) => e.def.boss && e.state !== "dead").map((e) => cave?.cellAt(e.x, e.z)));
+        for (let tries = 0; tries < 400; tries++) {
+            const x = g.baseX + Math.floor(this.rng() * g.sizeX) + 0.5;
+            const z = -(g.baseY + Math.floor(this.rng() * g.sizeY) + 0.5);
+            if (g.flowAt(flow, x, z) >= LADDER_STEPS && g.fits(x, z, 0.4) && !lairs.has(cave?.cellAt(x, z))) {
+                const far = Math.round(Math.hypot(x - this.px, z - this.pz));
+                const way = this.compassTo(x, z);
+                this.moveSelfNear(x, z);
+                this.rooted = Math.max(this.rooted, LADDER_HELD);
+                this.hp = Math.max(1, this.hp - Math.max(1, Math.round(this.maxHp * LADDER_HURT)));
+                this.lastHurt = this.time;
+                this.hooks.onMessage(`You climb down into the dark, and the rope snaps under you. You land hard, ${far} tiles ${way} of where you went down.`);
+                this.hooks.onChanged();
+                return true;
+            }
+        }
+        this.hooks.onMessage("The rope ladder hangs over nothing you'd want to drop into.");
+        return false;
+    }
+
+    // This player put down beside a spot, where there's room
+    private moveSelfNear(x: number, z: number): void {
+        let at = { x, z };
+        for (const [ox, oz] of [
+            [1.3, 0],
+            [-1.3, 0],
+            [0, 1.3],
+            [0, -1.3],
+            [0, 0],
+        ]) {
+            if (this.region.fits(x + ox, z + oz, 0.3)) {
+                at = { x: x + ox, z: z + oz };
+                break;
+            }
+        }
+        this.px = at.x;
+        this.pz = at.z;
+        this.player.root.position.set(at.x, this.groundY(at.x, at.z), at.z);
+        this.exploredTile = -1;
+    }
+
+    // The map's part: what's left of it, what drops, what wakes, what
+    // everyone sees. The host's (by is whoever used it).
+    private propWorld(p: Prop, by: Hero, hold: boolean): void {
+        const tier = this.world.tier;
+        const purse = (min: number, max: number) => Math.round(randInt(this.rng, min, max) * Math.pow(2.2, tier - 1) * this.threat.coins);
+        const give = (id: number, count: number) => this.dropPickup(id, count, by.x, by.z, 0.5);
+        const potion = () => SHOP_POTIONS[Math.floor(this.rng() * SHOP_POTIONS.length)];
+        const food = () => FOOD_BY_TIER[Math.min(FOOD_BY_TIER.length - 1, tier - 1)];
+        switch (p.kind) {
+            case "barrel":
+                p.uses = 0;
+                if (!hold) {
+                    give(OIL_CAN, BARREL_OIL);
+                    this.sendProp(p);
+                    return;
+                }
+                p.on = true;
+                this.sendProp(p);
+                this.lightFuse(p, by);
+                return;
+            case "search": {
+                p.uses = 0;
+                this.sendProp(p);
+                const roll = this.rng();
+                if (!this.clueDropped && roll < 0.03) {
+                    this.clueDropped = true;
+                    give(CLUE_SCROLL, 1);
+                } else if (roll < 0.45) {
+                    this.tell(by, "Nothing but dust and cobwebs.");
+                    return;
+                } else if (roll < 0.65) {
+                    give(COINS, purse(20, 60));
+                } else if (roll < 0.8) {
+                    give(food(), 1);
+                } else if (roll < 0.88) {
+                    give(OIL_CAN, 1);
+                } else if (roll < 0.95) {
+                    if (this.rng() < 0.5) {
+                        give(ammoOfTier("arrows", tier, this.rng()), randInt(this.rng, 5, 10));
+                    } else {
+                        const runes = runeDrop(tier, this.rng(), this.rng(), (lo, hi) => randInt(this.rng, lo, hi));
+                        give(runes.id, runes.count);
+                    }
+                } else {
+                    give(potion(), 1);
+                }
+                this.tell(by, "There's something in here.");
+                return;
+            }
+            case "brazier":
+                p.on = true;
+                p.uses = 0;
+                this.lightBrazier(p);
+                this.sendProp(p);
+                // The weakest in the room make off
+                for (const e of this.enemies) {
+                    if (e.state !== "dead" && this.isWeak(e) && this.cave?.cellAt(e.x, e.z) === this.cave?.cellAt(p.x, p.z)) {
+                        e.state = "flee";
+                        e.fleeLeft = FLEE_SECONDS;
+                        e.noIdleUntil = this.time + FLEE_PERSIST;
+                    }
+                }
+                this.announce("A brazier roars into light. The room's lit for good, and the weakest things keep out of it.");
+                return;
+            case "lever":
+                p.on = true;
+                p.uses = 0;
+                this.sendProp(p);
+                for (const q of this.props) {
+                    if (q.kind === "passage") {
+                        q.on = true;
+                        this.sendProp(q);
+                    }
+                }
+                this.announce(
+                    this.world.id === CASTLE_ID
+                        ? "Somewhere a trapdoor's bolt slides back: a passage under the castle is open, both ends on your map."
+                        : "Somewhere stone grinds on stone: a passage through the rock is open, both ends on your map.",
+                );
+                return;
+            case "shrine":
+                this.dropGear(this.world.lootTiers, by.x, by.z, PRIZE_FULL);
+                return;
+            case "corpse": {
+                p.uses = 0;
+                if (this.rng() < CORPSE_RISE) {
+                    this.removeProp(p);
+                    this.sendProp(p, 1);
+                    void this.spawnEnemy(this.champion(this.humanFoe("Risen adventurer")), { x: p.x, z: p.z }).then((e) => {
+                        e.cooldown = 0.8;
+                        this.rouse(e);
+                    });
+                    this.announce("The dead adventurer lurches back up!");
+                    return;
+                }
+                this.sendProp(p);
+                const roll = this.rng();
+                if (roll < 0.35) {
+                    this.dropGear(this.world.lootTiers, by.x, by.z);
+                } else if (roll < 0.7) {
+                    give(COINS, purse(80, 200));
+                } else {
+                    const r = this.rng();
+                    give(r < 0.4 ? food() : r < 0.7 ? potion() : OIL_CAN, 1);
+                }
+                this.tell(by, "The body still has something on it.");
+                return;
+            }
+            case "vein": {
+                p.uses--;
+                this.sendProp(p);
+                this.wakeNear(p.x, p.z, VEIN_NOISE);
+                const vein = VEINS[p.data];
+                let id = vein.item;
+                if (id === undefined) {
+                    let roll = this.rng() * GEMS.reduce((n, [, w]) => n + w, 0);
+                    id = GEMS[0][0];
+                    for (const [gem, w] of GEMS) {
+                        roll -= w;
+                        if (roll <= 0) {
+                            id = gem;
+                            break;
+                        }
+                    }
+                }
+                give(id, vein.item !== undefined && p.data < 2 ? randInt(this.rng, 1, 2) : 1);
+                this.tell(by, vein.item !== undefined ? `You mine some ${vein.name === "coal" ? "coal" : `${vein.name} ore`}. The noise carries.` : "You chip a gem out of the rock. The noise carries.");
+                return;
+            }
+            case "pool":
+                p.uses--;
+                this.sendProp(p);
+                give(CAVE_EEL, 1);
+                this.tell(by, "You catch a cave eel.");
+                return;
+            case "crack":
+                p.uses = 0;
+                this.removeProp(p);
+                this.sendProp(p, 1);
+                this.wakeNear(p.x, p.z, CRACK_NOISE);
+                this.shake(0.3);
+                this.leaveDebris(p.x + 0.6, p.z);
+                this.leaveDebris(p.x - 0.5, p.z + 0.4);
+                this.dropGear(this.world.lootTiers, p.x, p.z, PRIZE_FULL);
+                this.dropGear(this.world.lootTiers, p.x + 0.4, p.z, PRIZE_FULL);
+                this.dropPickup(COINS, purse(150, 300), p.x, p.z);
+                this.announce("The cracked rock gives way: someone hid a cache behind it!");
+                return;
+            case "ladder":
+                p.uses = 0;
+                this.sendProp(p);
+                return;
+            case "bookcase": {
+                p.uses = 0;
+                this.sendProp(p);
+                const right = this.props.some((q) => q.kind === "lectern" && q.data === p.data);
+                if (right) {
+                    for (const q of this.props) {
+                        if (q.kind === "bookcase" && q.uses > 0) {
+                            q.uses = 0;
+                            this.sendProp(q);
+                        }
+                    }
+                    this.dropGear(this.world.lootTiers, p.x, p.z, PRIZE_CASKET, 0, "crystal");
+                    this.dropGear(this.world.lootTiers, p.x + 0.4, p.z, PRIZE_CASKET, 0, "crystal");
+                    this.dropPickup(COINS, purse(300, 600), p.x, p.z);
+                    this.shake(0.2);
+                    this.announce(`"${BOOKS[p.data]}" tilts out, and the bookcase swings aside: a hidden vault!`);
+                    return;
+                }
+                const weakest = this.world.enemies.slice(0, 2).map((e) => e.def);
+                for (let n = 0; n < 3 && weakest.length > 0; n++) {
+                    const def = weakest[n % weakest.length];
+                    const angle = (n / 3) * Math.PI * 2;
+                    const at = { x: p.x + Math.cos(angle) * 1.2, z: p.z + Math.sin(angle) * 1.2 };
+                    void this.spawnEnemy(def, this.region.fits(at.x, at.z, 0.3) ? at : { x: p.x, z: p.z }).then((e) => this.rouse(e));
+                }
+                this.announce(`Behind "${BOOKS[p.data]}" was a nest, and what was in it swarms out!`);
+                return;
+            }
+            case "font":
+                p.uses--;
+                this.sendProp(p);
+                give(HOLY_WATER, 1);
+                return;
+            case "cell": {
+                p.uses = 0;
+                this.removeProp(p);
+                const ally = this.rng() < PRISONER_ALLY;
+                this.sendProp(p, ally ? 3 : 4, by);
+                if (ally) {
+                    if (by.me) {
+                        this.freeAlly(p);
+                    }
+                    return;
+                }
+                void this.spawnEnemy(this.champion(this.humanFoe("Crazed prisoner")), { x: p.x, z: p.z }).then((e) => {
+                    e.cooldown = 0.6;
+                    this.rouse(e);
+                });
+                this.announce("The prisoner's gone mad down here, and turns on whoever let him out!");
+                return;
+            }
+            case "banquet":
+                p.uses--;
+                this.sendProp(p);
+                return;
+            default:
+                return;
+        }
+    }
+
+    // A barrel's fuse: BARREL_FUSE seconds, then everything near burns
+    private lightFuse(p: Prop, by: Hero): void {
+        const tier = this.world.tier;
+        const flames: EnemyDef = { ...this.world.enemies[0].def, name: "The burning oil" };
+        this.hazard(
+            p.x,
+            p.z,
+            BARREL_REACH,
+            BARREL_FUSE,
+            (h) => this.hurtHero(h, flames, 0, "melee", true, Math.max(1, Math.round(h.maxHp * BARREL_HURT))),
+            () => {
+                this.removeProp(p);
+                this.sendProp(p, 1);
+                const hit = Math.round(BARREL_HIT * Math.pow(1.8, tier - 1));
+                for (const e of [...this.enemies]) {
+                    if (e.state !== "dead" && Math.hypot(e.x - p.x, e.z - p.z) <= BARREL_REACH + e.def.radius) {
+                        this.damageEnemy(e, hit, by);
+                    }
+                }
+                this.shake(0.35);
+                this.leaveDebris(p.x, p.z);
+                this.wakeNear(p.x, p.z, 12);
+                this.announce("The oil barrel goes up in a ball of flame!");
+            },
+        );
+    }
+
+    // A brazier lit, for everyone: its flame, a light of the room's own,
+    // and the room on the map
+    private lightBrazier(p: Prop): void {
+        void this.loadProp(p);
+        this.cave?.lights.push({ x: p.x, z: p.z, kind: 0 });
+        const cell = this.cave?.cellAt(p.x, p.z) ?? -1;
+        if (cell >= 0) {
+            this.litCells.add(cell);
+            this.revealCell(cell);
+        }
+    }
+
+    // A whole room cleared off the map's fog
+    private revealCell(cell: number): void {
+        const g = this.region;
+        const mini = this.minimap;
+        const cave = this.cave;
+        if (!mini || !this.fog || !this.explored || !cave) {
+            return;
+        }
+        const cx = (cell % cave.cellsX) * 64;
+        const cy = Math.floor(cell / cave.cellsX) * 64;
+        for (let y = cy; y < Math.min(g.sizeY, cy + 64); y++) {
+            for (let x = cx; x < Math.min(g.sizeX, cx + 64); x++) {
+                this.explored[x + y * g.sizeX] = 1;
+            }
+        }
+        const ctx = this.fog.getContext("2d")!;
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.fillRect(cx * mini.pxPerTile, (g.sizeY - cy - 64) * mini.pxPerTile, 64 * mini.pxPerTile, 64 * mini.pxPerTile);
+    }
+
+    // Too weak to walk into a lit room: the weakest third of the map's
+    // kinds, never a boss, champion or superior
+    private isWeak(e: Enemy): boolean {
+        return !e.def.boss && !e.def.champion && !e.def.superior && e.def.hp <= this.weakHp;
+    }
+
+    // A man of the castle's dungeons (the Man's model) with the strength of
+    // the map's middling kind: a prisoner gone mad, a dead adventurer risen
+    private humanFoe(name: string): EnemyDef {
+        let def = this.humanFoes.get(name);
+        if (!def) {
+            const kinds = this.world.enemies;
+            const base = kinds[Math.floor(kinds.length / 2)].def;
+            def = {
+                ...base,
+                id: `${this.world.id}:${name.toLowerCase().replace(/ /g, "_")}`,
+                name,
+                npcId: PRISONER_NPC,
+                shoots: undefined,
+                scale: 1,
+                radius: 0.5,
+                tiny: undefined,
+                passive: undefined,
+            };
+            this.humanFoes.set(name, def);
+        }
+        return def;
+    }
+
+    // What's changed of a thing, to the guests
+    private sendProp(p: Prop, r?: number, by?: Hero): void {
+        this.refreshProp(p);
+        if (this.coop?.role === "host") {
+            this.coop.send({ k: "prop", i: this.props.indexOf(p), u: p.uses, on: p.on ? 1 : undefined, r, by: by?.id } satisfies DownMessage);
+        }
+    }
+
+    // The host's word on a thing, on a guest
+    private applyProp(message: Extract<DownMessage, { k: "prop" }>): void {
+        const p = this.props[message.i];
+        if (!p) {
+            return;
+        }
+        p.uses = message.u;
+        if (message.on && !p.on) {
+            p.on = true;
+            if (p.kind === "brazier") {
+                this.lightBrazier(p);
+            }
+        }
+        if (message.r !== undefined && message.r > 0 && !p.gone) {
+            this.removeProp(p);
+            if (message.r === 3 && message.by === this.self.id) {
+                this.freeAlly(p);
+            }
+        }
+        this.refreshProp(p);
+    }
+
+    // Every frame: the prisoners' idling, the castle's armour waking (the
+    // host's), and the freed prisoners fighting
+    private updateProps(dt: number): void {
+        for (const p of this.props) {
+            if (p.gone) {
+                continue;
+            }
+            p.extra?.actor?.mixer.update(dt);
+            if (p.kind === "armour" && p.data === 1 && this.coop?.role !== "guest") {
+                const woken = this.heroes().find((h) => !h.dead && Math.hypot(h.x - p.x, h.z - p.z) < ARMOUR_WAKE);
+                if (woken) {
+                    this.removeProp(p);
+                    this.sendProp(p, 1);
+                    const armour = this.world.enemies.find((e) => e.def.id.endsWith("animated_steel_armour"))?.def ?? this.world.enemies[0].def;
+                    void this.spawnEnemy(this.champion(armour), { x: p.x, z: p.z }).then((e) => {
+                        e.cooldown = 0.6;
+                        this.rouse(e);
+                    });
+                    this.announce("A suit of armour lurches to life!");
+                }
+            }
+        }
+        this.updateAllies(dt);
+    }
+
+    // A freed prisoner, at this player's side for ALLY_SECONDS
+    private freeAlly(at: { x: number; z: number }): void {
+        this.hooks.onMessage("The prisoner rubs his wrists and grabs a chair leg: he'll fight at your side for a while.");
+        void createActor("npcs", PRISONER_NPC).then((actor) => {
+            if (this.ended) {
+                return;
+            }
+            this.placeActor(actor, at.x, at.z);
+            addShadow(actor.root, 0.45);
+            play(actor, "idle");
+            this.allies.push({ actor, x: at.x, z: at.z, facing: 0, left: ALLY_SECONDS, swingIn: ALLY_EVERY, busy: 0 });
+        });
+    }
+
+    // Each follows this player and goes for what's near them, a swing every
+    // ALLY_EVERY seconds (this player's hit: a guest's goes to the host)
+    private updateAllies(dt: number): void {
+        const tier = this.world.tier;
+        for (const a of [...this.allies]) {
+            a.actor.mixer.update(dt);
+            a.left -= dt;
+            a.swingIn -= dt;
+            a.busy -= dt;
+            if (a.left <= 0 || this.done) {
+                this.scene.remove(a.actor.root);
+                this.allies.splice(this.allies.indexOf(a), 1);
+                if (!this.done) {
+                    this.hooks.onMessage("The prisoner slips away into the dark.");
+                }
+                continue;
+            }
+            let target: Enemy | undefined;
+            let best = ALLY_REACH;
+            for (const e of this.enemies) {
+                if (e.state === "dead" || e.def.passive || Math.hypot(e.x - this.px, e.z - this.pz) > ALLY_REACH * 1.5) {
+                    continue;
+                }
+                const d = Math.hypot(e.x - a.x, e.z - a.z);
+                if (d < best) {
+                    best = d;
+                    target = e;
+                }
+            }
+            const gx = target ? target.x : this.px;
+            const gz = target ? target.z : this.pz;
+            const stop = target ? target.def.radius + 0.8 : ALLY_FOLLOW;
+            const dx = gx - a.x;
+            const dz = gz - a.z;
+            const d = Math.hypot(dx, dz);
+            if (!target && d > 20) {
+                // Left behind (a passage, a ladder): he finds his way
+                a.x = this.px - Math.sin(this.facing) * 1.2;
+                a.z = this.pz - Math.cos(this.facing) * 1.2;
+            } else if (d > stop) {
+                const step = PLAYER_SPEED * 0.9 * dt;
+                [a.x, a.z] = this.moveCircle(a.x, a.z, (dx / d) * step, (dz / d) * step, COLLISION_RADIUS);
+                a.facing = Math.atan2(dx, dz);
+                if (a.busy <= 0) {
+                    play(a.actor, "walk");
+                }
+            } else if (target) {
+                a.facing = Math.atan2(dx, dz);
+                if (a.swingIn <= 0) {
+                    a.swingIn = ALLY_EVERY;
+                    a.busy = 0.8;
+                    play(a.actor, "attack", { once: true });
+                    this.damageEnemy(target, randInt(this.rng, 0, ALLY_HIT + ALLY_HIT_TIER * tier), this.self);
+                } else if (a.busy <= 0) {
+                    play(a.actor, "idle");
+                }
+            } else if (a.busy <= 0) {
+                play(a.actor, "idle");
+            }
+            a.actor.root.position.set(a.x, this.groundY(a.x, a.z), a.z);
+            a.actor.root.rotation.y = a.facing;
+        }
     }
 
     // A portal out, swirling from the moment it's there
@@ -4127,6 +5383,7 @@ export class Run {
         this.updateLairs();
         this.updateDepthsExits();
         this.updateLantern(dt);
+        this.updateProps(dt);
         this.updateHunt();
         this.updateDebris(dt);
         this.updateLairThemes(dt);
@@ -4314,6 +5571,16 @@ export class Run {
         if (this.equipment.cape === SLAYER_CAPE) {
             stats.damage = Math.round(stats.damage * SLAYER_CAPE_DAMAGE);
         }
+        // The shrine's gifts (version 166), for the rest of the run
+        if (this.shrineGifts.has("blood")) {
+            stats.damage = Math.round(stats.damage * SHRINE_DAMAGE);
+        }
+        if (this.shrineGifts.has("flesh")) {
+            stats.defence += SHRINE_DEFENCE;
+            stats.defenceVs.melee += SHRINE_DEFENCE;
+            stats.defenceVs.ranged += SHRINE_DEFENCE;
+            stats.defenceVs.magic += SHRINE_DEFENCE;
+        }
     }
 
     // A bullseye lantern in the pack burns a can of oil every OIL_SECONDS:
@@ -4460,6 +5727,14 @@ export class Run {
         for (const chest of this.chests) {
             if (!chest.opened && (chest.boss || chest.room || chest.vault) && near(chest.tile.x, chest.tile.z)) {
                 out.push({ x: chest.tile.x, z: chest.tile.z, kind: chest.vault ? 2 : 0, sight: 1.8 });
+            }
+        }
+        // The shrine, the pools and the font, a gem rock's glint (version 166;
+        // a lit brazier is one of the rooms' own lights now)
+        for (const p of this.props) {
+            const glow = p.kind === "shrine" ? 2 : p.kind === "pool" || p.kind === "font" ? 1 : p.kind === "vein" && !VEINS[p.data].item && p.uses > 0 ? 2 : -1;
+            if (glow >= 0 && near(p.x, p.z)) {
+                out.push({ x: p.x, z: p.z, kind: glow, sight: p.kind === "vein" ? 1.2 : 2 });
             }
         }
         return out;
@@ -5178,6 +6453,11 @@ export class Run {
         // Under the ground, nothing reaches it (a signature move)
         if (e.burrowed !== undefined && e.burrowed > 0) {
             return;
+        }
+        // Holy water's blessing (version 166): double on the undead and
+        // vampyres (by name, which a guest's copy has too)
+        if (by.me && damage > 0 && this.boosts.holy > 0 && HOLY_BANE.test(e.def.name.toLowerCase().replace(/ /g, "_"))) {
+            damage *= 2;
         }
         // A miss (version 150) does nothing but rouse it: no freeze, no
         // poison, no slow, as a splashed spell in OSRS
@@ -6643,7 +7923,16 @@ export class Run {
         const step = this.speedOf(e) * dt;
         // The same narrow footprint as the player, whatever its size, so a
         // big one follows the flow field through a one tile gap too
-        [e.x, e.z] = this.moveCircle(e.x, e.z, dx * step, dz * step, COLLISION_RADIUS);
+        const [nx, nz] = this.moveCircle(e.x, e.z, dx * step, dz * step, COLLISION_RADIUS);
+        // A lit room (version 166): the weakest won't step into one
+        if (this.litCells.size > 0 && this.cave && this.isWeak(e)) {
+            const into = this.cave.cellAt(nx, nz);
+            if (into !== this.cave.cellAt(e.x, e.z) && this.litCells.has(into)) {
+                play(e.actor, "idle");
+                return;
+            }
+        }
+        [e.x, e.z] = [nx, nz];
         e.facing = Math.atan2(dx, dz);
         play(e.actor, "walk");
     }
@@ -7397,6 +8686,11 @@ export class Run {
             return;
         }
 
+        // The maps' own things (version 166)
+        if (this.propInteraction(dt, pressed)) {
+            return;
+        }
+
         // Chests, and the vault, which wants its key
         for (const chest of this.chests) {
             if (chest.opened || !near(chest.tile.x, chest.tile.z)) {
@@ -7747,6 +9041,7 @@ export class Run {
             exits: exits.map((e) => [round2(e.x), round2(e.z)] as [number, number]),
             chests: this.chests.map((c) => [round2(c.tile.x), round2(c.tile.z), c.vault ? 2 : c.boss ? 1 : c.room === "trap" ? 3 : c.room === "brimstone" ? 4 : 0]),
             altars: this.altars.map((a) => [round2(a.x), round2(a.z)]),
+            props: this.props.map((p) => [PROP_KINDS.indexOf(p.kind), round2(p.x), round2(p.z), round2(p.rotation), p.data, p.uses]),
             trader: this.trader ? [round2(this.trader.x), round2(this.trader.z), round2(this.trader.rotation)] : undefined,
             ferry: this.ferry ? [round2(this.ferry.x), round2(this.ferry.z), round2(this.ferry.rotation)] : undefined,
             defs: this.defs.slice(),
@@ -8027,6 +9322,11 @@ export class Run {
         for (const altar of this.altars) {
             void this.loadAltar(altar);
         }
+        // (in the host's order: a thing's place is how it's named after)
+        this.props = (message.props ?? []).map(([k, x, z, rotation, data, uses]) => ({ kind: PROP_KINDS[k] ?? "search", x, z, rotation, data, uses }));
+        for (const p of this.props) {
+            void this.loadProp(p);
+        }
         if (message.trader) {
             const [x, z, rotation] = message.trader;
             this.trader = { x, z, rotation, seen: false };
@@ -8264,6 +9564,9 @@ export class Run {
                 }
                 break;
             }
+            case "prop":
+                this.applyProp(message);
+                break;
             case "opened": {
                 const chest = this.chests[message.c];
                 if (chest) {
@@ -8476,6 +9779,15 @@ export class Run {
                     (!HELD_BY_HOST.has(item.id) || this.guestSpend(from, item.id, n))
                 ) {
                     this.dropPickup(item.id, n, message.x, message.z, 0);
+                }
+                break;
+            }
+            case "use": {
+                // One of the map's things, from where the guest stands
+                const p = finite(message.i) ? this.props[message.i] : undefined;
+                const hold = message.a === 1;
+                if (p && near(p.x, p.z, GUEST_REACH + PROP_REACH + this.propSize(p)) && this.propReady(p, hold)) {
+                    this.propWorld(p, mate, hold);
                 }
                 break;
             }
@@ -8748,14 +10060,16 @@ export class Run {
             // Straight onto the bar, nothing to wear off
             this.prayer = Math.min(100, this.prayer + PRAYER_RESTORE);
         } else {
-            this.boosts[item.potion] = POTION_SECONDS;
+            this.boosts[item.potion] = item.potion === "holy" ? HOLY_SECONDS : POTION_SECONDS;
             this.applyStats();
             if (item.potion === "brew") {
                 this.hp = Math.min(this.maxHp, this.hp + 40);
             }
         }
         this.drank++;
-        this.hooks.onMessage(`You drink the ${item.name.toLowerCase()}.`);
+        this.hooks.onMessage(
+            item.potion === "holy" ? `You sprinkle the holy water over your weapon: ${POTION_EFFECT.holy}.` : `You drink the ${item.name.toLowerCase()}.`,
+        );
         this.hooks.onChanged();
     }
 
@@ -8771,7 +10085,9 @@ export class Run {
             if (this.boosts[kind] <= 0) {
                 this.boosts[kind] = 0;
                 this.applyStats();
-                this.hooks.onMessage(kind === "brew" ? "The brew wears off." : `The ${kind} potion wears off.`);
+                this.hooks.onMessage(
+                    kind === "brew" ? "The brew wears off." : kind === "holy" ? "The holy water's blessing fades." : `The ${kind} potion wears off.`,
+                );
             }
         }
     }

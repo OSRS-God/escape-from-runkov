@@ -189,6 +189,48 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 166 (not yet deployed), as the user asked: sixteen kinds of thing to use about the two
+maps (props.ts says what and how many; run.ts placeProps puts them in rooms of their own kind
+first, propActions says what E does, propSelf and propWorld do it). E is a tap, or a hold of
+the thing's own length that a hit breaks (PROP_TAP and the holds in run.ts).
+- Both maps: oil barrels (tap: two cans of oil; hold: light the fuse, and three seconds later
+  it bursts, hurting anything within three tiles, heroes too); crates, sacks, rubble and
+  shelves to search (three seconds, often nothing; coins, food, oil, ammunition, a potion,
+  now and then a clue scroll); cold braziers (lit from a lit lantern: the room joins the lit
+  ones, shows on the map, and the weakest third of the map's kinds won't walk into it); a
+  lever that opens a passage between two far rooms (a cave mouth, or the castle's
+  trapdoors), both ends then on the map; a shrine with one trade a run (half your hitpoints
+  for a fifth harder hits, half your coins for a piece of gear, your prayer bar for every
+  boss's lair on the map, or all your food for 25 defence); dead adventurers to search (gear,
+  coins or supplies, and one in five gets back up as a champion).
+- The Depths: ore and gem rocks (three loads each, a hold apiece, heard nine tiles off; the
+  better ores deeper down; new items: iron, coal, mithril, adamantite and runite ore, uncut
+  sapphires to diamonds, all to sell); pools (a drink once each, which heals and may cure or
+  poison; three cave eels to fish, a new food healing 35); cracked rock that only shows when
+  you come on it, which a four second hold breaks for a cache of two pieces and coins, loudly;
+  rope ladders, one way down to somewhere at least 60 steps off and never a living boss's
+  lair, a hard landing, and the rope snaps.
+- The Forgotten Castle: easels of the lords' portraits in the quarters (who's still holding
+  court, how far and which way, and their halls on your map); the library's three marked
+  bookcases and the chapel's lectern naming the one with a vault behind it (the vault gives
+  two pieces at the crystal chest's odds and a purse; a wrong book lets out a nest of the
+  weakest kind); suits of armour in the halls and courtyards, one in five waking as a champion
+  animated armour when you pass; the chapels' fonts (a vial of holy water each, a new potion
+  doubling your hits on the undead and vampyres for 60 seconds); prisoners in the dungeons'
+  stocks (three in five fight at your side for 90 seconds, the rest turn on you as a champion);
+  banquets in the halls (ten bites, 12 hitpoints each, one in five gone bad).
+- Co-op: the props go out with the map (party.ts `props`), a guest's E goes to the host as
+  `use` and the host's word comes back as `prop`; what a hero drinks, eats, trades, reads or
+  climbs is their own, what drops or wakes is the host's. A freed prisoner fights for the
+  hero who freed him, on their own screen (the others don't see him).
+- Assets: 26 new locs and 11 new items in assets.json (exported with Run-Escape `loc` and
+  `item`, icons in the sheet).
+Tested on the dev server, single player: every kind on both maps placed in its rooms and
+used (the barrel's burst took a banshee from 68 to 9, the crack and the library vault paid
+out, the passage carried the player 300 tiles, the ladder dropped them 170, a freed prisoner
+hit a gargoyle, a mad one attacked, a suit of armour woke). Not tried: co-op, a phone, the
+lit rooms keeping weak enemies out (only read through), holy water's double hits.
+
 Version 165 (not yet deployed), as the user asked: both maps gone over for their looks.
 - Light: the Depths and the Forgotten Castle have a gloom of their own now, the night's
   machinery made general (run.ts `gloom`: the caves a dim brown, the castle a cold moonlit

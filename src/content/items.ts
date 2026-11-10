@@ -215,8 +215,11 @@ export function specialOf(weapon: ItemDef | undefined): Special | undefined {
     return { name: "Heavy blow", hits: 1, power: 1.5 };
 }
 
-export type Potion = "strength" | "defence" | "brew" | "prayer";
+// (holy water since version 166: the Forgotten Castle's chapel fonts fill a
+// vial, never the shop)
+export type Potion = "strength" | "defence" | "brew" | "prayer" | "holy";
 export const POTION_SECONDS = 90;
+export const HOLY_SECONDS = 60;
 // What a prayer potion puts back on the prayer bar, of its 100
 export const PRAYER_RESTORE = 40;
 export const POTION_EFFECT: Record<Potion, string> = {
@@ -224,6 +227,7 @@ export const POTION_EFFECT: Record<Potion, string> = {
     defence: "20 more defence for a while",
     brew: "heals 40 like a bite of food, and 15 more hitpoints for a while",
     prayer: `puts ${PRAYER_RESTORE} back on the prayer bar`,
+    holy: `your hits on the undead and vampyres do double for ${HOLY_SECONDS} seconds`,
 };
 
 function potion(id: number, name: string, kind: Potion, value: number): ItemDef {
@@ -1462,6 +1466,21 @@ export const ITEMS: ItemDef[] = [
     // off the map
     { id: 23083, name: "Brimstone key", tier: 0, value: 0, brimstone: true },
     armour(9786, "Slayer cape", "cape", 5, 14, 10000000, { hp: 10, prayer: 4, reward: "depths" }),
+    // What the maps' own things give up (version 166, as the user asked):
+    // the Depths' ore and gem veins, the cave eels of their pools, and the
+    // holy water of the Forgotten Castle's chapel fonts. Ore and gems are for
+    // selling, so they stack and take one space.
+    { id: 440, name: "Iron ore", tier: 0, value: 150, stackable: true },
+    { id: 453, name: "Coal", tier: 0, value: 250, stackable: true },
+    { id: 447, name: "Mithril ore", tier: 0, value: 600, stackable: true },
+    { id: 449, name: "Adamantite ore", tier: 0, value: 1500, stackable: true },
+    { id: 451, name: "Runite ore", tier: 0, value: 5000, stackable: true },
+    { id: 1623, name: "Uncut sapphire", tier: 0, value: 500, stackable: true },
+    { id: 1621, name: "Uncut emerald", tier: 0, value: 1000, stackable: true },
+    { id: 1619, name: "Uncut ruby", tier: 0, value: 2000, stackable: true },
+    { id: 1617, name: "Uncut diamond", tier: 0, value: 4000, stackable: true },
+    food(5003, "Cave eel", 35, 600),
+    potion(732, "Holy water", "holy", 300),
     // Version 59: ranged and magic filled out. Thrown weapons, which need no
     // ammunition: darts (fastest, lightest), knives, throwing axes (the
     // heaviest), chinchompas (what they hit, everything beside it takes

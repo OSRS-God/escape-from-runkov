@@ -188,6 +188,7 @@ const POTION_NAMES: Record<Potion, string> = {
     defence: "Defence potion",
     brew: "Saradomin brew",
     prayer: "Prayer potion",
+    holy: "Holy water",
 };
 
 // The hotbar's keys: F for food, 1 to 4 for the potions
