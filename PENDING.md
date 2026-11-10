@@ -189,6 +189,26 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 173 (not yet deployed), as the user asked: mercenaries for solo runs (mercs.ts).
+- The Mercenaries' Hall, a new room in the guild: three of four kinds a day (sellsword,
+  bowman, hedge mage, field medic), each the hall's hand of that kind by name and level, hired
+  for the next solo run (the fee paid now, back if let go first; a party's run leaves them
+  waiting).
+- In the run: one of the heroes the enemies go for (a sellsword draws them most), their
+  own hitpoints, defence and bar, hit by hazards, traps and boss moves too; drawn as a player
+  in their kind's gear of their level's tier; following and fighting as a freed prisoner does
+  (a bowman from six tiles, a mage from seven, a medic patching you up every four seconds);
+  the HUD shows their hitpoints.
+- After: out alive with you, they take a tenth of the coins found and are a level better
+  (to 5, each level a tenth more hit, hitpoints and healing, and half again on the fee); if
+  they fall, their kind starts again at the hall. The summary says which.
+- The balance sim takes MERC=kind:level. With a level 5 mercenary nobody kills two bosses at
+  depths 4 or 5; at depth 3 the best gear does so 15% of the time with a sellsword and 33%
+  with a medic (1% alone); depths 1 and 2 were near certain already (version 170).
+Tested on the dev server, muted: hiring and the fee, a sellsword drawing a cockatrice off the
+player and killing it, out alive with a 100 coin cut and up to level 2, a level 2 hired again
+and falling (gone from the hall), a hedge mage in the castle. Not tried: a phone, a full run.
+
 Version 172 (not yet deployed), as the user asked: fourteen new things for the Depths and the
 Forgotten Castle.
 - A curse on every run of either (run.ts CURSES, from the seed, so a party and the daily

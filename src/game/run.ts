@@ -137,6 +137,7 @@ import { playMusic } from "./music";
 import { PlayerLook, RUN_CLIP_SPEED } from "./player";
 import { isKept } from "./kit";
 import { starterKit } from "./starter";
+import { MERC_CUT, MERC_DEFS, MercDef, MercKind, mercGear, mercScale } from "./mercs";
 import { Region, Tile, TileSet, loadRegion } from "./region";
 import { CASTLE_ROOMS, CAVE_ROOMS, CaveLayout, layoutCave } from "./caves";
 import {
@@ -219,6 +220,8 @@ export type RunCarry = {
     threat?: number;
     // The character's starter class (starter.ts, version 171), for its perk
     perk?: string;
+    // The mercenary hired for a solo run (mercs.ts, version 173)
+    merc?: { kind: MercKind; name: string; level: number };
 };
 
 // The starter classes' perks (version 171, as the user asked; starter.ts
@@ -403,6 +406,10 @@ export type RunReport = {
     // slain
     contract?: boolean;
     kingSlain?: boolean;
+    // Version 173: whether the mercenary lived (and so whether their kind
+    // goes up a level or starts again), and the coins they took
+    merc?: { kind: MercKind; survived: boolean };
+    mercCut?: number;
 };
 
 export type RunHooks = {
@@ -695,6 +702,10 @@ type Ally = {
     // Seconds he's barely moved for (ALLY_STUCK and he's put back by his hero)
     stuck: number;
 };
+
+// What walks at someone's side, as allyStep moves it (a freed prisoner, a
+// mercenary: version 173)
+type Walker = { x: number; z: number; stuck: number; facing: number; walking: boolean };
 
 const PLAYER_RADIUS = 0.35;
 // What the ground stops: narrower than the body, so a one tile gap between
@@ -2468,6 +2479,8 @@ export class Run {
                 this.scene.add(look.root);
             }),
         );
+        // A solo run's mercenary (version 173)
+        jobs.push(this.makeMerc());
         const crown = crownVerified(crownKey(), () => this.wearCrown());
         if (crown) {
             this.wearCrown();
@@ -4023,6 +4036,7 @@ export class Run {
             }
         }
         this.updateAllies(dt);
+        this.updateMerc(dt);
     }
 
     // A freed prisoner at the side of whoever freed him for ALLY_SECONDS:
@@ -4180,7 +4194,7 @@ export class Run {
 
     // A step toward a spot: straight where nothing's in the way, else down
     // the field the enemies follow to his hero (round the castle's walls)
-    private allyStep(a: Ally, gx: number, gz: number, owner: Hero, dt: number): void {
+    private allyStep(a: Walker, gx: number, gz: number, owner: Hero, dt: number): void {
         const region = this.region;
         let dx = gx - a.x;
         let dz = gz - a.z;
@@ -4226,7 +4240,7 @@ export class Run {
     }
 
     // Put back behind his hero, where there's room
-    private allyCatchUp(a: Ally, owner: Hero): void {
+    private allyCatchUp(a: Walker, owner: Hero): void {
         a.stuck = 0;
         for (const back of [1.2, 0.6, 0]) {
             const x = owner.x - Math.sin(owner.facing) * back;
@@ -4778,6 +4792,199 @@ export class Run {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // The mercenary (version 173, as the user asked; mercs.ts): hired at the
+    // guild for a solo run, a hero the enemies can go for (heroes()), drawn
+    // as a player in their kind's gear, walking and fighting as a freed
+    // prisoner does, a medic patching you up as they go
+
+    private merc?: {
+        def: MercDef;
+        name: string;
+        level: number;
+        hero: Hero;
+        look?: PlayerLook;
+        attackClip: string;
+        bar: HealthBar;
+        x: number;
+        z: number;
+        facing: number;
+        stuck: number;
+        walking: boolean;
+        swingIn: number;
+        busy: number;
+        healIn: number;
+        deadFor: number;
+        gone: boolean;
+    };
+
+    // The mercenary, beside you where you came in, at their kind's numbers
+    // for the map's tier and their level
+    private async makeMerc(): Promise<void> {
+        const hired = this.carry.merc;
+        if (!hired || this.coop) {
+            return;
+        }
+        const def = MERC_DEFS[hired.kind];
+        const tier = this.world.tier;
+        const scale = mercScale(hired.level);
+        const maxHp = Math.round((def.hp + def.hpTier * tier) * scale);
+        const defence = def.defenceTier * tier;
+        let x = this.px;
+        let z = this.pz;
+        for (const [ox, oz] of [
+            [1.2, 0],
+            [-1.2, 0],
+            [0, 1.2],
+            [0, -1.2],
+        ]) {
+            if (this.region.fits(this.px + ox, this.pz + oz, 0.3)) {
+                x = this.px + ox;
+                z = this.pz + oz;
+                break;
+            }
+        }
+        const hero: Hero = { id: "merc", name: hired.name, x, z, facing: 0, hp: maxHp, maxHp, dead: false, defenceVs: [defence, defence, defence], protect: "none", me: false };
+        const bar = this.makeHealthBar();
+        this.scene.add(bar.group);
+        const equipment = mercGear(hired.kind, hired.level);
+        const weapon = equipment.weapon !== undefined ? getItem(equipment.weapon) : undefined;
+        this.merc = {
+            def,
+            name: hired.name,
+            level: hired.level,
+            hero,
+            attackClip: weapon?.attackClip ?? "attack",
+            bar,
+            x,
+            z,
+            facing: 0,
+            stuck: 0,
+            walking: false,
+            swingIn: def.every,
+            busy: 0,
+            healIn: def.heal?.every ?? 0,
+            deadFor: 0,
+            gone: false,
+        };
+        const character: Character = { ...this.character, name: hired.name, colors: this.character.colors.map((c, i) => def.colors[i] ?? c) };
+        const look = await PlayerLook.create(character, equipment);
+        if (this.ended || !this.merc) {
+            return;
+        }
+        look.stance = weapon?.stance;
+        look.root.scale.setScalar(this.character.size);
+        look.root.position.set(x, this.groundY(x, z), z);
+        look.play("idle");
+        this.scene.add(look.root);
+        this.merc.look = look;
+    }
+
+    // A hit on the mercenary (hurtHero's), their armour off it; at none
+    // they fall for good
+    private hurtMerc(hit: number): void {
+        const m = this.merc;
+        if (!m || m.hero.dead) {
+            return;
+        }
+        m.hero.hp = Math.max(0, m.hero.hp - hit);
+        this.splat(m.x, m.z, 1.8, hit);
+        if (m.hero.hp <= 0) {
+            m.hero.dead = true;
+            m.bar.group.visible = false;
+            m.look?.play("death", { once: true });
+            this.hooks.onMessage(`${m.name} the ${m.def.title.toLowerCase()} falls. The hall will have to send someone new.`);
+        }
+    }
+
+    // Every frame (a solo run's): after what's near you that they can see,
+    // or at your side; a medic's patching; their bar over their head
+    private updateMerc(dt: number): void {
+        const m = this.merc;
+        if (!m) {
+            return;
+        }
+        m.look?.update(dt);
+        if (m.hero.dead) {
+            m.deadFor += dt;
+            if (m.deadFor > DEATH_PAUSE && !m.gone) {
+                m.gone = true;
+                if (m.look) {
+                    this.scene.remove(m.look.root);
+                }
+                this.scene.remove(m.bar.group);
+            }
+            return;
+        }
+        const scale = mercScale(m.level);
+        const tier = this.world.tier;
+        m.busy -= dt;
+        m.swingIn -= dt;
+        if (m.def.heal && !this.dead && !this.done) {
+            m.healIn -= dt;
+            if (m.healIn <= 0) {
+                m.healIn = m.def.heal.every;
+                if (this.hp < this.maxHp && Math.hypot(m.x - this.px, m.z - this.pz) < ALLY_REACH) {
+                    this.hp = Math.min(this.maxHp, this.hp + Math.max(1, Math.round(this.maxHp * m.def.heal.share * scale)));
+                    this.hooks.onChanged();
+                }
+            }
+        }
+        let target: Enemy | undefined;
+        let best = ALLY_REACH + m.def.reach;
+        for (const e of this.enemies) {
+            if (e.state === "dead" || e.def.passive || (e.burrowed !== undefined && e.burrowed > 0) || Math.hypot(e.x - this.px, e.z - this.pz) > ALLY_REACH * 1.5) {
+                continue;
+            }
+            const d = Math.hypot(e.x - m.x, e.z - m.z);
+            if (d < best && this.region.lineOfSight(m.x, m.z, e.x, e.z)) {
+                best = d;
+                target = e;
+            }
+        }
+        const gx = target ? target.x : this.px;
+        const gz = target ? target.z : this.pz;
+        const stop = target ? (m.def.reach > 0 ? m.def.reach : target.def.radius + 0.8) : ALLY_FOLLOW;
+        const d = Math.hypot(gx - m.x, gz - m.z);
+        m.walking = false;
+        if ((!target && d > 20) || m.stuck > ALLY_STUCK) {
+            this.allyCatchUp(m, this.self);
+        } else if (d > stop) {
+            this.allyStep(m, gx, gz, this.self, dt);
+            if (m.busy <= 0) {
+                m.look?.play("run", { speed: RUN_CLIP_SPEED });
+            }
+        } else if (target) {
+            m.facing = Math.atan2(gx - m.x, gz - m.z);
+            if (m.swingIn <= 0) {
+                m.swingIn = m.def.every;
+                m.busy = 0.9;
+                m.look?.play(m.attackClip, { once: true });
+                this.damageEnemy(target, randInt(this.rng, 0, Math.round((ALLY_HIT + ALLY_HIT_TIER * tier) * m.def.hit * scale)), this.self);
+            } else if (m.busy <= 0) {
+                m.look?.play("idle");
+            }
+        } else if (m.busy <= 0) {
+            m.look?.play("idle");
+        }
+        m.hero.x = m.x;
+        m.hero.z = m.z;
+        m.hero.facing = m.facing;
+        if (m.look) {
+            m.look.root.position.set(m.x, this.groundY(m.x, m.z), m.z);
+            m.look.root.rotation.y = m.facing;
+        }
+        m.bar.group.visible = settings.healthBars;
+        m.bar.group.position.set(m.x, this.groundY(m.x, m.z) + (m.look?.height ?? 1.6) * this.character.size + 0.3, m.z);
+        m.bar.fill.scale.x = Math.max(0.001, m.hero.hp / m.hero.maxHp) * BAR_WIDTH;
+    }
+
+    // What the HUD says of the mercenary
+    get mercWord(): string | undefined {
+        const m = this.merc;
+        return m ? (m.hero.dead ? `${m.name} has fallen` : `${m.name} ${Math.ceil(m.hero.hp)}/${m.hero.maxHp}`) : undefined;
+    }
+
     // The host's word on a freed prisoner, on a guest
     private applyAlly(message: Extract<DownMessage, { k: "ally" }>): void {
         if (message.on) {
@@ -5205,6 +5412,12 @@ export class Run {
         }
         if (this.contract) {
             this.hooks.onMessage(`The guild's slayer contract: kill ${this.contract.count} ${Run.plural(this.contract.name)} for a purse and shards.`);
+        }
+        // (and who's with you: version 173)
+        if (this.merc) {
+            this.hooks.onMessage(
+                `${this.merc.name} the ${this.merc.def.title.toLowerCase()} (level ${this.merc.level}) is with you, for a tenth of the coins you find if you both get out.`,
+            );
         }
         if (coop?.role === "guest") {
             const host = coop.heroes.find((h) => h.id !== coop.me)?.name ?? "the host";
@@ -5977,6 +6190,14 @@ export class Run {
         }
         // The castle's borrowed weapons go back on their racks (version 172)
         this.returnBorrowed();
+        // The mercenary out alive takes their cut of what was found (version
+        // 173)
+        const mercAlive = !!this.merc && !this.merc.hero.dead;
+        let mercCut = 0;
+        if (kind === "extracted" && mercAlive) {
+            mercCut = Math.min(this.coins, Math.floor(this.coinsFound * MERC_CUT));
+            this.coins -= mercCut;
+        }
         // A clue scroll or a key is no use anywhere else
         if (kind === "extracted") {
             this.inventory = this.inventory.filter((s) => {
@@ -6020,6 +6241,8 @@ export class Run {
                 balloons: this.balloonsBurst,
                 contract: this.contract?.done,
                 kingSlain: this.kingSlain,
+                merc: this.carry.merc && !this.coop ? { kind: this.carry.merc.kind, survived: mercAlive } : undefined,
+                mercCut,
             },
         });
     }
@@ -6165,7 +6388,8 @@ export class Run {
                 this.popping.splice(this.popping.indexOf(pop), 1);
             }
         }
-        const heroes = host ? this.heroes() : [];
+        // (balloons are the players' to burst, not a mercenary's)
+        const heroes = host ? this.heroes().filter((h) => h !== this.merc?.hero) : [];
         for (const b of [...this.balloons]) {
             b.age += dt;
             if (b.age > BALLOON_LIFE + 3) {
@@ -6200,7 +6424,7 @@ export class Run {
     // A lot of party balloons round someone standing (a solo run's player,
     // or anyone in a party), each on open ground
     private dropBalloons(): void {
-        const heroes = this.heroes();
+        const heroes = this.heroes().filter((h) => h !== this.merc?.hero);
         if (heroes.length === 0) {
             return;
         }
@@ -6822,6 +7046,10 @@ export class Run {
             if (!m.done && !m.dead) {
                 list.push(m);
             }
+        }
+        // (and a solo run's mercenary, while they stand: version 173)
+        if (this.merc && !this.merc.hero.dead && !this.done) {
+            list.push(this.merc.hero);
         }
         return list;
     }
@@ -7797,7 +8025,9 @@ export class Run {
         let best: Hero | undefined;
         let bestDist = Infinity;
         for (const h of heroes) {
-            const d = Math.hypot(h.x - e.x, h.z - e.z) - (h === e.target ? 2 : 0);
+            // (a sellsword draws them their way: version 173)
+            const draw = h === this.merc?.hero ? this.merc.def.draw : 0;
+            const d = Math.hypot(h.x - e.x, h.z - e.z) - (h === e.target ? 2 : 0) - draw;
             if (d < bestDist) {
                 best = h;
                 bestDist = d;
@@ -9020,6 +9250,11 @@ export class Run {
             if (venom && !this.dead) {
                 this.poison();
             }
+            return;
+        }
+        // The mercenary takes their own (version 173)
+        if (hero === this.merc?.hero) {
+            this.hurtMerc(this.rollHit(enemy, Run.defenceAgainst(hero, style), scale, pierce, fixed));
             return;
         }
         if (hero.dead || this.coop?.role !== "host") {

@@ -18,6 +18,7 @@ import {
     mapUnlocked,
     setModeSource,
 } from "./content/worlds";
+import { MERC_DEFS, MERC_MAX_LEVEL, MercGain } from "./game/mercs";
 import { CONTRACT_SHARDS, DepthsGain, SLAYER_CAPE, dailyDay, dailyDepth, dailySeed, shardsFor, titlesFor } from "./game/depths";
 import { Account } from "./game/account";
 import { recordAttempt } from "./game/contract";
@@ -218,6 +219,9 @@ function packUp(worldId: string, daily?: number): RunCarry {
         autocast: save.autocast,
         spellbook: save.spellbook,
         perk: save.starterClass,
+        // The mercenary hired at the hall (version 173; a party's run goes
+        // without him: startCoop)
+        merc: save.hired && save.mercs?.[save.hired] ? { kind: save.hired, ...save.mercs[save.hired]! } : undefined,
         // The level picked for the map, no higher than it's open to
         threat: Math.min(save.threat?.[worldId] ?? 0, threatOpen(save.stats.bestThreat, save.stats.mapsBeaten, worldId)),
     };
@@ -287,7 +291,8 @@ function startParty(game: GameStart): void {
     };
     launching = { ups: [], downs: [] };
     // The host's threat level goes for the whole party (version 150)
-    void launchWorld(world, { ...packUp(world.id), threat: clampThreat(game.threat) }, game.seed, coop).then(() => {
+    // (a hired mercenary waits for a solo run: version 173)
+    void launchWorld(world, { ...packUp(world.id), threat: clampThreat(game.threat), merc: undefined }, game.seed, coop).then(() => {
         const pending = launching;
         launching = undefined;
         for (const [from, message] of pending?.ups ?? []) {
@@ -600,6 +605,9 @@ async function onRunEnd(result: RunResult): Promise<void> {
     save.insured = undefined;
     save.insuredPaid = undefined;
     save.activeRun = undefined;
+    // The mercenary's one run is over (version 173): out alive he's a level
+    // better; fallen, the hall's next of his kind starts from the first
+    const mercGain = settleMerc(result);
     // The owner's kept kit comes home whatever happened (kit.ts), and a
     // crown's pet stays its own
     restoreKit(save);
@@ -635,7 +643,33 @@ async function onRunEnd(result: RunResult): Promise<void> {
         addItem(save.stash, contract.rewardItem, 1);
     }
     writeSave(save);
-    ui.showSummary(result, kept, { tasks: done, insured, grave: graveMade, graveHalved, pet, contract, depths: depthsGain });
+    ui.showSummary(result, kept, { tasks: done, insured, grave: graveMade, graveHalved, pet, contract, depths: depthsGain, merc: mercGain });
+}
+
+// The hired mercenary after his run (version 173): what's become of him,
+// for the summary
+function settleMerc(result: RunResult): MercGain | undefined {
+    const went = result.report.merc;
+    if (!went) {
+        return undefined;
+    }
+    save.hired = undefined;
+    const record = save.mercs?.[went.kind];
+    if (!record) {
+        return undefined;
+    }
+    const title = MERC_DEFS[went.kind].title.toLowerCase();
+    if (!went.survived) {
+        delete save.mercs![went.kind];
+        return { text: `${record.name} the ${title} fell. The hall will have a new ${title}, starting from the first level.` };
+    }
+    const cut = result.report.mercCut ?? 0;
+    const paid = cut > 0 ? ` Their cut: ${cut.toLocaleString()} coins.` : "";
+    if (result.kind === "extracted" && record.level < MERC_MAX_LEVEL) {
+        record.level++;
+        return { text: `${record.name} the ${title} got out with you, and is level ${record.level} now.${paid}` };
+    }
+    return { text: `${record.name} the ${title} made it back.${paid}` };
 }
 
 // What a Depths run comes to between runs (version 161): its cave shards,

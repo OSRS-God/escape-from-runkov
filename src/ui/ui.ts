@@ -77,6 +77,7 @@ import {
 import { TASKS, Task } from "../content/tasks";
 import { isKept, restoreCrownPets } from "../game/kit";
 import { STARTER_KITS, StarterKit, applyStarter, pickClass } from "../game/starter";
+import { MERC_DEFS, MERC_MAX_LEVEL, MercGain, MercKind, mercPrice, mercsOffered } from "../game/mercs";
 import { Chat } from "./chat";
 import { FullMap } from "./fullmap";
 import { REGEN_DELAY, hitChance, soak } from "../game/combat";
@@ -1572,6 +1573,7 @@ export class UI {
                 this.roomButton("Bank & gear", f.stash, this.itemIcon(1127), () => this.showStash()),
                 this.roomButton("Shop", f.shop, this.itemIcon(995), () => this.showShop()),
                 this.roomButton("Tasks & pets", f.tasks, this.itemIcon(989), () => this.showTasks()),
+                this.roomButton("Mercenaries", this.mercsFact(), this.itemIcon(1291), () => this.showMercs()),
                 this.roomButton("Character", f.character, this.itemIcon(1163), () => this.showCharacter()),
                 this.switchCharacterButton(true),
                 this.roomButton("Settings", "Brightness, sound, camera", this.gearIcon(), () => this.showSettings()),
@@ -1645,6 +1647,7 @@ export class UI {
                 this.roomButton("Bank & gear", undefined, this.itemIcon(1127), () => this.showStash()),
                 this.roomButton("Shop", undefined, this.itemIcon(995), () => this.showShop()),
                 this.roomButton("Tasks", undefined, this.itemIcon(989), () => this.showTasks()),
+                this.roomButton("Mercenaries", undefined, this.itemIcon(1291), () => this.showMercs()),
                 this.roomButton("Character", undefined, this.itemIcon(1163), () => this.showCharacter()),
                 this.switchCharacterButton(false),
                 this.roomButton("Pets", undefined, this.itemIcon(1704), () => this.showTasks()),
@@ -1775,6 +1778,7 @@ export class UI {
             this.roomButton("Bank & gear", f.stash, this.itemIcon(1127), () => this.showStash()),
             this.roomButton("Shop", f.shop, this.itemIcon(995), () => this.showShop()),
             this.roomButton("Tasks & pets", f.tasks, this.itemIcon(989), () => this.showTasks()),
+            this.roomButton("Mercenaries", this.mercsFact(), this.itemIcon(1291), () => this.showMercs()),
             this.roomButton("Settings", "Interface, sound, camera", this.gearIcon(), () => this.showSettings()),
         );
         // Solo, or with a party: a private server of this player's own on
@@ -4774,12 +4778,15 @@ export class UI {
         // (and in the Depths, the boss hunting you, which way and how far:
         // version 161)
         const hunt = run.huntWord;
-        // (and the run's slayer contract: version 172)
+        // (and the run's slayer contract: version 172; the mercenary's
+        // health: version 173)
         const contract = run.contractWord;
+        const merc = run.mercWord;
         hud.clock.textContent =
             (run.closed ? "Way out closed" : `Way out closes in ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`) +
             (hunt ? ` · ${hunt.text}` : "") +
-            (contract ? ` · ${contract}` : "");
+            (contract ? ` · ${contract}` : "") +
+            (merc ? ` · ${merc}` : "");
         hud.clock.classList.toggle("urgent", run.closed || left < 60 || !!hunt?.near);
         hud.boss.hidden = !run.boss;
         if (run.boss) {
@@ -5180,7 +5187,7 @@ export class UI {
     showSummary(
         result: RunResult,
         kept: ItemStack[],
-        extras: { tasks: Task[]; insured?: number; grave?: boolean; graveHalved?: boolean; pet?: string; contract?: Contract; depths?: DepthsGain },
+        extras: { tasks: Task[]; insured?: number; grave?: boolean; graveHalved?: boolean; pet?: string; contract?: Contract; depths?: DepthsGain; merc?: MercGain },
     ): void {
         const extracted = result.kind === "extracted";
         const report = result.report;
@@ -5275,6 +5282,8 @@ export class UI {
                   gain.cape
                       ? h("div", { class: "subtitle pet" }, "The guild hands you the Slayer cape for clearing the fifth depth. It's in your bank, and nothing else in the game gives one.")
                       : null,
+                  // (the mercenary's lot, version 173)
+                  extras.merc ? h("div", { class: "subtitle" }, extras.merc.text) : null,
                   // (the Abyss's deepest, version 172)
                   gain.abyss
                       ? h(
@@ -5344,6 +5353,97 @@ export class UI {
                 ),
             ),
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // The Mercenaries' Hall (version 173, as the user asked; mercs.ts): three
+    // of the four kinds today, each the hall's hand of that kind at their
+    // level, hired for the next solo run (paid now, back if let go first)
+
+    showMercs(): void {
+        const save = this.save;
+        const offered = mercsOffered(dailyDay());
+        const hire = (kind: MercKind) => {
+            const mercs = (save.mercs ??= {});
+            const def = MERC_DEFS[kind];
+            const record = (mercs[kind] ??= { name: def.names[Math.floor(Math.random() * def.names.length)], level: 1 });
+            const price = mercPrice(kind, record.level);
+            if (save.hired || save.coins < price) {
+                return;
+            }
+            save.coins -= price;
+            save.hired = kind;
+            this.persist();
+            this.message(`${record.name} the ${def.title.toLowerCase()} will come on your next solo run.`);
+            this.showMercs();
+        };
+        const dismiss = () => {
+            const kind = save.hired;
+            const record = kind ? save.mercs?.[kind] : undefined;
+            if (kind && record) {
+                save.coins += mercPrice(kind, record.level);
+            }
+            save.hired = undefined;
+            this.persist();
+            this.showMercs();
+        };
+        const rows = offered.map((kind) => {
+            const def = MERC_DEFS[kind];
+            const record = save.mercs?.[kind];
+            const level = record?.level ?? 1;
+            const price = mercPrice(kind, level);
+            const hired = save.hired === kind;
+            const who = record ? `${record.name}, level ${level}${level >= MERC_MAX_LEVEL ? " (the best there is)" : ""}` : "a new hand, level 1";
+            return h(
+                "div",
+                { class: "item-row map-row" + (hired ? " done" : "") },
+                h(
+                    "div",
+                    { class: "name" },
+                    h("div", { class: "map-name" }, def.title, h("span", { class: "beaten" }, ` ${who}`)),
+                    h("div", { class: "stats" }, def.blurb),
+                ),
+                hired
+                    ? h("button", { onclick: dismiss }, `Let go (${formatCoins(price)} back)`)
+                    : h(
+                          "button",
+                          { class: "primary", disabled: !!save.hired || save.coins < price, onclick: () => hire(kind) },
+                          `Hire, ${formatCoins(price)}`,
+                      ),
+            );
+        });
+        const hiredKind = save.hired;
+        const hiredRecord = hiredKind ? save.mercs?.[hiredKind] : undefined;
+        this.showKeyed(
+            "mercs",
+            h(
+                "div",
+                { class: "screen" },
+                h("h2", {}, "The Mercenaries' Hall"),
+                h(
+                    "div",
+                    { class: "subtitle" },
+                    `A follower for your next solo run, paid now. They fight at your side, the monsters go for them too, and they take a tenth of the coins you find if you both get out. Back alive, they're a level better next time (to ${MERC_MAX_LEVEL}); if they fall, their kind starts again from the first. A party's runs go without them: they wait for a solo one.`,
+                ),
+                h(
+                    "div",
+                    { class: "panel maps" },
+                    hiredKind && hiredRecord
+                        ? h("div", { class: "subtitle" }, `Hired: ${hiredRecord.name} the ${MERC_DEFS[hiredKind].title.toLowerCase()}, level ${hiredRecord.level}.`)
+                        : null,
+                    h("div", { class: "item-list" }, ...rows),
+                    h("div", { class: "stats" }, `You have ${formatCoins(save.coins)} coins.`),
+                ),
+                h("button", { class: "primary", onclick: () => this.showMenu() }, "Back to the guild"),
+            ),
+        );
+    }
+
+    // What the title screen says of the hall
+    private mercsFact(): string {
+        const kind = this.save.hired;
+        const record = kind ? this.save.mercs?.[kind] : undefined;
+        return kind && record ? `${record.name} the ${MERC_DEFS[kind].title.toLowerCase()} is hired` : "A follower for a solo run";
     }
 
     // -----------------------------------------------------------------------

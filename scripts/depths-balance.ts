@@ -15,6 +15,7 @@ import { enemyHit, hitChance, playerHit } from "../src/game/combat";
 import { makeRng } from "../src/game/dungeon";
 import { BASE_HP, GearStats, gearStats } from "../src/game/inventory";
 import { Equipment } from "../src/game/save";
+import { MERC_DEFS, MercKind, mercScale } from "../src/game/mercs";
 
 // run.ts's numbers (the Depths' own since version 169: its EASED_ ones)
 const CHAMPION_HP = 2.5;
@@ -75,7 +76,30 @@ const KITS: Kit[] = [
     },
 ];
 
-type Player = { stats: GearStats; weaponTier: number; maxHp: number; hp: number; food: number[]; time: number };
+// A mercenary at the player's side (version 173: MERC=sellsword:5 and the
+// like): his hitpoints, his hit (run.ts's ALLY_HIT and ALLY_HIT_TIER, his
+// kind's share and level), his swing, his defence, a medic's heal, and how
+// much of what comes at the pair goes his way
+type Merc = { hp: number; hit: number; every: number; swing: number; defence: number; heal?: { share: number; every: number; next: number }; draws: number };
+type Player = { stats: GearStats; weaponTier: number; maxHp: number; hp: number; food: number[]; time: number; merc?: Merc };
+
+const MERC_ARG = process.env.MERC?.split(":");
+function makeMerc(tier: number): Merc | undefined {
+    if (!MERC_ARG) {
+        return undefined;
+    }
+    const def = MERC_DEFS[MERC_ARG[0] as MercKind];
+    const scale = mercScale(Number(MERC_ARG[1] ?? 1));
+    return {
+        hp: Math.round((def.hp + def.hpTier * tier) * scale),
+        hit: Math.round((8 + 6 * tier) * def.hit * scale),
+        every: def.every,
+        swing: def.every,
+        defence: def.defenceTier * tier,
+        heal: def.heal ? { share: def.heal.share * scale, every: def.heal.every, next: def.heal.every } : undefined,
+        draws: Math.min(0.8, 0.4 + def.draw * 0.1),
+    };
+}
 
 const champion = (def: EnemyDef): EnemyDef => ({
     ...def,
@@ -108,10 +132,34 @@ function fight(p: Player, enemies: EnemyDef[], world: WorldDef, rng: () => numbe
                 }
             }
         }
+        // The mercenary's swing, and a medic's patching
+        const m = p.merc && p.merc.hp > 0 ? p.merc : undefined;
+        if (m && alive.length > 0) {
+            m.swing -= TICK;
+            if (m.swing <= 0) {
+                m.swing = m.every;
+                const target = alive[0];
+                target.hp -= Math.floor(rng() * (m.hit + 1));
+                if (target.hp <= 0) {
+                    alive.shift();
+                }
+            }
+            if (m.heal) {
+                m.heal.next -= TICK;
+                if (m.heal.next <= 0) {
+                    m.heal.next = m.heal.every;
+                    p.hp = Math.min(p.maxHp, p.hp + Math.max(1, Math.round(p.maxHp * m.heal.share)));
+                }
+            }
+        }
         for (const e of alive) {
             e.cooldown -= TICK;
             if (e.cooldown <= 0) {
-                p.hp -= enemyHit(e.def, { defence: p.stats.defenceVs[e.def.shoots?.style ?? "melee"] }, rng());
+                if (m && m.hp > 0 && rng() < m.draws) {
+                    m.hp -= enemyHit(e.def, { defence: m.defence }, rng());
+                } else {
+                    p.hp -= enemyHit(e.def, { defence: p.stats.defenceVs[e.def.shoots?.style ?? "melee"] }, rng());
+                }
                 e.cooldown = e.def.attackInterval;
             }
         }
@@ -157,7 +205,7 @@ function run(world: WorldDef, kit: Kit, seed: number): number {
     const rng = makeRng(seed);
     const stats = gearStats(kit.equipment);
     const maxHp = BASE_HP + stats.hp;
-    const p: Player = { stats, weaponTier: getItem(kit.equipment.weapon!).tier, maxHp, hp: maxHp, food: new Array<number>(kit.food).fill(kit.heal), time: 0 };
+    const p: Player = { stats, weaponTier: getItem(kit.equipment.weapon!).tier, maxHp, hp: maxHp, food: new Array<number>(kit.food).fill(kit.heal), time: 0, merc: makeMerc(world.tier) };
     const roof = { n: 0 };
     let risen = 0;
     const superiorFor = (def: EnemyDef) => {
