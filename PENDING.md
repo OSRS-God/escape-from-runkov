@@ -189,6 +189,40 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 165 (not yet deployed), as the user asked: both maps gone over for their looks.
+- Light: the Depths and the Forgotten Castle have a gloom of their own now, the night's
+  machinery made general (run.ts `gloom`: the caves a dim brown, the castle a cold moonlit
+  blue), with a hero's lantern a warm light in it as far as it lets them see (little of it
+  unlit) and the nearest eight fires of the rooms lighting the ground round them (torch.ts:
+  twelve lights, each with its own reach).
+- The dark is drawn on a small canvas over the game's (placeCaveDark) with a hole round
+  whoever's watched and smaller ones round every light near: the rooms' fires, glowing fungus
+  and crystals, the ways out once open, the altar and the chests worth finding, each washed
+  with its own colour, so a torch down a hall shows from across it.
+- Rooms' lights: the room exports carry what glows in each (caves.json and castles.json
+  `lights`; caves.ts gives the layout's).
+- Caves (Run-Escape cave-rooms.ts): stalagmites by the walls of every room, pale blue glowing
+  fungus and purple crystals (more in the pillared halls and the lairs), and a campfire in
+  each camp, its torches and fire rings lit.
+- Castle (castle-rooms.ts): a deep red carpet up the middle of the halls and chapels to the
+  throne or the altar, gold standing torches round the walls of the halls, quarters and
+  libraries, candelabra in the chapels and by the throne and altar, wooden torches in the
+  dungeons, more candles on the walls, skulls in the dungeons, vines and now and then a well
+  for the fountain in the courtyards.
+- The screen shakes when the roof comes down, a lair shuts or the ornate chest's floor goes,
+  and each fallen rock lies where it landed for a while. The altar and the camps are on both
+  maps once found. The castle's lairs shut with its own words.
+- A wall or a rock between the camera and whoever's watched isn't drawn where it would hide
+  them (torch.ts setSeeThrough: a window along the line of sight, soft at the edge): a hero
+  beside a castle wall's north face was hidden behind it.
+- A room's fires are lit no closer than six tiles to each other (caves.ts LIGHT_APART): a
+  castle room has some thirty candles and torches, and all of them lit left no dark.
+Checked: all 90 castle rooms and 60 cave rooms re-exported, every door joined and the floor
+reached (99.95% at worst). Tested on the dev server: the castle hall moonlit with its carpet,
+by lantern, a torchlit wall, the window through the south wall; the Depths with crystals,
+fungus and stalagmites lit; a collapse shaking the screen and leaving four rocks. Not tried:
+co-op, a phone.
+
 Version 164 (not yet deployed), as the user asked: the regular maps are gone and everyone
 starts fresh. The game is the Depths and the Forgotten Castle, both open from the start, on
 the one stash (save.ts SAVE_VERSION 4: a save from before is dropped on load, an account's

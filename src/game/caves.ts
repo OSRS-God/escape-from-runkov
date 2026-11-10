@@ -48,6 +48,9 @@ type CaveRoomJson = {
     tiles: number[];
     heights: number[];
     boxes: number[];
+    // What glows in it (version 165): x, y in the room's tiles and a kind
+    // (0 a fire, torch or candles, 1 glowing fungus, 2 crystal)
+    lights?: [number, number, number][];
 };
 
 type CavesJson = { size: number; doorFrom: number; doorWidth: number; rooms: CaveRoomJson[] };
@@ -56,6 +59,8 @@ type CavesJson = { size: number; doorFrom: number; doorWidth: number; rooms: Cav
 // this many tiles in from its edge, and this many either side of the door
 const DOORWAY_DEPTH = 3;
 const DOORWAY_SPLAY = 3;
+// The least between two of a room's fires that are both lit, in tiles
+const LIGHT_APART = 6;
 
 const roomsJson = new Map<string, Promise<CavesJson>>();
 
@@ -80,6 +85,8 @@ export type CaveLayout = {
     cells: string[];
     cellsX: number;
     empty: string;
+    // Every room's lights, where they are in the scene
+    lights: { x: number; z: number; kind: number }[];
     start: number;
     // The rooms' models, the start's first, each with its cell
     load(onPart: (part: THREE.Object3D, cell: number) => void): MapLoad;
@@ -243,6 +250,21 @@ export async function layoutCave(id: string, name: string, seed: number, set: Ro
     };
     const region = new Region(json);
     const names = cells.map((room) => room.name);
+    // (a room's fires no closer than LIGHT_APART to each other: a castle
+    // room has thirty candles and torches, and all of them lit left no dark)
+    const lights = cells.flatMap((room, c) => {
+        const kept: [number, number, number][] = [];
+        for (const light of room.lights ?? []) {
+            if (light[2] !== 0 || kept.every((k) => k[2] !== 0 || Math.hypot(k[0] - light[0], k[1] - light[1]) >= LIGHT_APART)) {
+                kept.push(light);
+            }
+        }
+        return kept.map(([lx, ly, kind]) => ({
+            x: BASE_X + (c % CELLS_X) * size + lx,
+            z: -(BASE_Y + Math.floor(c / CELLS_X) * size + ly),
+            kind,
+        }));
+    });
 
     const load = (onPart: (part: THREE.Object3D, cell: number) => void): MapLoad => {
         let cancelled = false;
@@ -315,5 +337,5 @@ export async function layoutCave(id: string, name: string, seed: number, set: Ro
         }
         return out;
     };
-    return { region, cells: names, cellsX: CELLS_X, empty: set.empty, start, load, cellAt, doorways };
+    return { region, cells: names, cellsX: CELLS_X, empty: set.empty, lights, start, load, cellAt, doorways };
 }

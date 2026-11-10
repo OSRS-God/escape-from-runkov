@@ -4,7 +4,7 @@
 import * as THREE from "three";
 
 import { PLAYER_SOUND_NPC } from "../content/bodies";
-import { TORCHES, addTorchTo, flicker, setTorch, setTorchNight, torchesOut } from "./torch";
+import { HERO_TORCHES, TORCHES, TORCH_RADIUS, addTorchTo, flicker, setSeeThrough, setTorch, setTorchNight, torchesOut } from "./torch";
 import { EnemyDef, SECOND_FORM_SHARE } from "../content/enemies";
 import {
     BOLT,
@@ -754,6 +754,27 @@ const PET_LEASH = 12;
 // of their usual distance
 const NIGHT_CHANCE = 0.25;
 const NIGHT_LIGHT = new THREE.Color(0.35, 0.41, 0.68);
+// The Depths' and the Forgotten Castle's own gloom (version 165, as the user
+// asked for better-looking maps): the caves a dim brown, the castle a cold
+// moonlit blue, a lantern's and the rooms' fires warm against both. How
+// bright a hero is with no lantern lit, how far a fire of a room's reaches
+// and how far off the nearest are lit, and the colours each kind of a room's
+// lights washes the dark with (caves.ts's kinds: fire, fungus, crystal).
+const CAVE_GLOOM = new THREE.Color(0.56, 0.5, 0.46);
+const CASTLE_GLOOM = new THREE.Color(0.44, 0.48, 0.68);
+const UNLIT_TORCH = 0.4;
+const ROOM_LIGHT_REACH = 5;
+const ROOM_LIGHT_NEAR = 22;
+const LIGHT_WASH = ["255, 150, 60", "90, 220, 200", "190, 110, 255"];
+// How far each kind's glow opens the dark, in tiles (the fires most)
+const LIGHT_SIGHT = [4, 2.6, 3];
+// The dark's canvas is this many times smaller than the screen each way, and
+// lights this far off (tiles, each way) are drawn into it
+const DARK_SCALE = 4;
+const GLOW_NEAR = 34;
+// The screen shakes this long when the roof comes down or a lair shuts
+const SHAKE_SECONDS = 0.45;
+const DEBRIS_SECONDS = 20;
 const NIGHT_SKY = 0x0f1424;
 const NIGHT_FOG: [number, number] = [12, 34];
 // The caves' dark (the Depths), and how far off it starts and closes in;
@@ -1462,6 +1483,7 @@ export class Run {
     // A night run: the map's materials are darkened in place (the model is
     // shared with the menu), and put back when the run stops
     readonly night: boolean;
+    private readonly gloom?: THREE.Color;
     // The map's model, a square at a time as they come in (mapload.ts)
     private map?: THREE.Object3D;
     private mapLoad?: MapLoad;
@@ -1587,6 +1609,10 @@ export class Run {
         if (world.caves) {
             this.night = false;
         }
+        // The gloom (version 165): what light there is without a torch. The
+        // night's on a night run; underground and in the castle their own,
+        // always, with a lantern's and the rooms' fires warm in it
+        this.gloom = this.night ? NIGHT_LIGHT : world.rooms === "castles" ? CASTLE_GLOOM : world.caves ? CAVE_GLOOM : undefined;
         this.inventory = carry.inventory.map((s) => ({ ...s }));
         this.equipment = { ...carry.equipment };
         this.coins = carry.coins;
@@ -1698,13 +1724,15 @@ export class Run {
     // Night: the sky and fog close in, the map's colours go down to the
     // night's blue, and so does the light on everything made from here on
     private applyNight(): void {
-        if (!this.night || !this.map) {
+        if (!this.gloom || !this.map) {
             return;
         }
-        this.scene.background = new THREE.Color(NIGHT_SKY);
-        this.scene.fog = new THREE.Fog(NIGHT_SKY, NIGHT_FOG[0], NIGHT_FOG[1]);
-        setWorldLight(NIGHT_LIGHT);
-        setTorchNight(NIGHT_LIGHT);
+        if (this.night) {
+            this.scene.background = new THREE.Color(NIGHT_SKY);
+            this.scene.fog = new THREE.Fog(NIGHT_SKY, NIGHT_FOG[0], NIGHT_FOG[1]);
+        }
+        setWorldLight(this.gloom);
+        setTorchNight(this.gloom);
         this.nightApplied = true;
         this.applyNightTo(this.map);
     }
@@ -1714,7 +1742,8 @@ export class Run {
     private nightApplied = false;
 
     private applyNightTo(root: THREE.Object3D): void {
-        if (!this.night || !this.nightApplied) {
+        const gloom = this.gloom;
+        if (!gloom || !this.nightApplied) {
             return;
         }
         root.traverse((o) => {
@@ -1727,7 +1756,7 @@ export class Run {
                 if (!this.nightSeen.has(material) && material.color) {
                     this.nightSeen.add(material);
                     this.nightMaterials.push({ material, color: material.color.clone() });
-                    material.color.multiply(NIGHT_LIGHT);
+                    material.color.multiply(gloom);
                 }
             }
         });
@@ -1779,14 +1808,16 @@ export class Run {
                 hidden.push(child);
             }
         }
-        // The map by day, whatever the hour
+        // The map by day, whatever the hour (and no torch's pool of light
+        // drawn into the picture)
         const dimmed = this.nightMaterials;
         for (const { material, color } of dimmed) {
             material.color.copy(color);
         }
+        torchesOut();
         this.renderer.render(this.scene, camera);
         for (const { material } of dimmed) {
-            material.color.multiply(NIGHT_LIGHT);
+            material.color.multiply(this.gloom ?? WHITE);
         }
         for (const child of hidden) {
             child.visible = true;
@@ -1964,6 +1995,17 @@ export class Run {
         if (this.trader && this.isExplored(this.trader.x, this.trader.z)) {
             dot(this.trader.x, this.trader.z, "#40e8ff", 3);
         }
+        // The altar and the camps, once come on (version 165)
+        for (const altar of this.altars) {
+            if (this.isExplored(altar.x, altar.z)) {
+                dot(altar.x, altar.z, altar.used ? "#8a8a8a" : "#fff2a8", 3);
+            }
+        }
+        for (const camp of this.camps) {
+            if (camp.seen) {
+                dot(camp.x, camp.z, "#c8a878", 2.5);
+            }
+        }
         for (const e of this.enemies) {
             if (e.state !== "dead" && (this.isExplored(e.x, e.z) || e.hunting)) {
                 dot(e.x, e.z, e.def.boss ? "#ff0000" : e.def.superior ? "#ff8c00" : "#ffff00", e.def.boss ? 4 : e.def.superior ? 3 : 2);
@@ -2063,6 +2105,16 @@ export class Run {
         }
         if (this.trader && this.isExplored(this.trader.x, this.trader.z)) {
             dot(this.trader.x, this.trader.z, "#40e8ff", 1.1);
+        }
+        for (const altar of this.altars) {
+            if (this.isExplored(altar.x, altar.z)) {
+                dot(altar.x, altar.z, altar.used ? "#8a8a8a" : "#fff2a8", 1.1);
+            }
+        }
+        for (const camp of this.camps) {
+            if (camp.seen) {
+                dot(camp.x, camp.z, "#c8a878", 0.9);
+            }
         }
         for (const e of this.enemies) {
             if (e.state !== "dead" && (this.isExplored(e.x, e.z) || e.hunting)) {
@@ -3232,7 +3284,18 @@ export class Run {
                 if (!this.region.fits(x, z, 0.1)) {
                     continue;
                 }
-                this.hazard(x, z, 1.2, COLLAPSE_WARNING, (h) => this.hurtHero(h, falling, 0, "melee", true, Math.max(1, Math.round(h.maxHp * share))));
+                // (each lands with a shake, and leaves its rock a while)
+                this.hazard(
+                    x,
+                    z,
+                    1.2,
+                    COLLAPSE_WARNING,
+                    (h) => this.hurtHero(h, falling, 0, "melee", true, Math.max(1, Math.round(h.maxHp * share))),
+                    () => {
+                        this.shake(i === 0 ? 0.35 : 0.2);
+                        this.leaveDebris(x, z);
+                    },
+                );
             }
             this.wakeNear(hero.x, hero.z, COLLAPSE_ROUSE);
         }
@@ -3999,7 +4062,7 @@ export class Run {
     private torchSweep = 0;
 
     private updateTorches(dt: number): void {
-        if (!this.night) {
+        if (!this.gloom) {
             return;
         }
         this.torchSweep -= dt;
@@ -4007,16 +4070,50 @@ export class Run {
             this.torchSweep = TORCH_SWEEP;
             addTorchTo(this.scene);
         }
-        const heroes: { x: number; z: number; out: boolean }[] = [
-            { x: this.px, z: this.pz, out: this.dead },
-            ...[...this.mates.values()].map((m) => ({ x: m.x, z: m.z, out: m.dead || m.done })),
+        // Underground and in the castle (version 165) a hero's light is
+        // their lantern's: as far as it lets them see, and little of it
+        // unlit (a mate's is taken as lit: nobody says)
+        const caves = this.world.caves === true;
+        const reach = caves ? this.sightShown + 2 : TORCH_RADIUS;
+        const heroes: { x: number; z: number; out: boolean; on: number }[] = [
+            { x: this.px, z: this.pz, out: this.dead, on: caves && !this.lanternLit ? UNLIT_TORCH : 1 },
+            ...[...this.mates.values()].map((m) => ({ x: m.x, z: m.z, out: m.dead || m.done, on: 1 })),
         ];
-        for (let i = 0; i < TORCHES; i++) {
+        for (let i = 0; i < HERO_TORCHES; i++) {
             const h = heroes[i];
             if (!h || h.out) {
                 setTorch(i, 0, -1000, 0, 0);
             } else {
-                setTorch(i, h.x, this.groundY(h.x, h.z) + 1.1, h.z, flicker(this.time, i * 1.7));
+                setTorch(i, h.x, this.groundY(h.x, h.z) + 1.1, h.z, h.on * flicker(this.time, i * 1.7), reach);
+            }
+        }
+        // And the nearest fires of the rooms light the ground round them,
+        // fading in as they come near
+        const at = this.done && this.spectating ? this.spectating : { x: this.px, z: this.pz };
+        // Whoever's watched shows through a wall or a rock in the camera's
+        // way (the caves and the castle: the night's maps are as they were)
+        const flat = Math.hypot(this.cameraOffset.x, this.cameraOffset.z);
+        setSeeThrough(
+            at.x,
+            this.groundY(at.x, at.z),
+            at.z,
+            this.cameraOffset.x / Math.max(flat, 0.001),
+            this.cameraOffset.z / Math.max(flat, 0.001),
+            this.cameraOffset.y / Math.max(flat, 0.001),
+            caves && flat > 0.01,
+        );
+        const fires = (this.cave?.lights ?? [])
+            .filter((l) => l.kind === 0)
+            .map((l) => ({ l, d: Math.hypot(l.x - at.x, l.z - at.z) }))
+            .filter((f) => f.d < ROOM_LIGHT_NEAR)
+            .sort((a, b) => a.d - b.d);
+        for (let i = HERO_TORCHES; i < TORCHES; i++) {
+            const fire = fires[i - HERO_TORCHES];
+            if (!fire) {
+                setTorch(i, 0, -1000, 0, 0);
+            } else {
+                const fade = Math.min(1, (ROOM_LIGHT_NEAR - fire.d) / 5);
+                setTorch(i, fire.l.x, this.groundY(fire.l.x, fire.l.z) + 1, fire.l.z, fade * flicker(this.time, fire.l.x * 1.3 + fire.l.z), ROOM_LIGHT_REACH);
             }
         }
     }
@@ -4031,6 +4128,7 @@ export class Run {
         this.updateDepthsExits();
         this.updateLantern(dt);
         this.updateHunt();
+        this.updateDebris(dt);
         this.updateLairThemes(dt);
         this.updateCaveEvents(dt);
         if (this.rooted > 0) {
@@ -4139,13 +4237,59 @@ export class Run {
         this.camera.position.set(x, py, z).add(this.cameraOffset);
         this.camera.lookAt(x, py + 0.6, z);
         this.placeCaveDark(x, py + 0.6, z);
+        // A shake (the roof coming down, a lair shutting), dying away
+        if (this.shakeLeft > 0) {
+            const by = this.shakeBy * (this.shakeLeft / SHAKE_SECONDS);
+            this.camera.position.x += (Math.random() - 0.5) * by;
+            this.camera.position.y += (Math.random() - 0.5) * by;
+            this.camera.position.z += (Math.random() - 0.5) * by;
+        }
+    }
+
+    // The screen's shake (version 165): how long is left of it and how hard
+    private shakeLeft = 0;
+    private shakeBy = 0;
+
+    private shake(by: number): void {
+        this.shakeBy = this.shakeLeft > 0 ? Math.max(by, this.shakeBy) : by;
+        this.shakeLeft = SHAKE_SECONDS;
+    }
+
+    // Rocks left where the roof came down, for a while, then gone
+    private debris: { actor: Actor; left: number }[] = [];
+
+    private leaveDebris(x: number, z: number): void {
+        void createActor("locs", LAIR_ROCKS[0]).then((rock) => {
+            if (this.ended) {
+                return;
+            }
+            this.placeActor(rock, x, z, Math.random() * Math.PI * 2, 0.3 + Math.random() * 0.2);
+            rock.root.position.y = this.groundY(x, z);
+            this.debris.push({ actor: rock, left: DEBRIS_SECONDS });
+        });
+    }
+
+    private updateDebris(dt: number): void {
+        if (this.shakeLeft > 0) {
+            this.shakeLeft -= dt;
+        }
+        for (let i = this.debris.length - 1; i >= 0; i--) {
+            const d = this.debris[i];
+            d.left -= dt;
+            if (d.left <= 0) {
+                this.scene.remove(d.actor.root);
+                this.debris.splice(i, 1);
+            } else if (d.left < 1) {
+                d.actor.root.position.y -= dt * 0.6;
+            }
+        }
     }
 
     // The Depths' dark closes in round you (version 159): black over the
     // screen but for a ring of CAVE_SIGHT tiles about whoever's watched,
     // however far the camera's pulled back. On the screen rather than as
     // fog, which goes by depth into it, so the sides would stay lit.
-    private caveDark?: HTMLDivElement;
+    private caveDark?: HTMLCanvasElement;
 
     // A lantern lit, and the seconds its oil has left (LANTERN_SIGHT); and
     // the ring of sight as drawn
@@ -4203,30 +4347,122 @@ export class Run {
         }
     }
 
+    // (version 165) Drawn on a small canvas over the game's, stretched: all
+    // of it's soft edges. The dark, then a hole in it round whoever's
+    // watched, and smaller ones round the fires, glowing fungus and crystals
+    // of the rooms, the ways out and the chests, so a torch down a hall
+    // shows from across it; then each light's own colour washed over it.
     private placeCaveDark(x: number, y: number, z: number): void {
         if (!this.world.caves) {
             return;
         }
-        if (!this.caveDark) {
-            this.caveDark = document.createElement("div");
-            this.caveDark.className = "cave-dark";
-            this.renderer.domElement.after(this.caveDark);
-        }
         const canvas = this.renderer.domElement;
+        if (!this.caveDark) {
+            this.caveDark = document.createElement("canvas");
+            this.caveDark.className = "cave-dark";
+            canvas.after(this.caveDark);
+        }
+        const dark = this.caveDark;
+        const dw = Math.max(2, Math.round(canvas.clientWidth / DARK_SCALE));
+        const dh = Math.max(2, Math.round(canvas.clientHeight / DARK_SCALE));
+        if (dark.width !== dw || dark.height !== dh) {
+            dark.width = dw;
+            dark.height = dh;
+        }
+        const ctx = dark.getContext("2d");
+        if (!ctx) {
+            return;
+        }
+        this.camera.updateMatrixWorld();
         const at = new THREE.Vector3(x, y, z).project(this.camera);
         const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
         // Eased toward what's seen now, so a lantern lighting opens it out
         this.sightShown += (this.caveSight() - this.sightShown) * 0.08;
-        const edge = new THREE.Vector3(x, y, z).addScaledVector(right, this.sightShown).project(this.camera);
-        const w = canvas.clientWidth;
-        const h = canvas.clientHeight;
-        const sx = ((at.x + 1) / 2) * w;
-        const sy = ((1 - at.y) / 2) * h;
-        const radius = Math.hypot(((edge.x - at.x) / 2) * w, ((edge.y - at.y) / 2) * h);
+        const edge = new THREE.Vector3(x, y, z).addScaledVector(right, 1).project(this.camera);
+        // A tile across, on this canvas, where whoever's watched stands
+        const tile = Math.hypot(((edge.x - at.x) / 2) * dw, ((edge.y - at.y) / 2) * dh);
+        const onCanvas = (v: THREE.Vector3): [number, number] => [((v.x + 1) / 2) * dw, ((1 - v.y) / 2) * dh];
         // A lair's dark is its own colour (LAIR_THEMES' glow)
         const [r, g, b] = this.themeAt(this.px, this.pz)?.theme.glow ?? [0, 0, 0];
-        const dark = (a: number) => `rgba(${r}, ${g}, ${b}, ${a})`;
-        this.caveDark.style.background = `radial-gradient(circle at ${sx.toFixed(0)}px ${sy.toFixed(0)}px, ${dark(r + g + b > 0 ? 0.12 : 0)} ${(radius * 0.4).toFixed(0)}px, ${dark(0.7)} ${(radius * 0.75).toFixed(0)}px, ${dark(0.97)} ${radius.toFixed(0)}px)`;
+        ctx.globalCompositeOperation = "source-over";
+        ctx.clearRect(0, 0, dw, dh);
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.97)`;
+        ctx.fillRect(0, 0, dw, dh);
+        const disc = (cx: number, cy: number, radius: number, stops: [number, string][]) => {
+            const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+            for (const [stop, colour] of stops) {
+                gradient.addColorStop(stop, colour);
+            }
+            ctx.fillStyle = gradient;
+            ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+        };
+        const hole = (cx: number, cy: number, radius: number, depth: number) =>
+            disc(cx, cy, radius, [
+                [0, `rgba(0, 0, 0, ${depth})`],
+                [0.4, `rgba(0, 0, 0, ${depth})`],
+                [0.75, `rgba(0, 0, 0, ${depth * 0.28})`],
+                [1, "rgba(0, 0, 0, 0)"],
+            ]);
+        ctx.globalCompositeOperation = "destination-out";
+        const [sx, sy] = onCanvas(at);
+        const mine = tile * this.sightShown * (this.lanternLit ? flicker(this.time, 0.3) + 0.05 : 1);
+        hole(sx, sy, mine, 1);
+        const glows = this.glowsNear(x, z).map((glow) => {
+            const p = new THREE.Vector3(glow.x, y, glow.z).project(this.camera);
+            const [gx, gy] = onCanvas(p);
+            return { gx, gy, radius: tile * glow.sight * flicker(this.time, glow.x + glow.z), kind: glow.kind, behind: p.z > 1 };
+        });
+        for (const glow of glows) {
+            if (!glow.behind) {
+                hole(glow.gx, glow.gy, glow.radius, 0.9);
+            }
+        }
+        // Each light's colour over what it shows, and the lantern's warmth
+        ctx.globalCompositeOperation = "source-over";
+        for (const glow of glows) {
+            if (!glow.behind) {
+                disc(glow.gx, glow.gy, glow.radius * 0.9, [
+                    [0, `rgba(${LIGHT_WASH[glow.kind]}, 0.16)`],
+                    [1, `rgba(${LIGHT_WASH[glow.kind]}, 0)`],
+                ]);
+            }
+        }
+        if (this.lanternLit) {
+            disc(sx, sy, mine * 0.8, [
+                [0, `rgba(${LIGHT_WASH[0]}, 0.07)`],
+                [1, `rgba(${LIGHT_WASH[0]}, 0)`],
+            ]);
+        }
+    }
+
+    // What glows near a spot: the rooms' own lights (caves.ts), the ways out
+    // once they're open, the altar, and chests not yet opened, a glint each
+    private glowsNear(x: number, z: number): { x: number; z: number; kind: number; sight: number }[] {
+        const out: { x: number; z: number; kind: number; sight: number }[] = [];
+        const near = (gx: number, gz: number) => Math.abs(gx - x) < GLOW_NEAR && Math.abs(gz - z) < GLOW_NEAR;
+        for (const light of this.cave?.lights ?? []) {
+            if (near(light.x, light.z)) {
+                out.push({ ...light, sight: LIGHT_SIGHT[light.kind] });
+            }
+        }
+        if (this.exitsOpen()) {
+            for (const exit of this.exits) {
+                if (near(exit.x, exit.z)) {
+                    out.push({ x: exit.x, z: exit.z, kind: 1, sight: 3 });
+                }
+            }
+        }
+        for (const altar of this.altars) {
+            if (near(altar.x, altar.z)) {
+                out.push({ x: altar.x, z: altar.z, kind: 0, sight: 2.5 });
+            }
+        }
+        for (const chest of this.chests) {
+            if (!chest.opened && (chest.boss || chest.room || chest.vault) && near(chest.tile.x, chest.tile.z)) {
+                out.push({ x: chest.tile.x, z: chest.tile.z, kind: chest.vault ? 2 : 0, sight: 1.8 });
+            }
+        }
+        return out;
     }
 
     // This player as the enemies (and the snapshot) see them
@@ -5938,8 +6174,13 @@ export class Run {
                 sealed.rocks.push(rock);
             });
         }
+        this.shake(0.5);
         if (boss) {
-            this.announce(`Rocks crash down over the doorways: ${boss.def.name}'s lair is sealed until it falls.`);
+            this.announce(
+                this.world.id === CASTLE_ID
+                    ? `The ceiling gives way over the doorways: ${boss.def.name}'s hall is sealed until it falls.`
+                    : `Rocks crash down over the doorways: ${boss.def.name}'s lair is sealed until it falls.`,
+            );
         }
         if (this.coop?.role === "host") {
             this.coop.send({ k: "seal", c: cell, on: 1 } satisfies DownMessage);
@@ -7303,6 +7544,7 @@ export class Run {
             }
             this.hazard(chest.tile.x, chest.tile.z, 1.3, 1.0, (h) => this.hurtHero(h, falling, 0, "melee", true, Math.max(1, Math.round(h.maxHp * TRAP_HIT))));
             this.wakeNear(chest.tile.x, chest.tile.z, TRAP_ROUSE);
+            this.shake(0.4);
             this.announce("The ornate chest swings open, and the floor round it gives way! Run!");
             return;
         }

@@ -6,7 +6,10 @@
 // them, so it costs a few sums a pixel and no lights.
 import * as THREE from "three";
 
-export const TORCHES = 4;
+// (twelve since version 165: four for the heroes, eight for the nearest fires
+// of the Depths' and the Forgotten Castle's own, each with its own reach)
+export const TORCHES = 12;
+export const HERO_TORCHES = 4;
 export const TORCH_RADIUS = 9;
 // The torch's colour against the day's white: brighter than day at its
 // heart (the maps' day colours are muted, and a softer one barely showed)
@@ -16,8 +19,25 @@ const uniforms = {
     uTorchPos: { value: Array.from({ length: TORCHES }, () => new THREE.Vector3(0, -1000, 0)) },
     uTorchOn: { value: new Array<number>(TORCHES).fill(0) },
     uTorchBoost: { value: new THREE.Vector3(1, 1, 1) },
-    uTorchRadius: { value: TORCH_RADIUS },
+    uTorchRadius: { value: new Array<number>(TORCHES).fill(TORCH_RADIUS) },
+    // The window through whatever stands between the camera and the hero
+    // (version 165): where they stand, which way the camera is over the
+    // ground and how steeply it looks down, and whether it's open
+    uSeePos: { value: new THREE.Vector3() },
+    uSeeDir: { value: new THREE.Vector3(0, 1, 0) },
+    uSeeOn: { value: 0 },
 };
+
+// A wall of the castle or a rock of the caves between the camera and the
+// hero would hide them: what's on the line of sight to them isn't drawn (a
+// tile or so across, soft at the edge), so they show through it. `dir` is the
+// way from the hero to the camera along the ground, `slope` how much higher
+// the line of sight is for each tile along it.
+export function setSeeThrough(x: number, y: number, z: number, dirX: number, dirZ: number, slope: number, on: boolean): void {
+    uniforms.uSeePos.value.set(x, y, z);
+    uniforms.uSeeDir.value.set(dirX, slope, dirZ);
+    uniforms.uSeeOn.value = on ? 1 : 0;
+}
 
 const patched = new WeakSet<THREE.Material>();
 
@@ -27,13 +47,16 @@ export function setTorchNight(night: THREE.Color): void {
     uniforms.uTorchBoost.value.set(WARM.r / night.r, WARM.g / night.g, WARM.b / night.b);
 }
 
-// Where each torch is this frame, and how bright (0 for none)
-export function setTorch(i: number, x: number, y: number, z: number, on: number): void {
+// Where each torch is this frame, how bright (0 for none), and how far it
+// reaches
+export function setTorch(i: number, x: number, y: number, z: number, on: number, radius = TORCH_RADIUS): void {
     uniforms.uTorchPos.value[i].set(x, y, z);
     uniforms.uTorchOn.value[i] = on;
+    uniforms.uTorchRadius.value[i] = radius;
 }
 
 export function torchesOut(): void {
+    uniforms.uSeeOn.value = 0;
     uniforms.uTorchOn.value.fill(0);
 }
 
@@ -66,7 +89,10 @@ export function addTorch(material: THREE.Material): void {
             `uniform vec3 uTorchPos[${TORCHES}];
             uniform float uTorchOn[${TORCHES}];
             uniform vec3 uTorchBoost;
-            uniform float uTorchRadius;
+            uniform float uTorchRadius[${TORCHES}];
+            uniform vec3 uSeePos;
+            uniform vec3 uSeeDir;
+            uniform float uSeeOn;
             varying vec3 vTorchWorld;\n` +
             shader.fragmentShader.replace(
                 "#include <color_fragment>",
@@ -76,15 +102,27 @@ export function addTorch(material: THREE.Material): void {
                     for (int i = 0; i < ${TORCHES}; i++) {
                         vec3 away = vTorchWorld - uTorchPos[i];
                         away.y *= 0.6;
-                        float near = clamp(1.0 - length(away) / uTorchRadius, 0.0, 1.0);
+                        float near = clamp(1.0 - length(away) / uTorchRadius[i], 0.0, 1.0);
                         torchLight = max(torchLight, uTorchOn[i] * near * near * (3.0 - 2.0 * near));
                     }
                     diffuseColor.rgb *= mix(vec3(1.0), uTorchBoost, torchLight);
+                    if (uSeeOn > 0.5) {
+                        vec2 seeRel = vTorchWorld.xz - uSeePos.xz;
+                        float seeAlong = dot(seeRel, uSeeDir.xz);
+                        float seeAcross = abs(seeRel.x * uSeeDir.z - seeRel.y * uSeeDir.x);
+                        float seeUp = vTorchWorld.y - uSeePos.y - seeAlong * uSeeDir.y;
+                        if (seeAlong > 0.4 && seeAlong < 9.0 && seeUp > -0.3 && seeUp < 2.2 && vTorchWorld.y - uSeePos.y > 0.3) {
+                            float seeEdge = max(seeAcross - 0.8, 0.0) / 0.5;
+                            if (seeEdge < 1.0 && (seeEdge < 0.01 || mod(floor(gl_FragCoord.x) + floor(gl_FragCoord.y), 2.0) < 0.5)) {
+                                discard;
+                            }
+                        }
+                    }
                 }`,
             );
     };
     const key = material.customProgramCacheKey.bind(material);
-    material.customProgramCacheKey = () => key() + "|torch";
+    material.customProgramCacheKey = () => key() + "|torch12see";
     material.needsUpdate = true;
 }
 
