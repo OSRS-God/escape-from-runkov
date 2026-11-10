@@ -85,6 +85,9 @@ export type SaveData = {
     // A new character still to pick its starter kit (starter.ts, version
     // 127); a save from before it never had the choice, and keeps its gear
     pickStarter?: boolean;
+    // The starter class picked (its kit's name, starter.ts), for its perk
+    // (version 171); a character from before then picks one once
+    starterClass?: string;
     // Whether the save has had version 146's thrown weapons sorted out
     // (parseSave): true for any save made since
     thrownBundles?: boolean;

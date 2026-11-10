@@ -1223,6 +1223,13 @@ button.github:hover {
     justify-content: center;
 }
 
+/* A class's perk (version 171), under its kit's words */
+.starter-perk {
+    display: block;
+    margin: 3px 0;
+    color: #ffb020;
+}
+
 /* ---- The war room ---- */
 
 /* The client's small font has next to no line height of its own */

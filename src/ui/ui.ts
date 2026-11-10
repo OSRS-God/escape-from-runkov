@@ -74,7 +74,7 @@ import {
 } from "../content/spells";
 import { TASKS, Task } from "../content/tasks";
 import { isKept, restoreCrownPets } from "../game/kit";
-import { STARTER_KITS, StarterKit, applyStarter } from "../game/starter";
+import { STARTER_KITS, StarterKit, applyStarter, pickClass } from "../game/starter";
 import { Chat } from "./chat";
 import { FullMap } from "./fullmap";
 import { REGEN_DELAY, hitChance, soak } from "../game/combat";
@@ -802,6 +802,12 @@ export class UI {
             this.showStarter();
             return;
         }
+        // A character from before the classes had perks (version 171) picks
+        // the class it is, once, and keeps its gear
+        if (!this.save.starterClass) {
+            this.showStarter(true);
+            return;
+        }
         const layout = isTouch ? "rail" : settings.menuLayout;
         this.showKeyed("menu", layout === "card" ? this.cardMenu() : layout === "osrs" ? this.osrsMenu() : this.railMenu());
         // The character stands clear of the rail, or above the play bar;
@@ -813,16 +819,23 @@ export class UI {
     // A new character's first screen (version 127): a starter kit for each
     // combat style, each shown as what it wears and packs; the one picked is
     // theirs, and on into the guild
-    private showStarter(): void {
+    // (each with its perk since version 171; `classOnly` for a character from
+    // before then, who picks the class it is and keeps its gear)
+    private showStarter(classOnly = false): void {
         const pick = (kit: StarterKit) => {
-            applyStarter(this.save, kit);
+            if (classOnly) {
+                pickClass(this.save, kit);
+            } else {
+                applyStarter(this.save, kit);
+            }
             this.persist();
             this.showMenu();
         };
         const card = (kit: StarterKit) => {
             const ids = [...Object.values(kit.equipment), ...kit.backpack.map((s) => s.id)].filter((id): id is number => id !== undefined);
             const gear = h("span", { class: "starter-gear" }, ...ids.map((id) => h("span", { class: "starter-item", title: getItem(id).name }, this.itemIcon(id))));
-            const sub = h("span", {}, kit.blurb, gear);
+            const perk = h("span", { class: "starter-perk" }, `${kit.perk.name}: ${kit.perk.text}`);
+            const sub = classOnly ? h("span", {}, perk) : h("span", {}, kit.blurb, perk, gear);
             return this.roomButton(`${capitalize(kit.style)} · ${kit.name}`, sub, this.itemIcon(kit.equipment.weapon!), () => pick(kit));
         };
         this.showKeyed(
@@ -830,14 +843,16 @@ export class UI {
             h(
                 "div",
                 { class: "screen account" },
-                h("h1", {}, "Choose your style"),
+                h("h1", {}, classOnly ? "Choose your class" : "Choose your style"),
                 h(
                     "div",
                     { class: "panel account-panel starter-panel" },
                     h(
                         "div",
                         { class: "subtitle" },
-                        "The guild kits you out for one way of fighting, with a bullseye lantern and oil for the dark. Whatever else you want, you'll find down there or buy in the shop.",
+                        classOnly
+                            ? "Each class has a perk of its own now. Pick the one you are: its perk is yours for good, and you keep everything you have."
+                            : "The guild kits you out for one way of fighting, with a bullseye lantern and oil for the dark, and its class's perk for good. Whatever else you want, you'll find down there or buy in the shop.",
                     ),
                     // (every kit since version 164, the Delver too)
                     ...STARTER_KITS.map(card),
@@ -2922,6 +2937,8 @@ export class UI {
             h(
                 "div",
                 { class: "item-list" },
+                // The class's perk (version 171)
+                ...(run.classPerk ? [line(run.classPerk.cls, run.classPerk.name, run.classPerk.text)] : []),
                 line("Max hit", String(s.damage), "a hit that lands is 60% to 100% of it"),
                 line(
                     "Accuracy",

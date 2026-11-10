@@ -189,6 +189,19 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 171 (not yet deployed), as the user asked: each starter class has a perk of its own,
+for good (starter.ts `perk`; run.ts PERK_ numbers): the Squire's Steadfast, 10 more
+hitpoints; the Archer's Fletcher's eye, a fifth fewer arrows used; the Apprentice's Rune
+saving, a fifth fewer runes; the Delver's Dark-adapted, a tile more sight in the dark and
+lantern oil lasting a quarter longer; the Monk's Devotion, protection draining a fifth slower.
+The class picked is kept (save.ts `starterClass`) and goes into every run (RunCarry `perk`), a
+co-op guest's their own; each starter card shows its perk, and the stats page names it. A
+character from before then gets "Choose your class" once, picking the class it is for its
+perk and keeping all its gear. Tested on the dev server: the cards' perks, the Archer picked
+and kept, in a run 110 hitpoints as a Squire against 100, sight 12 as a Delver against 11,
+arrows kept 51% of shots for an Archer against 41%, protection draining 4 a second for a Monk
+against 5, and "Choose your class" for a save without one, its gear left as it was.
+
 Version 170 (not yet deployed), as the user asked: every depth a tier lower (worlds.ts
 DEPTHS_ENEMY_TIERS_UP 0, DEPTHS_BOSS_TIERS_UP 1): depth 1 is tier 1 (one star) to depth 5 at
 tier 5, the bosses a tier above their depth's enemies (1,225 hitpoints at depth 1, 5,063 to

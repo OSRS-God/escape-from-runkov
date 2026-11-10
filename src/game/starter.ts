@@ -13,6 +13,9 @@ export type StarterKit = {
     backpack: ItemStack[];
     // Only offered for the Depths' fresh start (version 162)
     depths?: boolean;
+    // The class's own perk (version 171, as the user asked), for good: the
+    // character keeps it whatever they wear (run.ts PERK_ numbers)
+    perk: { name: string; text: string };
 };
 
 const SHRIMPS = 315;
@@ -24,6 +27,7 @@ export const STARTER_KITS: StarterKit[] = [
         blurb: "Bronze armour and a longsword. Takes hits well and needs nothing else: the safest way to learn the maps.",
         equipment: { weapon: 1291, head: 1139, body: 1103, legs: 1087, shield: 1171 },
         backpack: [{ id: SHRIMPS, count: 10 }],
+        perk: { name: "Steadfast", text: "10 more hitpoints" },
     },
     {
         style: "ranged",
@@ -34,6 +38,7 @@ export const STARTER_KITS: StarterKit[] = [
             { id: 882, count: 100 },
             { id: SHRIMPS, count: 8 },
         ],
+        perk: { name: "Fletcher's eye", text: "uses a fifth fewer arrows" },
     },
     {
         style: "magic",
@@ -44,6 +49,7 @@ export const STARTER_KITS: StarterKit[] = [
             { id: 558, count: 150 },
             { id: SHRIMPS, count: 8 },
         ],
+        perk: { name: "Rune saving", text: "uses a fifth fewer runes" },
     },
     // The Depths' own class (version 162, as the user asked): built for the
     // dark rather than the fight. Iron knives to throw and an iron longsword
@@ -65,6 +71,7 @@ export const STARTER_KITS: StarterKit[] = [
             { id: 277, count: 5 },
         ],
         depths: true,
+        perk: { name: "Dark-adapted", text: "a tile more sight in the dark, and lantern oil lasts a quarter longer" },
     },
     // The Forgotten Castle's own class (version 168, as the user asked: no
     // armour that sells for much, and the Initiate's did): a monk of
@@ -83,8 +90,14 @@ export const STARTER_KITS: StarterKit[] = [
             { id: 2434, count: 2 },
             { id: SHRIMPS, count: 8 },
         ],
+        perk: { name: "Devotion", text: "protection prayers drain a fifth slower" },
     },
 ];
+
+// A character's class (the kit they picked, by name), and its perk
+export function starterKit(name: string | undefined): StarterKit | undefined {
+    return STARTER_KITS.find((k) => k.name === name);
+}
 
 // The old kit newSave() still makes, swapped for the one picked
 const OLD_STASHED = 1129;
@@ -109,5 +122,12 @@ export function applyStarter(save: SaveData, kit: StarterKit): void {
             save.backpack.push({ id: OIL, count: DEPTHS_OIL });
         }
     }
+    save.starterClass = kit.name;
     delete save.pickStarter;
+}
+
+// A character from before version 171 picks the class it is, for its perk,
+// and keeps the gear it has
+export function pickClass(save: SaveData, kit: StarterKit): void {
+    save.starterClass = kit.name;
 }

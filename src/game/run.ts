@@ -134,6 +134,7 @@ import { CROWN_SHEET_HEIGHT, crownKey, crownSprite, crownVerified, nameColorOf }
 import { playMusic } from "./music";
 import { PlayerLook, RUN_CLIP_SPEED } from "./player";
 import { isKept } from "./kit";
+import { starterKit } from "./starter";
 import { Region, Tile, TileSet, loadRegion } from "./region";
 import { CASTLE_ROOMS, CAVE_ROOMS, CaveLayout, layoutCave } from "./caves";
 import {
@@ -203,7 +204,19 @@ export type RunCarry = {
     // The run's threat level (content/threat.ts, version 150): the host's
     // for a party
     threat?: number;
+    // The character's starter class (starter.ts, version 171), for its perk
+    perk?: string;
 };
+
+// The starter classes' perks (version 171, as the user asked; starter.ts
+// names them): the Squire's hitpoints, the share of the arrows the Archer and
+// the runes the Apprentice would use that's kept, the Delver's sight and how much
+// longer its oil burns, and how much slower the Monk's protection drains
+const PERK_HP = 10;
+const PERK_AMMO = 0.2;
+const PERK_SIGHT = 1;
+const PERK_OIL = 1.25;
+const PERK_PRAYER = 0.8;
 
 // A style to protect from: enemies hit with it do half while the prayer
 // bar lasts (Z, X, C, or the Pray button)
@@ -4575,8 +4588,22 @@ export class Run {
 
     // Whether a shot keeps what it'd take: AMMO_SAVE, and a pet's share of
     // what's left (version 146)
-    private ammoSaved(): boolean {
-        return this.rng() < 1 - (1 - AMMO_SAVE) * (1 - (this.petBuff?.ammoSave ?? 0));
+    // (and the Archer's arrows and the Apprentice's runes a fifth more often,
+    // their classes' perks: version 171)
+    private ammoSaved(perk?: "Archer" | "Apprentice"): boolean {
+        const own = perk && this.isClass(perk) ? PERK_AMMO : 0;
+        return this.rng() < 1 - (1 - AMMO_SAVE) * (1 - (this.petBuff?.ammoSave ?? 0)) * (1 - own);
+    }
+
+    // The character's starter class is this one (starter.ts, version 171)
+    private isClass(name: string): boolean {
+        return this.carry.perk === name;
+    }
+
+    // Its perk, for the stats page
+    get classPerk(): { cls: string; name: string; text: string } | undefined {
+        const kit = starterKit(this.carry.perk);
+        return kit ? { cls: kit.name, ...kit.perk } : undefined;
     }
 
     // What a kill of this player's drops for their weapon (version 146): a
@@ -5236,7 +5263,7 @@ export class Run {
             );
             // (the Steady prayer upgrade a tenth off a level)
             const drain = this.eased() ? EASED_PRAYER_DRAIN : DEPTHS_PRAYER_DRAIN;
-            const depths = this.world.bosses ? drain * (1 - 0.1 * (this.carry.depths?.upgrades.prayer ?? 0)) : 1;
+            const depths = (this.world.bosses ? drain * (1 - 0.1 * (this.carry.depths?.upgrades.prayer ?? 0)) : 1) * (this.isClass("Monk") ? PERK_PRAYER : 1);
             this.prayer = Math.max(0, this.prayer - (PRAYER_DRAIN * (bossOnMe ? BOSS_PRAYER_DRAIN : 1) * depths * dt) / scale);
             if (this.prayer <= 0) {
                 this.protect = "none";
@@ -5743,7 +5770,8 @@ export class Run {
     // and a lit lantern's
     private caveSight(): number {
         const lair = this.themeAt(this.px, this.pz)?.theme.sight ?? 0;
-        return Math.max(3, CAVE_SIGHT + (this.carry.depths?.upgrades.sight ?? 0) + (this.lanternLit ? LANTERN_SIGHT : 0) + lair);
+        const delver = this.isClass("Delver") ? PERK_SIGHT : 0;
+        return Math.max(3, CAVE_SIGHT + (this.carry.depths?.upgrades.sight ?? 0) + (this.lanternLit ? LANTERN_SIGHT : 0) + lair + delver);
     }
 
     // The Depths' own on the gear's numbers: the Hardiness upgrade's
@@ -5787,7 +5815,8 @@ export class Run {
         }
         const oil = this.inventory.find((s) => getItem(s.id).oil);
         if (oil && removeItem(this.inventory, oil.id, 1)) {
-            this.oilLeft = OIL_SECONDS;
+            // (a quarter longer for a Delver: its class's perk, version 171)
+            this.oilLeft = OIL_SECONDS * (this.isClass("Delver") ? PERK_OIL : 1);
             if (!this.lanternLit) {
                 this.hooks.onMessage("You light your bullseye lantern: it pushes the dark back.");
             }
@@ -6318,7 +6347,7 @@ export class Run {
                     scale = spellScale(stats.weapon, spell);
                     look = { projectile: spell.projectile, impact: spell.impact, spell, maxHit: Math.max(1, Math.round(stats.damage * scale)) };
                     this.lastSpell = spell;
-                    if (!this.ammoSaved()) {
+                    if (!this.ammoSaved("Apprentice")) {
                         for (const rune of spellCost(spell, this.runesGiven())) {
                             removeItem(this.inventory, rune.id, rune.n);
                         }
@@ -6343,7 +6372,7 @@ export class Run {
                     if (stats.weapon.projectile !== BOLT) {
                         look = { projectile: kind.projectile ?? look.projectile, impact: kind.impact ?? look.impact };
                     }
-                    if (!this.ammoSaved()) {
+                    if (!this.ammoSaved("Archer")) {
                         removeItem(this.inventory, ammo.id, 1);
                         this.hooks.onChanged();
                     }
@@ -10306,6 +10335,10 @@ export class Run {
     private applyStats(): void {
         const stats = gearStats(this.equipment, this.wear);
         applyPetStats(stats, this.petBuff);
+        // The Squire's Steadfast (version 171)
+        if (this.isClass("Squire")) {
+            stats.hp += PERK_HP;
+        }
         this.applyDepthsStats(stats);
         if (this.boosts.strength > 0) {
             stats.damage = Math.round(stats.damage * 1.25);

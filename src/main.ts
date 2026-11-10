@@ -203,6 +203,7 @@ function packUp(worldId: string, daily?: number): RunCarry {
         wear: { ...save.wear },
         autocast: save.autocast,
         spellbook: save.spellbook,
+        perk: save.starterClass,
         // The level picked for the map, no higher than it's open to
         threat: Math.min(save.threat?.[worldId] ?? 0, threatOpen(save.stats.bestThreat, save.stats.mapsBeaten, worldId)),
     };
