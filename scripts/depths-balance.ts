@@ -16,18 +16,19 @@ import { makeRng } from "../src/game/dungeon";
 import { BASE_HP, GearStats, gearStats } from "../src/game/inventory";
 import { Equipment } from "../src/game/save";
 
-// run.ts's numbers
+// run.ts's numbers (the Depths' own since version 169: its EASED_ ones)
 const CHAMPION_HP = 2.5;
 const CHAMPION_DAMAGE = 2;
 const DEPTHS_CHAMPION = 0.05 * 3;
-const DEPTHS_PACK = 0.3;
+const DEPTHS_PACK = 0.2;
 const DEPTHS_PACK_LEADER = 0.5;
+const DEPTHS_PACK_SIZE: [number, number] = [2, 4];
 const ELITE_ONE_IN = 12;
-const BOSS_GUARDS: [number, number] = [4, 6];
+const BOSS_GUARDS: [number, number] = [2, 4];
 const EMPOWER_HP = 3;
 const EMPOWER_DAMAGE = 2;
-const COLLAPSE_EVERY = 75;
-const COLLAPSE_HIT = 0.1;
+const COLLAPSE_EVERY = 100;
+const COLLAPSE_HIT = 0.08;
 const COLLAPSE_HIT_STEP = 0.03;
 const COLLAPSE_HIT_MAX = 0.35;
 const DROP_HEAL = [15, 20, 30, 40, 55];
@@ -171,7 +172,7 @@ function run(world: WorldDef, kit: Kit, seed: number): number {
         const def = pick(world, rng);
         const group: EnemyDef[] = [];
         if (rng() < DEPTHS_PACK) {
-            const size = 3 + Math.floor(rng() * 3);
+            const size = DEPTHS_PACK_SIZE[0] + Math.floor(rng() * (DEPTHS_PACK_SIZE[1] - DEPTHS_PACK_SIZE[0] + 1));
             group.push(rng() < DEPTHS_PACK_LEADER ? champion(def) : def);
             for (let k = 1; k < size; k++) {
                 group.push(def);

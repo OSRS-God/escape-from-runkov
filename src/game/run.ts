@@ -56,7 +56,7 @@ import {
     staffCasts,
 } from "../content/spells";
 import { Threat, threatName, threatOf, threatText } from "../content/threat";
-import { CASTLE_ID, ENDLESS_BOSSES, ENDLESS_DEPTHS, SUPERIOR_MAX, SUPERIOR_ONE_IN, WorldDef, modeWorld } from "../content/worlds";
+import { CASTLE_ID, ENDLESS_BOSSES, ENDLESS_ID, ENDLESS_DEPTHS, SUPERIOR_MAX, SUPERIOR_ONE_IN, WorldDef, modeWorld } from "../content/worlds";
 import { GameStart, LootRule } from "./coop";
 import { Hero, Mate } from "./mates";
 import {
@@ -1384,8 +1384,20 @@ const BOSS_GUARDS: [number, number] = [4, 6];
 // What a tiny one (EnemyDef's tiny) drops, at any depth
 const TINY_LOOT = [{ tier: 1, weight: 1 }];
 const DEPTHS_PRAYER_DRAIN = 1.5;
+// The Depths a little easier (version 169, as the user asked; the Forgotten
+// Castle keeps the numbers above): fewer and smaller packs, fewer guards
+// about each boss, protection draining slower, the roof coming down less
+// often and less hard, and the ways out opening on their own sooner (the
+// food on the dead and depth 1's bosses are worlds.ts's)
+const EASED_PACK = 0.2;
+const EASED_PACK_SIZE: [number, number] = [2, 4];
+const EASED_GUARDS: [number, number] = [2, 4];
+const EASED_PRAYER_DRAIN = 1.25;
+const EASED_COLLAPSE_EVERY = 100;
+const EASED_COLLAPSE_HIT = 0.08;
+const EASED_EXITS_OPEN = 240;
 const DEPTHS_RULES =
-    "The ways out are sealed in the rock until a boss falls, or six minutes have gone, and there's no genie down here. The cave wakes fast, and its roof keeps coming down.";
+    "The ways out are sealed in the rock until a boss falls, or four minutes have gone, and there's no genie down here. The cave wakes fast, and its roof keeps coming down.";
 
 // `count` different ones of a list, in a random order
 function pickSome<T>(rng: Rng, list: T[], count: number): T[] {
@@ -2512,7 +2524,8 @@ export class Run {
                 // The Depths (DEPTHS_PACK): champions and elites more often,
                 // and some come as a pack, led by a champion as often as not
                 const depths = this.world.bosses ? DEPTHS_CHAMPIONS : 1;
-                const pack = this.world.bosses && this.rng() < DEPTHS_PACK ? randInt(this.rng, DEPTHS_PACK_SIZE[0], DEPTHS_PACK_SIZE[1]) - 1 : 0;
+                const [packOdds, packSize] = this.eased() ? [EASED_PACK, EASED_PACK_SIZE] : [DEPTHS_PACK, DEPTHS_PACK_SIZE];
+                const pack = this.world.bosses && this.rng() < packOdds ? randInt(this.rng, packSize[0], packSize[1]) - 1 : 0;
                 const champion: boolean =
                     this.rng() < this.threat.champion * depths || (pack > 0 && this.rng() < DEPTHS_PACK_LEADER) || (i === enemyCount - 1 && !anyChampion);
                 anyChampion = anyChampion || champion;
@@ -2554,7 +2567,8 @@ export class Run {
             if (!this.world.bosses) {
                 return;
             }
-            const guards = randInt(this.rng, BOSS_GUARDS[0], BOSS_GUARDS[1]);
+            const [fewest, most] = this.eased() ? EASED_GUARDS : BOSS_GUARDS;
+            const guards = randInt(this.rng, fewest, most);
             let placed = 0;
             for (let tries = 0; tries < guards * 6 && placed < guards; tries++) {
                 const angle = this.rng() * Math.PI * 2;
@@ -3975,7 +3989,13 @@ export class Run {
     // The ways out are there to use: always, but in the Depths only once a
     // boss has fallen, or the rock's split on its own (DEPTHS_EXITS_OPEN)
     private exitsOpen(): boolean {
-        return !this.world.bosses || this.bossKills > 0 || this.time >= DEPTHS_EXITS_OPEN;
+        return !this.world.bosses || this.bossKills > 0 || this.time >= (this.eased() ? EASED_EXITS_OPEN : DEPTHS_EXITS_OPEN);
+    }
+
+    // The Depths themselves, a little easier than the Forgotten Castle
+    // (version 169: the EASED_ numbers)
+    private eased(): boolean {
+        return this.world.id === ENDLESS_ID;
     }
 
     // The Depths' ways out come out of the rock once they're open
@@ -4668,7 +4688,7 @@ export class Run {
             this.awake = true;
             this.announce("The map wakes. Everything here knows you're about now, and nothing heals on its own.");
         }
-        if (this.world.bosses && this.time >= COLLAPSE_EVERY * (this.collapses + 1)) {
+        if (this.world.bosses && this.time >= (this.eased() ? EASED_COLLAPSE_EVERY : COLLAPSE_EVERY) * (this.collapses + 1)) {
             this.collapse();
         }
         const left = this.closeSeconds() - this.time;
@@ -4692,7 +4712,7 @@ export class Run {
 
     private collapse(): void {
         this.collapses++;
-        const share = Math.min(COLLAPSE_HIT_MAX, COLLAPSE_HIT + COLLAPSE_HIT_STEP * (this.collapses - 1));
+        const share = Math.min(COLLAPSE_HIT_MAX, (this.eased() ? EASED_COLLAPSE_HIT : COLLAPSE_HIT) + COLLAPSE_HIT_STEP * (this.collapses - 1));
         const rocks = COLLAPSE_ROCKS + this.collapses;
         const falling: EnemyDef = { ...this.world.enemies[0].def, name: "Falling rocks" };
         for (const hero of this.heroes()) {
@@ -5215,7 +5235,8 @@ export class Run {
                     (guest ? Math.hypot(e.x - this.px, e.z - this.pz) < GUEST_BOSS_NEAR : e.target === this.self),
             );
             // (the Steady prayer upgrade a tenth off a level)
-            const depths = this.world.bosses ? DEPTHS_PRAYER_DRAIN * (1 - 0.1 * (this.carry.depths?.upgrades.prayer ?? 0)) : 1;
+            const drain = this.eased() ? EASED_PRAYER_DRAIN : DEPTHS_PRAYER_DRAIN;
+            const depths = this.world.bosses ? drain * (1 - 0.1 * (this.carry.depths?.upgrades.prayer ?? 0)) : 1;
             this.prayer = Math.max(0, this.prayer - (PRAYER_DRAIN * (bossOnMe ? BOSS_PRAYER_DRAIN : 1) * depths * dt) / scale);
             if (this.prayer <= 0) {
                 this.protect = "none";

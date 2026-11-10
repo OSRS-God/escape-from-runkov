@@ -189,6 +189,22 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 169 (not yet deployed), as the user asked: the Depths a little easier, the Forgotten
+Castle as it was (run.ts `eased()` and its EASED_ numbers; worlds.ts depthsWorld's `eased`).
+Packs a fifth of the time instead of three tenths, two to four strong instead of three to
+five; two to four champions guarding each boss instead of four to six; protection draining
+1.25 times as fast down there instead of 1.5; the roof coming down every 100 seconds instead
+of 75, its first rocks a twelfth of your hitpoints instead of a tenth; the ways out opening on
+their own after four minutes instead of six (the first words say so); food on the dead 45%
+as often as on a regular map instead of 30%; depth 1's bosses with 1.25 times a regular
+boss's hitpoints instead of 1.5 (1,625 for the first depth's, from 1,950). The balance sim
+(scripts/depths-balance.ts, its numbers the Depths' new ones) still has nobody killing two
+bosses in a run; reaching one is far likelier deeper down (a tier 5 set at depth 4 from 16%
+to 44%, the best gear at depth 5 from 45% to 82%), the best gear kills one at depth 4 44% of
+the time (from 13%), and a tier 3 kit kills depth 1's boss 4% of the time (from none). Tested on the dev server: a
+Depths run's bosses at 1,625 with two to four guards and the four minute rule, the castle's
+lords and guards and six minutes unchanged.
+
 Version 168 (not yet deployed), as the user asked: a fifth starter class for the Forgotten
 Castle, "Prayer · Monk" (starter.ts), with nothing in it that sells for much (version 167's
 Initiate was scrapped for its 11,000 coins of armour): an iron warhammer and monk's robes,

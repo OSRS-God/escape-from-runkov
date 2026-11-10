@@ -489,6 +489,12 @@ const DEPTHS_BOSS_TIERS_UP = 2;
 const DEPTHS_BOSS_HP = 1.5;
 const DEPTHS_PAST_FIVE = 1.35;
 const DEPTHS_FOOD = 0.3;
+// The Depths a little easier (version 169, as the user asked; the Forgotten
+// Castle keeps the numbers above): food on the dead half again as often, and
+// depth 1's bosses with a quarter more than a regular boss's hitpoints
+// instead of half (run.ts has the rest)
+const EASED_FOOD = 0.45;
+const EASED_FIRST_BOSS_HP = 1.25;
 // The Depths' tiny ones (version 160, as the user asked): rats, bats,
 // spiders, bugs, crawlers, slimes and slugs drop tier 1 only, gear, food,
 // arrows and runes alike, champions of them too (run.ts killEnemy)
@@ -509,7 +515,15 @@ const DEPTHS_TINY = new Set([
 const CASTLE_ENEMY_TIERS_UP = 3;
 const CASTLE_BOSS_TIERS_UP = 3;
 
-function depthsWorld(depth: number, json = endlessJson(REGULAR_JSONS), enemyUp = DEPTHS_ENEMY_TIERS_UP, bossUp = DEPTHS_BOSS_TIERS_UP): WorldDef {
+function depthsWorld(
+    depth: number,
+    json = endlessJson(REGULAR_JSONS),
+    enemyUp = DEPTHS_ENEMY_TIERS_UP,
+    bossUp = DEPTHS_BOSS_TIERS_UP,
+    eased = true,
+): WorldDef {
+    const food = eased ? EASED_FOOD : DEPTHS_FOOD;
+    const bossHp = eased && depth === 1 ? EASED_FIRST_BOSS_HP : DEPTHS_BOSS_HP;
     const enemyTier = depth + enemyUp;
     const bossTier = depth + bossUp;
     const world = makeWorld({ ...json, tier: Math.min(5, enemyTier) });
@@ -520,12 +534,12 @@ function depthsWorld(depth: number, json = endlessJson(REGULAR_JSONS), enemyUp =
         ...def,
         hp: Math.round(def.hp * enemyPast),
         damage: Math.round(def.damage * enemyPast),
-        foodChance: def.foodChance * DEPTHS_FOOD,
+        foodChance: def.foodChance * food,
         tiny: DEPTHS_TINY.has(def.id.slice(def.id.indexOf(":") + 1)) || undefined,
     });
     const boss = (def: EnemyDef): EnemyDef => ({
         ...def,
-        hp: Math.round(def.hp * DEPTHS_BOSS_HP * bossPast),
+        hp: Math.round(def.hp * bossHp * bossPast),
         damage: Math.round(def.damage * bossPast),
     });
     return {
@@ -542,7 +556,7 @@ const ENDLESS_WORLDS: WorldDef[] = Array.from({ length: ENDLESS_DEPTHS }, (_, i)
 // The Forgotten Castle is a four star map of its own (version 164, as the
 // user asked): no depths, its enemies and lords at tier 4 (the lords with
 // the Depths' half again of a boss's hitpoints)
-const CASTLE_WORLD: WorldDef = { ...depthsWorld(1, castleJson(), CASTLE_ENEMY_TIERS_UP, CASTLE_BOSS_TIERS_UP), depth: undefined };
+const CASTLE_WORLD: WorldDef = { ...depthsWorld(1, castleJson(), CASTLE_ENEMY_TIERS_UP, CASTLE_BOSS_TIERS_UP, false), depth: undefined };
 
 // The game's maps (version 164, as the user asked: the twelve regular maps
 // are gone, and these two, open from the start, share the one stash). The
