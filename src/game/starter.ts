@@ -6,7 +6,7 @@ import { removeItem } from "./inventory";
 import { Equipment, ItemStack, SaveData } from "./save";
 
 export type StarterKit = {
-    style: "melee" | "ranged" | "magic" | "slayer";
+    style: "melee" | "ranged" | "magic" | "slayer" | "prayer";
     name: string;
     blurb: string;
     equipment: Equipment;
@@ -55,7 +55,7 @@ export const STARTER_KITS: StarterKit[] = [
     {
         style: "slayer",
         name: "Delver",
-        blurb: "The Depths' own: iron knives to throw and a longsword for when they close in, a spiny helmet and slayer gloves over leather, and supplies to spare: eight cans of oil, fifteen shrimps and a prayer potion. The lightest armour of the four.",
+        blurb: "The Depths' own: iron knives to throw and a longsword for when they close in, a spiny helmet and slayer gloves over leather, and supplies to spare: eight cans of oil, fifteen shrimps and a prayer potion. The lightest armour of them all.",
         equipment: { weapon: 863, head: 4551, body: 1129, legs: 1095, hands: 6720, feet: 1061 },
         backpack: [
             { id: 863, count: 150 },
@@ -65,6 +65,24 @@ export const STARTER_KITS: StarterKit[] = [
             { id: 277, count: 5 },
         ],
         depths: true,
+    },
+    // The Forgotten Castle's own class (version 167, as the user asked): a
+    // Temple Knight initiate sent to put its dead lords back in the ground.
+    // A one-handed iron crossbow and 150 bronze arrows (the crossbows shoot
+    // the arrows), the initiate's sallet, hauberk and cuisse, and the holy
+    // water that doubles hits on the castle's undead and vampyres: three
+    // vials, two prayer potions and eight shrimps
+    {
+        style: "prayer",
+        name: "Initiate",
+        blurb: "The Forgotten Castle's own: a Temple Knight's iron crossbow and initiate armour, three vials of holy water (double hits on the undead and vampyres for a minute), two prayer potions and eight shrimps. Weaker against the Depths' beasts.",
+        equipment: { weapon: 9177, head: 5574, body: 5575, legs: 5576 },
+        backpack: [
+            { id: 882, count: 150 },
+            { id: 732, count: 3 },
+            { id: 2434, count: 2 },
+            { id: SHRIMPS, count: 8 },
+        ],
     },
 ];
 

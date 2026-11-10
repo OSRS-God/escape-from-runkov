@@ -189,6 +189,15 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 167 (not yet deployed), as the user asked: a fifth starter class for the Forgotten
+Castle, "Prayer · Initiate" (starter.ts), a Temple Knight initiate: a one-handed iron
+crossbow with 150 bronze arrows, the initiate sallet, hauberk and cuisse, three vials of holy
+water, two prayer potions and eight shrimps, with the lantern and oil every kit gets. Its
+armour counts as melee, so the crossbow hits 12% less in it (inventory.ts STYLE_HINDER):
+7 to the Archer's 6 all the same, and 24 defence, the most of the five. The Delver's blurb
+no longer says "of the four". Tested on the dev server: the card shows with its eight items,
+picking it gives the kit, and in the castle the crossbow shoots and spends arrows.
+
 Version 166 (not yet deployed), as the user asked: sixteen kinds of thing to use about the two
 maps (props.ts says what and how many; run.ts placeProps puts them in rooms of their own kind
 first, propActions says what E does, propSelf and propWorld do it). E is a tap, or a hold of
