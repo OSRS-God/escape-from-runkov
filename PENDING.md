@@ -189,6 +189,16 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 170 (not yet deployed), as the user asked: every depth a tier lower (worlds.ts
+DEPTHS_ENEMY_TIERS_UP 0, DEPTHS_BOSS_TIERS_UP 1): depth 1 is tier 1 (one star) to depth 5 at
+tier 5, the bosses a tier above their depth's enemies (1,225 hitpoints at depth 1, 5,063 to
+8,100 at depth 5). Purses go by the tier, so each depth pays about half the coins it did.
+The castle is as it was. The balance sim: a starter's tier 1 kit reaches depth 1's boss 84%
+of the time (it couldn't before) but can't kill it; and the best gear in the game now kills
+two bosses in a run at depths 1 and 2 (99.5% and 94.5%), which version 159 had kept out of
+reach (still none deeper). Tested on the dev server: a depth 1 run says tier 1, with tier 1
+kinds and 1,225 hitpoint bosses.
+
 Version 169 (not yet deployed), as the user asked: the Depths a little easier, the Forgotten
 Castle as it was (run.ts `eased()` and its EASED_ numbers; worlds.ts depthsWorld's `eased`).
 Packs a fifth of the time instead of three tenths, two to four strong instead of three to

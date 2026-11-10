@@ -482,10 +482,12 @@ function makeWorld(w: WorldJson): WorldDef {
 // the Depths give before a golden chest, could never kill one at depth 1),
 // and past five stars everything 1.35 times again a tier it would have gone
 // over; and food on the dead under a third as often. Loot is every tier at
-// every depth.
+// every depth. Since version 170, as the user asked, every depth a tier lower:
+// its enemies at the depth's own tier (depth 1 tier 1 to depth 5 tier 5) and
+// its bosses one above.
 export const ENDLESS_DEPTHS = 5;
-const DEPTHS_ENEMY_TIERS_UP = 1;
-const DEPTHS_BOSS_TIERS_UP = 2;
+const DEPTHS_ENEMY_TIERS_UP = 0;
+const DEPTHS_BOSS_TIERS_UP = 1;
 const DEPTHS_BOSS_HP = 1.5;
 const DEPTHS_PAST_FIVE = 1.35;
 const DEPTHS_FOOD = 0.3;
