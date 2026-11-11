@@ -26,7 +26,9 @@ import {
     TIER_COLOURS,
     VAULT_KEY,
     BRIMSTONE_KEY,
+    ItemDef,
     ammoOfTier,
+    gearPower,
     getItem,
     iconUrl,
     pluralName,
@@ -139,7 +141,7 @@ import { playMusic } from "./music";
 import { PlayerLook, RUN_CLIP_SPEED } from "./player";
 import { isKept } from "./kit";
 import { starterKit } from "./starter";
-import { MERC_CUT, MERC_DEFS, MercDef, MercKind, mercScale, mercWears } from "./mercs";
+import { MERC_CUT, MERC_DEFS, MercDef, MercKind, STYLE_OWNER, mercBetter, mercFits, mercScale, mercWears } from "./mercs";
 import { Region, Tile, TileSet, loadRegion } from "./region";
 import { CASTLE_ROOMS, CAVE_ROOMS, CaveLayout, DOOR_BITS, DOOR_EAST, DOOR_NORTH, DOOR_SOUTH, DOOR_WEST, layoutCave } from "./caves";
 import {
@@ -1156,6 +1158,26 @@ const MERC_RETREAT_TOUGH = 0.2;
 const MERC_RALLY = 0.6;
 const MERC_KITE = 2.2;
 const MERC_CALL_RANGE = 4.5;
+// Version 182 (as the user asked): what's lain untaken this long within this
+// many tiles of them, that they can use, they go and get (not from under
+// you: nothing within MERC_FETCH_YOURS of you), carrying at most this many
+// bites; and their stride: they turn this many radians a second, walk up
+// to you when you've stood still this long and they're within this of
+// their post, and once set off come to this share of their follow distance
+const MERC_FETCH_WAIT = 3;
+const MERC_FETCH_RANGE = 30;
+const MERC_FETCH_YOURS = 1.5;
+const MERC_FOOD_MAX = 8;
+const MERC_TURN = 11;
+const MERC_WALK_STILL = 0.5;
+const MERC_WALK_NEAR = 2.5;
+const MERC_CLOSE_TO = 0.8;
+
+// The shortest way round from one heading to another, so much of it at most
+function turnToward(from: number, to: number, most: number): number {
+    const d = Math.atan2(Math.sin(to - from), Math.cos(to - from));
+    return Math.abs(d) <= most ? to : from + Math.sign(d) * most;
+}
 // The enemies' heads (version 178, as the user asked for far smarter
 // ones). Who they go for: a hero under this share of their health draws them
 // this much nearer (they smell blood), the one that hit them within this
@@ -1910,6 +1932,8 @@ export class Run {
     // quarter second (one hero outside co-op)
     private flows = new Map<string, Int16Array>();
     private flowAge = 1;
+    // When you last moved (version 182: the mercenary walks up while you stand)
+    private movedAt = -10;
     private fullMessageAt = -10;
     private time = 0;
     private frame?: number;
@@ -4647,12 +4671,22 @@ export class Run {
     // Version 177: a mercenary's step can be quicker (hurry), and goes round
     // what they'd rather not tread on (avoid: a spike trap), sideways if
     // need be
-    private allyStep(a: Walker, gx: number, gz: number, owner: Hero, dt: number, how: { hurry?: number; avoid?: (x: number, z: number) => boolean } = {}): void {
+    // (version 182: a flow of their own to follow instead of their hero's, a
+    // mercenary's to what they're fetching; and a turn rate, radians a
+    // second, where they shouldn't snap round)
+    private allyStep(
+        a: Walker,
+        gx: number,
+        gz: number,
+        owner: Hero,
+        dt: number,
+        how: { hurry?: number; avoid?: (x: number, z: number) => boolean; flow?: Int16Array; turn?: number } = {},
+    ): void {
         const region = this.region;
         let dx = gx - a.x;
         let dz = gz - a.z;
         const straight = region.lineOfSight(a.x, a.z, gx, gz) && region.clearWalk(a.x, a.z, gx, gz, COLLISION_RADIUS);
-        const flow = this.flows.get(owner.id);
+        const flow = how.flow ?? this.flows.get(owner.id);
         const here = flow ? region.flowAt(flow, a.x, a.z) : -1;
         if (!straight && flow && here > 0) {
             const tx = region.tileX(a.x);
@@ -4708,7 +4742,8 @@ export class Run {
         a.stuck = Math.hypot(nx - a.x, nz - a.z) < step * 0.3 ? a.stuck + dt : 0;
         a.x = nx;
         a.z = nz;
-        a.facing = Math.atan2(ux, uz);
+        const heading = Math.atan2(ux, uz);
+        a.facing = how.turn === undefined ? heading : turnToward(a.facing, heading, how.turn * dt);
         a.walking = true;
     }
 
@@ -5315,6 +5350,12 @@ export class Run {
         // whether its once-a-run is spent (a champion's second wind)
         perkIn: number;
         perkUsed: boolean;
+        // Version 182: what they're off to fetch and the way to it, when
+        // they last were (no blinking back to you on the way home), and
+        // whether they're coming up to you (so they don't stop and start)
+        fetching?: { uid: number; flow: Int16Array };
+        fetchedAt: number;
+        closing: boolean;
     };
     // What you've put down for them to take (dropItem's), and what they've
     // looked at and left
@@ -5377,6 +5418,8 @@ export class Run {
             calledAt: -10,
             perkIn: def.perk?.kind === "prayers" ? def.perk.every : 0,
             perkUsed: false,
+            fetchedAt: -100,
+            closing: false,
         };
         this.mercStats(true);
         await this.dressMerc();
@@ -5451,9 +5494,16 @@ export class Run {
         }
         const slot = item.slot;
         const weapon = m.stats.weapon;
-        if (!slot || (slot === "shield" && weapon?.twoHanded)) {
+        // (only their own kind's gear since version 182, as the user asked)
+        if (!slot || !mercFits(m.kind, item) || (slot === "shield" && weapon?.twoHanded)) {
             this.mercLeft.add(p.uid);
-            this.hooks.onMessage(slot ? `${m.name} can't hold a shield with a two-handed weapon.` : `${m.name} has no use for the ${name}.`);
+            this.hooks.onMessage(
+                !slot
+                    ? `${m.name} has no use for the ${name}.`
+                    : !mercFits(m.kind, item)
+                      ? `${m.name} leaves the ${name}: not ${STYLE_OWNER[m.def.style]} ${slot === "weapon" ? "weapon" : "armour"}.`
+                      : `${m.name} can't hold a shield with a two-handed weapon.`,
+            );
             return;
         }
         this.removePickup(p);
@@ -5593,26 +5643,61 @@ export class Run {
         // player's; no arrows or runes asked of them)
         const reach = m.stats.ranged ? m.stats.range : 0;
         const toYou = Math.hypot(this.px - m.x, this.pz - m.z);
-        const target = toYou > ALLY_LEASH ? undefined : this.mercFoe(m, reach);
+        // (off fetching, far from you, they still fight what's on them)
+        const target = toYou > ALLY_LEASH && !m.fetching ? undefined : this.mercFoe(m, reach);
         // Falling back, a bowman or mage still shoots from behind you
         const fighting = target && (!m.fallingBack || reach > 0);
         this.mercCallOut(m);
         // Nothing to fight: what you've put down for them, if it's near, or
-        // food or a brew you've no room for (version 176)
+        // food or a brew you've no room for (version 176); and since version
+        // 182 (as the user asked) anything they can use that's lain
+        // MERC_FETCH_WAIT untaken within MERC_FETCH_RANGE, you not on it
         let fetch: Pickup | undefined;
         if (!target && !m.fallingBack) {
-            let near = ALLY_REACH;
+            let best = Infinity;
             for (const p of this.pickups) {
-                const theirs = this.givenUids.has(p.uid) || (p.age >= 0.4 && healOf(getItem(p.id)) > 0 && this.roomInPack(p.id, p.count) === 0);
-                if (!theirs || this.mercLeft.has(p.uid)) {
+                if (this.mercLeft.has(p.uid)) {
                     continue;
                 }
                 const d = Math.hypot(p.x - m.x, p.z - m.z);
-                if (d < near) {
-                    near = d;
+                let wanted: boolean;
+                if (this.givenUids.has(p.uid)) {
+                    wanted = d < ALLY_REACH;
+                } else if (p.age < 0.4) {
+                    wanted = false;
+                } else if (healOf(getItem(p.id)) > 0 && this.roomInPack(p.id, p.count) === 0) {
+                    wanted = d < ALLY_REACH;
+                } else {
+                    wanted = p.age >= MERC_FETCH_WAIT && d < MERC_FETCH_RANGE && Math.hypot(p.x - this.px, p.z - this.pz) > MERC_FETCH_YOURS && this.mercUses(m, getItem(p.id));
+                }
+                // (the one they're already after, unless another's much nearer)
+                const score = d - (p.uid === m.fetching?.uid ? 4 : 0);
+                if (wanted && score < best) {
+                    best = score;
                     fetch = p;
                 }
             }
+        }
+        if (fetch && m.fetching?.uid !== fetch.uid) {
+            // The way there, a flow of its own (allyStep's is to you); what
+            // can't be reached is left
+            const flow = this.region.flowField({ x: fetch.x, z: fetch.z });
+            if (this.region.flowAt(flow, m.x, m.z) === -1) {
+                this.mercLeft.add(fetch.uid);
+                fetch = undefined;
+            } else {
+                m.fetching = { uid: fetch.uid, flow };
+                if (!this.givenUids.has(fetch.uid) && Math.hypot(fetch.x - m.x, fetch.z - m.z) > ALLY_REACH) {
+                    this.hooks.onMessage(`${m.name} goes for the ${getItem(fetch.id).name.toLowerCase()}.`);
+                }
+            }
+        }
+        // (the errand's kept through a fight on the way, so it's not
+        // announced and worked out again after)
+        if (fetch) {
+            m.fetchedAt = this.time;
+        } else if (!target) {
+            m.fetching = undefined;
         }
         // Where they're going, and how close is close enough
         let gx: number;
@@ -5644,19 +5729,31 @@ export class Run {
         const avoid = this.trapAvoid();
         // (a ranger's pace: version 181)
         const pace = m.def.perk?.kind === "haste" ? m.def.perk.speed : 1;
+        // Their stride (version 182, as the user asked for better running):
+        // following you, once they've set off they come to MERC_CLOSE_TO of
+        // their follow distance, not stopping and starting at its edge; and
+        // they walk up the last bit while you stand still
+        const following = !target && !fetch && !m.fallingBack;
+        let go = d > stop;
+        if (following) {
+            m.closing = d > stop || (m.closing && d > stop * MERC_CLOSE_TO);
+            go = m.closing;
+        } else {
+            m.closing = false;
+        }
+        const walk = following && this.time - this.movedAt > MERC_WALK_STILL && d < stop + MERC_WALK_NEAR;
+        const turn = MERC_TURN * dt;
         if (away) {
-            this.allyStep(m, m.x + away[0] * 2, m.z + away[1] * 2, this.self, dt, { avoid, hurry: 1.1 * pace });
-            if (m.busy <= 0) {
-                m.look?.play("run", { speed: RUN_CLIP_SPEED });
-            }
+            this.allyStep(m, m.x + away[0] * 2, m.z + away[1] * 2, this.self, dt, { avoid, hurry: 1.1 * pace, turn: MERC_TURN });
+            this.mercStride(m, 1.1 * pace, false);
         } else if (fetch && d <= stop) {
             this.mercTakes(fetch);
-        } else if ((!target && !fetch && toYou > 20) || m.stuck > ALLY_STUCK) {
+        } else if ((!target && !fetch && toYou > 20 && this.time - m.fetchedAt > 12) || m.stuck > ALLY_STUCK) {
             this.allyCatchUp(m, this.self);
         } else if (fighting && inReach && m.swingIn <= 0) {
             // Their weapon's swing and hit, as a player's (version 175),
             // their kind's share of it and their level's on top
-            m.facing = Math.atan2(target.x - m.x, target.z - m.z);
+            m.facing = turnToward(m.facing, Math.atan2(target.x - m.x, target.z - m.z), turn * 2);
             m.swingIn = Math.max(0.6, m.stats.speed);
             m.busy = 0.9;
             m.look?.play(m.attackClip, { once: true });
@@ -5679,14 +5776,14 @@ export class Run {
             if (perk?.kind === "lifesteal" && hit > 0 && !m.hero.dead) {
                 m.hero.hp = Math.min(m.hero.maxHp, m.hero.hp + Math.max(1, Math.round(hit * perk.share)));
             }
-        } else if (d > stop) {
-            // (quicker when they've fallen behind)
-            this.allyStep(m, gx, gz, this.self, dt, { avoid, hurry: (!target && !fetch && toYou > 6 ? 1.2 : 1) * pace });
-            if (m.busy <= 0) {
-                m.look?.play("run", { speed: RUN_CLIP_SPEED });
-            }
+        } else if (go) {
+            // (quicker when they've fallen behind, or off after something;
+            // a walk up to you when you're standing)
+            const hurry = walk ? 0.5 : fetch || (!target && toYou > 6) ? 1.2 : 1;
+            this.allyStep(m, gx, gz, this.self, dt, { avoid, hurry: hurry * pace, flow: fetch ? m.fetching?.flow : undefined, turn: MERC_TURN });
+            this.mercStride(m, hurry * pace, walk);
         } else if (fighting) {
-            m.facing = Math.atan2(target.x - m.x, target.z - m.z);
+            m.facing = turnToward(m.facing, Math.atan2(target.x - m.x, target.z - m.z), turn);
             if (m.busy <= 0) {
                 m.look?.play("idle");
             }
@@ -5703,6 +5800,31 @@ export class Run {
         m.bar.group.visible = settings.healthBars;
         m.bar.group.position.set(m.x, this.groundY(m.x, m.z) + (m.look?.height ?? 1.6) * this.character.size + 0.3, m.z);
         m.bar.fill.scale.x = Math.max(0.001, m.hero.hp / m.hero.maxHp) * BAR_WIDTH;
+    }
+
+    // Their legs at their pace (version 182): the run clip as fast as they
+    // go (a player's RUN_CLIP_SPEED at PLAYER_SPEED; theirs is 0.9 of it
+    // times the hurry), or the walk, which covers half the ground a cycle
+    private mercStride(m: NonNullable<Run["merc"]>, hurry: number, walk: boolean): void {
+        if (m.busy > 0 || !m.look) {
+            return;
+        }
+        const pace = RUN_CLIP_SPEED * 0.9 * hurry;
+        if (walk && m.look.has("walk")) {
+            m.look.play("walk", { speed: pace * 2 });
+        } else {
+            m.look.play("run", { speed: pace });
+        }
+    }
+
+    // What they'd go and get (version 182): food or a brew while they carry
+    // under MERC_FOOD_MAX bites, and gear of their own kind better than
+    // what's in its slot (mercs.ts mercBetter)
+    private mercUses(m: NonNullable<Run["merc"]>, item: ItemDef): boolean {
+        if (healOf(item) > 0) {
+            return m.food.reduce((n, s) => n + s.count, 0) < MERC_FOOD_MAX;
+        }
+        return mercBetter(m.kind, item, { level: m.level, gear: m.gear });
     }
 
     // The bite that fills the gap best: the biggest heal that isn't wasted,
@@ -5750,7 +5872,8 @@ export class Run {
             if (e.state === "idle" || e.state === "dead" || e.def.passive || (e.burrowed !== undefined && e.burrowed > 0)) {
                 continue;
             }
-            if (Math.hypot(e.x - this.px, e.z - this.pz) > leash) {
+            // (what's on them counts wherever they are: version 182)
+            if (Math.hypot(e.x - this.px, e.z - this.pz) > leash && e.target !== m.hero) {
                 continue;
             }
             let score = Math.hypot(e.x - m.x, e.z - m.z);
@@ -8090,6 +8213,9 @@ export class Run {
         }
         const moving = dx !== 0 || dz !== 0;
         const swinging = this.swingIn >= 0;
+        if (moving) {
+            this.movedAt = this.time;
+        }
 
         // Catching your breath: only standing still, with nothing after you,
         // and only before the map wakes. After that it's food.

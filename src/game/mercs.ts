@@ -6,7 +6,7 @@
 // taken at the end of every run. Version 181 adds ten more, each unlocked
 // by a tier cleared, in better gear, with a perk (MercPerk). run.ts moves
 // them.
-import { AttackStyle, GEAR_BY_TIER, ItemDef, PRIZES, Slot } from "../content/items";
+import { AttackStyle, GEAR_BY_TIER, ItemDef, PRIZES, Slot, gearPower, getItem, weaponStyle } from "../content/items";
 import type { Equipment, ItemStack } from "./save";
 
 export type MercKind =
@@ -386,9 +386,50 @@ export function mercScale(level: number): number {
 // and eat, theirs till they're let go, when it comes back to your bank)
 export type MercRecord = { name: string; level: number; gear?: Equipment; food?: ItemStack[] };
 
-// What they wear: what you've given them over their own kit
+// What they wear: what you've given them over their own kit (only what
+// fits their kind since version 182: a mage given plate keeps it for you,
+// in the hall's Take back gear, but doesn't wear it)
 export function mercWears(kind: MercKind, record: Pick<MercRecord, "level" | "gear">): Equipment {
-    return { ...mercGear(kind, record.level), ...(record.gear ?? {}) };
+    const given: Equipment = {};
+    for (const [slot, id] of Object.entries(record.gear ?? {})) {
+        if (id !== undefined && mercFits(kind, getItem(id))) {
+            given[slot as Slot] = id;
+        }
+    }
+    return { ...mercGear(kind, record.level), ...given };
+}
+
+// Whose gear a kind's is, for the messages
+export const STYLE_OWNER: Record<AttackStyle, string> = { melee: "a fighter's", ranged: "an archer's", magic: "a mage's" };
+
+// What a kind can wear and wield (version 182, as the user asked): a weapon
+// of their own style (never a thrown one: they'd have nothing to throw once
+// it's gone), and armour of their style or the neutral kind (jewellery, a
+// cape, void); never a mage in plate or an archer in robes
+export function mercFits(kind: MercKind, item: ItemDef): boolean {
+    if (!item.slot) {
+        return false;
+    }
+    const style = MERC_DEFS[kind].style;
+    if (item.slot === "weapon") {
+        return !item.thrown && weaponStyle(item) === style;
+    }
+    return item.style === undefined || item.style === style;
+}
+
+// Whether a piece is better than what they've got in its slot (nothing, for
+// the slots their kit leaves bare), by gearPower's measure
+export function mercBetter(kind: MercKind, item: ItemDef, record: Pick<MercRecord, "level" | "gear">): boolean {
+    if (!item.slot || !mercFits(kind, item)) {
+        return false;
+    }
+    const worn = mercWears(kind, record);
+    const weapon = worn.weapon !== undefined ? getItem(worn.weapon) : undefined;
+    if (item.slot === "shield" && weapon?.twoHanded) {
+        return false;
+    }
+    const have = worn[item.slot];
+    return gearPower(item) > (have !== undefined ? gearPower(getItem(have)) : 0);
 }
 
 // Their own kit: their kind's gear of their level's tier (a tier every two

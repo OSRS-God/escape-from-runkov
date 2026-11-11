@@ -189,6 +189,33 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 182 (not yet deployed), as the user asked: a mercenary takes only their own kind's gear,
+fetches what they can use from afar, and strides properly. mercs.ts `mercFits`: a weapon of
+their style (never a thrown one), armour of their style or the neutral kind (jewellery, a
+cape, void: items.ts leaves those unstyled); `mercBetter`: a fitting piece that beats the
+slot's by gearPower; `mercWears` now wears only what fits of the gear given (a mage's plate
+from an old save stays in the record for Take back gear, unworn); `STYLE_OWNER` for the
+message ("leaves the rune platebody: not a mage's armour"). run.ts mercTakes refuses what
+doesn't fit (mercLeft, as a shield with a two-hander). The fetch (updateMerc): as before,
+what you drop for them within 8 tiles and food you've no room for, and now anything they'd
+use (`mercUses`: food while they carry under MERC_FOOD_MAX 8 bites, gear that's better)
+that's lain MERC_FETCH_WAIT 3s untaken within MERC_FETCH_RANGE 30 tiles of them and not
+within MERC_FETCH_YOURS 1.5 of you; a flow field of their own to it (`m.fetching`, allyStep's
+new `flow` option; the unreachable left), "goes for the X" when it's past 8 tiles, the errand
+kept through a fight on the way (mercFoe counts what's on them wherever they are, and the
+leash doesn't stop them fighting while fetching), and no blinking back to you for 12s after
+(`fetchedAt`). The stride: allyStep's `turn` option turns them MERC_TURN 11 rad/s instead of
+snapping (`turnToward`; the fighting faces too); following you they come to MERC_CLOSE_TO
+0.8 of ALLY_FOLLOW once set off (`closing`), not stopping and starting at its edge; they
+walk the last MERC_WALK_NEAR 2.5 tiles when you've stood MERC_WALK_STILL 0.5s (`movedAt`);
+and `mercStride` plays the run clip at their real pace (RUN_CLIP_SPEED × 0.9 × hurry, 1.26
+hurrying, a ranger's faster) or the walk at twice that, with assets.ts play and
+PlayerLook.play now changing a running clip's pace in place. Tested muted on localhost with
+a hedge mage: a rune platebody dropped for them left with the message, a mystic robe top put
+on; an Ahrim's staff dropped 16–18 tiles off announced once (through a ghoul fight), fetched
+and wielded, and they walked back; shrimps a tile from you left, shrimps 8 tiles off packed
+after 3s; the clip went run 1.26 → walk 1.05 over the last 4 tiles → idle.
+
 Version 181 (not yet deployed), as the user asked: ten more mercenaries, unlocked by the depth
 you've cleared, in better gear, each with a perk (mercs.ts: `MERC_ELITE_KINDS`, `MercPerk`,
 `tier` and `perk` on MercDef; `mercTierReached` takes the best of save.depths.cleared, 4 for

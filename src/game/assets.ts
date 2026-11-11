@@ -463,6 +463,13 @@ export function play(actor: Actor, name: string, options: { once?: boolean; spee
         return 0;
     }
     if (actor.current === name && !options.once) {
+        // (the pace changed under it: version 182, a mercenary's stride)
+        if (options.speed !== undefined) {
+            const running = actor.mixer.existingAction(clip);
+            if (running) {
+                running.timeScale = options.speed;
+            }
+        }
         return clip.duration;
     }
     actor.mixer.stopAllAction();

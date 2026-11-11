@@ -229,6 +229,13 @@ export class PlayerLook {
 
     play(name: string, options: { once?: boolean; speed?: number } = {}): number {
         if (this.current === name && !options.once) {
+            // The same clip at a new pace keeps its place (version 182)
+            if (options.speed !== undefined && options.speed !== this.speed) {
+                this.speed = options.speed;
+                for (const piece of this.pieces) {
+                    play(piece, this.stanceClip(name), options);
+                }
+            }
             return 0;
         }
         const clip = this.stanceClip(name);
@@ -238,8 +245,12 @@ export class PlayerLook {
             length = Math.max(length, play(piece, clip, options));
         }
         this.current = name;
+        this.speed = options.speed;
         return length;
     }
+
+    // The pace the current clip plays at
+    private speed?: number;
 
     private stanceClip(name: string): string {
         if (!this.stance || (name !== "idle" && name !== "run")) {
