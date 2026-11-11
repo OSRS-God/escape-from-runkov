@@ -189,7 +189,8 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 190 (built for main site release 2026.11.11.5, not yet deployed): a crown's kept
+Version 190 (deployed to the main site 11 November 2026 as 2026.11.11.5; the user chose not to
+restore ElmoTheGod's save from before Start over): a crown's kept
 pieces survive the account's save. On load the crown's check put them back in the page's save,
 then the account's save from the server replaced it (`adoptAccountSave` gave back only the
 crown pet), so the fire max cape never showed on ElmoTheGod. Now `adoptAccountSave` runs
