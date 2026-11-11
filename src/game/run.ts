@@ -5494,17 +5494,10 @@ export class Run {
             return;
         }
         const slot = item.slot;
-        const weapon = m.stats.weapon;
-        // (only their own kind's gear since version 182, as the user asked)
-        if (!slot || !mercFits(m.kind, item) || (slot === "shield" && weapon?.twoHanded)) {
+        const refusal = this.mercRefusal(m, item);
+        if (!slot || refusal) {
             this.mercLeft.add(p.uid);
-            this.hooks.onMessage(
-                !slot
-                    ? `${m.name} has no use for the ${name}.`
-                    : !mercFits(m.kind, item)
-                      ? `${m.name} leaves the ${name}: not ${STYLE_OWNER[m.def.style]} ${slot === "weapon" ? "weapon" : "armour"}.`
-                      : `${m.name} can't hold a shield with a two-handed weapon.`,
-            );
+            this.hooks.onMessage(refusal ?? `${m.name} has no use for the ${name}.`);
             return;
         }
         this.removePickup(p);
@@ -5522,6 +5515,29 @@ export class Run {
         this.mercStats();
         void this.dressMerc();
         this.hooks.onMessage(slot === "weapon" || slot === "shield" ? `${m.name} takes up the ${name}.` : `${m.name} takes the ${name} and puts it on.`);
+    }
+
+    // Why they'd leave a piece of gear, if they would: not their kind's
+    // (version 182), a shield under a two-handed weapon, or (version 188, as
+    // the user asked) no better than what's in its slot now, their own kit's
+    // or yours. Undefined for gear they'd take, and for what isn't gear
+    private mercRefusal(m: NonNullable<Run["merc"]>, item: ItemDef): string | undefined {
+        const slot = item.slot;
+        if (!slot || healOf(item) > 0) {
+            return undefined;
+        }
+        const name = item.name.toLowerCase();
+        if (!mercFits(m.kind, item)) {
+            return `${m.name} leaves the ${name}: not ${STYLE_OWNER[m.def.style]} ${slot === "weapon" ? "weapon" : "armour"}.`;
+        }
+        if (slot === "shield" && m.stats.weapon?.twoHanded) {
+            return `${m.name} can't hold a shield with a two-handed weapon.`;
+        }
+        if (!mercBetter(m.kind, item, { level: m.level, gear: m.gear })) {
+            const worn = mercWears(m.kind, { level: m.level, gear: m.gear })[slot];
+            return `${m.name} leaves the ${name}: it's no better than their ${worn !== undefined ? getItem(worn).name.toLowerCase() : slot}.`;
+        }
+        return undefined;
     }
 
     // A bite from their pack, then EAT_DELAY to the next, as yours
@@ -5664,6 +5680,14 @@ export class Run {
                 let wanted: boolean;
                 if (this.givenUids.has(p.uid)) {
                     wanted = d < ALLY_REACH;
+                    // Gear they'd only leave there is left at once (version
+                    // 188), not walked over to first
+                    const refusal = wanted ? this.mercRefusal(m, getItem(p.id)) : undefined;
+                    if (refusal) {
+                        this.mercLeft.add(p.uid);
+                        this.hooks.onMessage(refusal);
+                        continue;
+                    }
                 } else if (p.age < 0.4) {
                     wanted = false;
                 } else if (healOf(getItem(p.id)) > 0 && this.roomInPack(p.id, p.count) === 0) {

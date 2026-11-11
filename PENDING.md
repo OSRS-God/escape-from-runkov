@@ -189,6 +189,18 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 188 (not yet deployed), as the user asked: a mercenary takes up a piece only if it's
+their class's and better than what they wear in its slot, their own kit's or yours. The
+fetch from afar already asked that (mercUses, mercBetter); gear you dropped for them was taken
+whenever it fitted. run.ts `mercRefusal` gives the reason they'd leave a piece (not their
+kind's, a shield under a two-handed weapon, or no better by gearPower than mercWears' piece:
+"Testy leaves the bronze dagger: it's no better than their rune scimitar."), used by
+`mercTakes` and by the fetch scan, which leaves dropped gear they'd refuse at once instead of
+walking over to it first. Food and brews are taken as before. Tested in a solo Depths run with a
+sellsword (bronze dagger kit): a second bronze dagger left, a wizard hat left (not a fighter's),
+a rune scimitar taken, then a bronze dagger left again; of a steel and a dragon scimitar lying
+four tiles off, the dragon one fetched and the steel one left.
+
 Version 187 (deployed 11 November 2026: the main site as 2026.11.11.3, the relay to Fly.io,
 and the key stored on ElmoTheGod's crowns row, its scratch SQL file deleted), as the user
 asked after the owner's key couldn't be found: a second owner key, made for ElmoTheGod and kept
