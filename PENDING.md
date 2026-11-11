@@ -189,6 +189,15 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 184 (not yet deployed to the main site), as the user asked: the site's browser icon is
+the user's "Escape from Runkov" key art (the title over the escape portal), on the playtest and
+the main site alike. public/ has it scaled down from the 1200px original with high-quality
+bicubic: favicon.ico (16, 32 and 48, PNG entries, for browsers that ask for it by name),
+favicon-32.png, icon-192.png, icon-512.png and apple-touch-icon.png (180), all linked from
+index.html (Vite makes the links relative, so itch.io's sub-folder finds them too). At 16 and
+32 pixels the title and scene blur into a dark square with orange and green; a cropped
+close-up would read better in a tab if the user wants one.
+
 Version 183 (deployed to the playtest site 11 November 2026 as build 2026.11.11.21), as the user asked: a solo run pauses while the pack's open. ui.ts
 `holdRun` is now the one place the run's pause is set from: the world stands still under the
 pause menu, the full map, or (solo only) the pack panel, and runs on once they're all down (so
