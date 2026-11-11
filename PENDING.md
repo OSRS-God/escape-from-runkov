@@ -189,7 +189,18 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 184 (not yet deployed to the main site), as the user asked: the site's browser icon is
+Main site release 2026.11.11 (11 November 2026, `GAME_BUILD` "2026.11.11"), as the user asked
+("push all updates from playtest to main"): everything from version 150 to 184 on the main
+site, the first release there since 2026.11.08.4. It carries version 164's fresh start
+(SAVE_VERSION 3 to 4), which the user chose knowingly: the 9 production accounts keep their
+names, but their saves are dropped on load. Before it the production D1 `runkov-accounts` was
+exported to `OSRS game\backups\runkov-accounts-before-2026.11.11.sql` (outside the repo; it
+holds password hashes, so it stays there). The playtest's own switches stay off the main site:
+ways out that never close (`WAYS_OUT_CLOSE`), the "playtest" build tag, and the everything-kit
+cleanup (`removePlaytestKit`). The daily board's table is made by the API on first use, so no
+database step.
+
+Version 184 (deployed to the main site 11 November 2026 as 2026.11.11, and the playtest as 2026.11.11.22), as the user asked: the site's browser icon is
 the user's "Escape from Runkov" key art (the title over the escape portal), on the playtest and
 the main site alike. public/ has it scaled down from the 1200px original with high-quality
 bicubic: favicon.ico (16, 32 and 48, PNG entries, for browsers that ask for it by name),
