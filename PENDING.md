@@ -189,7 +189,7 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 186 (built 11 November 2026, not yet deployed; the account server only, so the game
+Version 186 (deployed to the main site 11 November 2026; the account server only, so the game
 stays build 2026.11.11.2), as the user asked: the developer's crown kept with Salmon Jesus,
 Salmon Dev's account (the user said so), the way version 185 keeps the owner's with
 ElmoTheGod: functions' CROWN_ACCOUNTS developer is ["salmon_jesus"]. Their browser hands the
