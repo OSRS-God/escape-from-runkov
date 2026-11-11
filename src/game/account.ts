@@ -110,7 +110,7 @@ export class Account {
         if (result.ok) {
             this.state = { name: result.data.name, token: result.data.token, rev: result.data.rev };
             keep(this.state);
-            this.crownFrom(result.data.crown);
+            await this.crownFrom(result.data.crown);
         }
         return result;
     }
@@ -122,13 +122,16 @@ export class Account {
     crownArrived = false;
     private crownOffered = false;
 
-    private crownFrom(key: string | undefined): void {
+    private async crownFrom(key: string | undefined): Promise<void> {
         const state = this.state;
         if (!state) {
             return;
         }
         if (key) {
-            if (keepAccountCrown(key, state.name)) {
+            // This browser's own key stays only if it's really a crown
+            const held = crownKey();
+            const ownIsCrown = !!held && held !== key && crownIsOwn() && (await crownOfKey(held)) !== undefined;
+            if (keepAccountCrown(key, state.name, ownIsCrown)) {
                 this.crownArrived = true;
             }
             return;
@@ -154,7 +157,7 @@ export class Account {
         if (result.ok) {
             this.state = { ...this.state, name: result.data.name, rev: result.data.rev };
             keep(this.state);
-            this.crownFrom(result.data.crown);
+            await this.crownFrom(result.data.crown);
         } else if (result.status === 401) {
             this.forget();
         }

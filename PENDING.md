@@ -189,6 +189,19 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 187 (main site release 2026.11.11.3 and the relay, 11 November 2026), as the user
+asked after the owner's key couldn't be found: a second owner key, made for ElmoTheGod and kept
+only in its row of the production `crowns` table, so the account's devices get the crown with
+no link. It was made by a script that wrote it straight into the SQL for that row and printed
+only its SHA-256, 85a94f7a…, now beside the first owner key's in crown.ts (both share
+OWNER_CROWN), functions' CROWN_HASHES and the relay's (relay/coop-relay.mjs, so a party sees
+the crown too). The first key still works if it turns up. Also: a key this browser holds of
+its own that isn't a crown no longer blocks the account's (crown.ts `keepAccountCrown`'s
+`ownIsCrown`, account.ts `crownFrom` checking it first, so `logIn` and `pull` wait on it). My
+link with a placeholder, `?crown=YOUR_OWNER_KEY`, had left the user's phone holding a fake key.
+Tested on localhost: a browser with that fake key, logged in to an account with a crown kept,
+took the account's key in its place and reloaded once.
+
 Version 186 (deployed to the main site 11 November 2026; the account server only, so the game
 stays build 2026.11.11.2), as the user asked: the developer's crown kept with Salmon Jesus,
 Salmon Dev's account (the user said so), the way version 185 keeps the owner's with

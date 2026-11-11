@@ -22,16 +22,22 @@ export type Crown = {
     alt: string;
 };
 
+// The owner's: dark grey with a red jewel and O (version 104: the pack's
+// grey one with blue, ui/mod-crown.png, its blue made red)
+const OWNER_CROWN: Crown = {
+    image: "ui/owner-crown.png",
+    word: "Owner",
+    color: "#e01b1b",
+    alt: "owner",
+};
+
 // By the SHA-256 of the key
 const CROWNS: Record<string, Crown> = {
-    // The owner's: dark grey with a red jewel and O (version 104: the pack's
-    // grey one with blue, ui/mod-crown.png, its blue made red)
-    "4e0f860e8d27645123e773042753a6cf8ad67908bf69c0a660d06809cbb539bd": {
-        image: "ui/owner-crown.png",
-        word: "Owner",
-        color: "#e01b1b",
-        alt: "owner",
-    },
+    "4e0f860e8d27645123e773042753a6cf8ad67908bf69c0a660d06809cbb539bd": OWNER_CROWN,
+    // A second key for it (version 187, as the user asked): made for the
+    // account ElmoTheGod and kept only in its account database row, so it
+    // comes to that account's devices with no link
+    "85a94f7a20da34666f8c1a970848d26bf0a11c2f63d0507c62f64ed5c72ae0a0": OWNER_CROWN,
     // The developer's: a green jewel and an S (the pack's mod crown, its M
     // redrawn)
     "355ef517371c4a0d44209d2ec6ce627ecfed14eabc61695fc7dd94ecc07ef6ca": {
@@ -132,14 +138,16 @@ export function takeCrownFromUrl(): boolean {
 // given by a link is its own, and an account's never replaces it.
 const CROWN_FROM_ACCOUNT = "dungeon-extraction-crown-account";
 
-// True when the key is new here (the page should load again to wear it)
-export function keepAccountCrown(key: string, account: string): boolean {
+// True when the key is new here (the page should load again to wear it).
+// `ownIsCrown`: this browser's own key checked out as a crown, and stays;
+// one that doesn't (a link's typo, version 187) gives way to the account's
+export function keepAccountCrown(key: string, account: string, ownIsCrown: boolean): boolean {
     try {
         const held = localStorage.getItem(CROWN_STORAGE);
         if (held === key) {
             return false;
         }
-        if (held && localStorage.getItem(CROWN_FROM_ACCOUNT) === null) {
+        if (held && localStorage.getItem(CROWN_FROM_ACCOUNT) === null && ownIsCrown) {
             return false;
         }
         localStorage.setItem(CROWN_STORAGE, key);
