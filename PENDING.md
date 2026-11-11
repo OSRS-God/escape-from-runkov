@@ -189,7 +189,14 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 179 (not yet deployed), as the user asked: far better laid out maps, and more in them
+Version 180 (not yet deployed), as the user asked: a mercenary eats as soon as they're down by
+what a bite of theirs heals (run.ts updateMerc: `missing >= smallest`, the smallest heal in
+their pack), so none of it's wasted, instead of waiting till under half health; the half (65%
+beside a boss) still makes them eat whatever the bite. Tested muted on localhost with a
+sellsword given three shrimps (heal 15, 88 hitpoints): untouched at 14 down, one eaten at
+15 down, another at 15 down again.
+
+Version 179 (deployed to the playtest site 10 November 2026 as build 2026.11.10.18), as the user asked: far better laid out maps, and more in them
 (caves.ts, props.ts, run.ts; three models added to assets.json: the anvil 2031, the well 878
 and the portcullis 29726, so `npm run assets` was run).
 - Zoning (caves.ts `depthsFrom`, ROOM_ZONES, `CaveLayout.depth/maxDepth/doors`): every cell
@@ -231,7 +238,7 @@ and the portcullis 29726, so `npm run assets` was run).
   and refused with the player in the gateway), well and coffins all as above; the
   portcullis draws across the doorway when down.
 
-Version 178 (not yet deployed), as the user asked: far smarter enemies (run.ts, the BLOOD_*,
+Version 178 (deployed to the playtest site 10 November 2026 as build 2026.11.10.18), as the user asked: far smarter enemies (run.ts, the BLOOD_*,
 GRUDGE_*, SIGHT_DRAW, NOISE_* and SURROUND_ARC constants by the MERC_* ones).
 - Who they go for (`targetFor`, once roused): a hero under half health draws them 4 tiles
   nearer (they smell blood; told once a while: "The X smells blood, and comes for you"), the

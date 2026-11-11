@@ -1143,7 +1143,8 @@ const ALLY_STUCK = 1.5;
 // The mercenary's head (version 177, as the user asked for a far smarter
 // one): no further from you than this, and a medic no further from you than
 // MERC_MEDIC_RANGE; a bite below this share of their health, or this beside
-// a boss; back behind you below this share (a sellsword, whose job's to be
+// a boss (and whenever a bite wouldn't be wasted: version 180); back behind
+// you below this share (a sellsword, whose job's to be
 // hit, below this) till they're up to this; a bowman or mage backs off what's
 // this close; a shout about what's coming at your back from this close
 const ALLY_LEASH = ALLY_REACH * 1.5;
@@ -5524,11 +5525,16 @@ export class Run {
         m.busy -= dt;
         m.swingIn -= dt;
         // Hurt, they eat what you gave them (version 175): what fills the
-        // gap best, as F does for you
+        // gap best, as F does for you. Since version 180 (as the user asked)
+        // as soon as they're down by what a bite of theirs heals, so none of
+        // it's wasted; and below MERC_EAT (MERC_EAT_BOSS beside a boss)
+        // whatever the bite
         m.eatIn -= dt;
         if (m.eatIn <= 0 && m.food.length > 0) {
+            const missing = m.hero.maxHp - m.hero.hp;
+            const smallest = Math.min(...m.food.map((s) => healOf(getItem(s.id))));
             const bossNear = this.enemies.some((e) => e.def.boss && e.state !== "idle" && e.state !== "dead" && Math.hypot(e.x - m.x, e.z - m.z) < ALLY_REACH);
-            if (m.hero.hp < m.hero.maxHp * (bossNear ? MERC_EAT_BOSS : MERC_EAT)) {
+            if (missing >= smallest || m.hero.hp < m.hero.maxHp * (bossNear ? MERC_EAT_BOSS : MERC_EAT)) {
                 this.mercEat(this.mercBite(m));
             }
         }
