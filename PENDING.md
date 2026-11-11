@@ -189,7 +189,7 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 183 (not yet deployed), as the user asked: a solo run pauses while the pack's open. ui.ts
+Version 183 (deployed to the playtest site 11 November 2026 as build 2026.11.11.21), as the user asked: a solo run pauses while the pack's open. ui.ts
 `holdRun` is now the one place the run's pause is set from: the world stands still under the
 pause menu, the full map, or (solo only) the pack panel, and runs on once they're all down (so
 closing the pause menu over an open pack keeps the run still). Esc shuts an open pack before it
