@@ -97,8 +97,9 @@ export type DownMessage =
           // The ways out
           exits: [number, number][];
           // x, z, kind: 0 a chest, 1 the boss's golden one, 2 the vault; the
-          // Depths' 3 ornate chest and 4 brimstone chest (version 161)
-          chests: [number, number, 0 | 1 | 2 | 3 | 4][];
+          // Depths' 3 ornate chest and 4 brimstone chest (version 161); 5 a
+          // deep one, with more in it (version 179)
+          chests: [number, number, 0 | 1 | 2 | 3 | 4 | 5][];
           // The Depths' altars (version 161)
           altars?: [number, number][];
           // The maps' own things (version 166, props.ts): kind (its place in

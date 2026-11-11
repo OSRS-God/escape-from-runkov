@@ -189,6 +189,48 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 179 (not yet deployed), as the user asked: far better laid out maps, and more in them
+(caves.ts, props.ts, run.ts; three models added to assets.json: the anvil 2031, the well 878
+and the portcullis 29726, so `npm run assets` was run).
+- Zoning (caves.ts `depthsFrom`, ROOM_ZONES, `CaveLayout.depth/maxDepth/doors`): every cell
+  knows how many rooms it is from the start, and its room's kind goes by that. The Depths:
+  the start and the rooms next to it plain or pillared, the middle any but lairs, the far
+  end (past 60% of the deepest) and every dead end a lair or a camp. The castle: halls and
+  courts by the gate, quarters, library, chapel and halls within, dungeons and chapels
+  deepest and at the dead ends. One cell in five ignores the zoning. Tested: a cave's start
+  cell pillars at depth 0, its six dead ends all lairs or camps; a castle's hall at 0, courts
+  and halls at 1, dungeons and chapels at every dead end.
+- Danger by depth (run.ts `depthShare`, DEEP_FROM, DEEP_ELITE, DEEP_CHEST): the rooms within a
+  quarter of the way in hold only the common kinds (no champions, packs or elites; the
+  guaranteed key-carrier aside), and past 60% of the way elites come twice as often. A chest
+  past 85% of the way in is `deep` (grey with age, "the old chest"; wire kind 5): a piece at
+  a champion's prize odds and a small purse on top of what it held. Tested: 13 enemies in the
+  first rooms, none a champion or elite, against 93 of 209 deeper in.
+- Dead ends (placeProps): a strongbox (STRONGBOX_LOC, the closed chest dark; hold 4 s, heard 12
+  tiles) in up to three dead-end rooms, with two pieces at a champion's prize odds, a purse
+  and a potion; in the Depths a web (WEB_LOC, 4 tiles wide) across up to four dead ends'
+  doorways, in the castle a portcullis (GATE_LOC) across up to four, the dead ends' first,
+  then doorways deeper in. A web or gate seals the row of tiles on the room's edge
+  (`sealDoor`, `doorSeals`; caves.ts `doorway(cell, door, rows)` and `doorAt`): nothing
+  paths through it. A web is cut with a 1.2 s hold. A gate drops and raises with E (`on`
+  shut, both ways over the wire: applyProp), hangs raised over the doorway (GATE_RAISED),
+  and won't drop on anyone or anything standing in it (`doorClear`, "Something's standing
+  in the gateway."). The Depths' flood (version 161) leaves a sealed row alone.
+- The anvil (both maps, two): a 3 s hold hammers the dents out of every worn piece you wear
+  (`wornPieces`, the wear reset to 0: `applyStats`), once a hero a run, heard 10 tiles.
+- The Depths' steam vents (three, drawn: a dark crack with a red heart): each blows every 14 s
+  on its own clock (the host's, `ventsAt`, `blowVent`), a 1.6 s warning ring 1.8 tiles across,
+  then a fifth of a hero's hitpoints and 30 to an enemy (1.8 times more a tier). Lead
+  something onto it. Tested: an idle ghoul put on one died to the burst.
+- The castle's wells (two, in courtyards): one draught a hero, settles poison and gives 30
+  prayer. Its coffins (four, chapels and dungeons; hold 2 s): 60% buried riches (a piece at
+  a champion's prize odds and a purse), 40% what's in it sits up (a champion of the castle's
+  undead or vampyres). Tested: one of four rose, a champion feral vampyre.
+- Tested muted on localhost, saves backed up and restored: a web blocked its doorway
+  (`fits` false, tiles solid) and opened when cut; the strongbox, anvil, gate (both ways,
+  and refused with the player in the gateway), well and coffins all as above; the
+  portcullis draws across the doorway when down.
+
 Version 178 (not yet deployed), as the user asked: far smarter enemies (run.ts, the BLOOD_*,
 GRUDGE_*, SIGHT_DRAW, NOISE_* and SURROUND_ARC constants by the MERC_* ones).
 - Who they go for (`targetFor`, once roused): a hero under half health draws them 4 tiles
@@ -220,7 +262,7 @@ GRUDGE_*, SIGHT_DRAW, NOISE_* and SURROUND_ARC constants by the MERC_* ones).
   1.00 tiles and arrived; a fleeing ghoul with an idle friend 10 tiles to the side ran
   straight for it (stepped by hand: live, the friend was roused by aggro first).
 
-Version 177 (not yet deployed), as the user asked: a far smarter mercenary (run.ts
+Version 177 (deployed to the playtest site 10 November 2026 as build 2026.11.10.17), as the user asked: a far smarter mercenary (run.ts
 `updateMerc` and the `merc*` helpers after it, MERC_* constants by ALLY_*).
 - Who they fight (`mercFoe`): only what's awake (an idle monster is left asleep: a fight you
   haven't picked stays unpicked) and near you (ALLY_LEASH, 12 tiles; a medic keeps within
@@ -246,7 +288,7 @@ Version 177 (not yet deployed), as the user asked: a far smarter mercenary (run.
   a jelly from 1.8 to 2.6 tiles and landed ten shots untouched; the avoiding step passed a
   trap at 1.02 tiles and still reached its goal.
 
-Version 176 (not yet deployed), as the user asked: mercenaries heal themselves.
+Version 176 (deployed to the playtest site 10 November 2026 as build 2026.11.10.16), as the user asked: mercenaries heal themselves.
 - With no foe near, a mercenary takes up food or a Saradomin brew lying near that your pack has
   no room for (`roomInPack` is 0: full, or at FOOD_LIMIT), as well as what you drop for them.
   Brews count as healing now (inventory.ts `healOf`, BREW_HEAL moved there from gear.ts).
@@ -258,7 +300,7 @@ Version 176 (not yet deployed), as the user asked: mercenaries heal themselves.
   lobster you had room for was left for you; dropped brews were packed; medic and player
   both healed each tick.
 
-Version 175 (not yet deployed), as the user asked: mercenaries wear and wield what you give
+Version 175 (deployed to the playtest site 10 November 2026 as build 2026.11.10.15), as the user asked: mercenaries wear and wield what you give
 them, as a player would.
 - Drop an item on a solo run while your mercenary stands: with no foe near they walk to it
   (within ALLY_REACH) and take it. Armour and weapons go on (run.ts `mercTakes`), and what it

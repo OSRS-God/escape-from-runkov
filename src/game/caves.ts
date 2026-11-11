@@ -61,6 +61,20 @@ const DOORWAY_DEPTH = 3;
 const DOORWAY_SPLAY = 3;
 // The least between two of a room's fires that are both lit, in tiles
 const LIGHT_APART = 6;
+// Which kinds of room a cell wants, by how deep in it is (version 179, as
+// the user asked for better laid out maps): the way in plain, the far end
+// and the dead ends lairs and camps; the castle's halls and courts by the
+// gate, its quarters, library and chapel within, its dungeons deepest. A
+// cell is "near" within ZONE_NEAR rooms of the start, "deep" past
+// ZONE_DEEP_SHARE of the deepest or at a dead end; one in ZONE_ANY ignores
+// the zoning, so no two caves feel the same
+const ROOM_ZONES: Record<string, { near: string[]; mid: string[]; deep: string[] }> = {
+    caves: { near: ["plain", "pillars"], mid: ["plain", "pillars", "camp"], deep: ["lair", "camp"] },
+    castles: { near: ["hall", "court"], mid: ["quarters", "library", "chapel", "hall"], deep: ["dungeon", "chapel"] },
+};
+const ZONE_NEAR = 1;
+const ZONE_DEEP_SHARE = 0.6;
+const ZONE_ANY = 0.2;
 
 const roomsJson = new Map<string, Promise<CavesJson>>();
 
@@ -88,6 +102,12 @@ export type CaveLayout = {
     // Every room's lights, where they are in the scene
     lights: { x: number; z: number; kind: number }[];
     start: number;
+    // Each cell's doors (NORTH 1, EAST 2, SOUTH 4, WEST 8; 0 where there's
+    // no room), how many rooms it is from the start (-1 where there's
+    // none), and the deepest (version 179)
+    doors: number[];
+    depth: number[];
+    maxDepth: number;
     // The rooms' models, the start's first, each with its cell
     load(onPart: (part: THREE.Object3D, cell: number) => void): MapLoad;
     // The cell a scene position is in, -1 off the cave
@@ -95,7 +115,43 @@ export type CaveLayout = {
     // A room's doorways: the open tiles (the region's indices) of the way
     // in at each of its doors, to shut a lair with
     doorways(cell: number): number[];
+    // One door's: the open tiles of its first `rows` in from the room's
+    // edge, and the middle of the doorway on the edge, with which way
+    // something across it faces (version 179: a web, a gate)
+    doorway(cell: number, door: number, rows?: number): number[];
+    doorAt(cell: number, door: number): { x: number; z: number; rotation: number };
 };
+
+export const DOOR_NORTH = NORTH;
+export const DOOR_EAST = EAST;
+export const DOOR_SOUTH = SOUTH;
+export const DOOR_WEST = WEST;
+export const DOOR_BITS = [NORTH, EAST, SOUTH, WEST];
+
+// How many rooms each cell is from the start, by their doors
+function depthsFrom(doors: number[], start: number, cellsX: number): number[] {
+    const depth = new Array<number>(doors.length).fill(-1);
+    depth[start] = 0;
+    const queue = [start];
+    while (queue.length > 0) {
+        const c = queue.shift()!;
+        const x = c % cellsX;
+        const y = Math.floor(c / cellsX);
+        for (const [bit, dx, dy] of [
+            [NORTH, 0, 1],
+            [EAST, 1, 0],
+            [SOUTH, 0, -1],
+            [WEST, -1, 0],
+        ]) {
+            const n = x + dx + (y + dy) * cellsX;
+            if ((doors[c] & bit) !== 0 && x + dx >= 0 && x + dx < cellsX && n >= 0 && n < doors.length && depth[n] < 0) {
+                depth[n] = depth[c] + 1;
+                queue.push(n);
+            }
+        }
+    }
+    return depth;
+}
 
 // Which cells have rooms, and how they're joined: a room grown off the
 // start, then off the others, to every cell, and loops added
@@ -187,11 +243,23 @@ export async function layoutCave(id: string, name: string, seed: number, set: Ro
         boxes: [],
     };
     const drawn = (room: string) => room !== set.empty || byDoors.has(0);
-    const cells = doors.map((d) => {
+    // Each cell's room: one with its doors, of a kind its depth wants
+    const depth = depthsFrom(doors, start, CELLS_X);
+    const maxDepth = Math.max(0, ...depth);
+    const zones = ROOM_ZONES[set.dir];
+    const deadEnd = (d: number) => d === NORTH || d === EAST || d === SOUTH || d === WEST;
+    const cells = doors.map((d, c) => {
         if (d <= 0) {
             return rock;
         }
-        const choices = byDoors.get(d)!;
+        let choices = byDoors.get(d)!;
+        if (zones && rng() >= ZONE_ANY) {
+            const wanted = depth[c] <= ZONE_NEAR ? zones.near : deadEnd(d) || depth[c] >= maxDepth * ZONE_DEEP_SHARE ? zones.deep : zones.mid;
+            const zoned = choices.filter((room) => wanted.includes(room.kind));
+            if (zoned.length > 0) {
+                choices = zoned;
+            }
+        }
         return choices[Math.floor(rng() * choices.length)];
     });
 
@@ -307,7 +375,7 @@ export async function layoutCave(id: string, name: string, seed: number, set: Ro
         const cy = Math.floor((region.tileY(z) - BASE_Y) / size);
         return cx < 0 || cy < 0 || cx >= CELLS_X || cy >= CELLS_Y ? -1 : cx + cy * CELLS_X;
     };
-    const doorways = (cell: number): number[] => {
+    const doorway = (cell: number, door: number, rows = DOORWAY_DEPTH): number[] => {
         const ox = (cell % CELLS_X) * size;
         const oy = Math.floor(cell / CELLS_X) * size;
         const out: number[] = [];
@@ -322,20 +390,36 @@ export async function layoutCave(id: string, name: string, seed: number, set: Ro
                 }
             }
         };
-        const d = doors[cell];
+        const d = doors[cell] & door;
         if (d & NORTH) {
-            band(along[0], along[1], size - DOORWAY_DEPTH, size);
+            band(along[0], along[1], size - rows, size);
         }
         if (d & SOUTH) {
-            band(along[0], along[1], 0, DOORWAY_DEPTH);
+            band(along[0], along[1], 0, rows);
         }
         if (d & EAST) {
-            band(size - DOORWAY_DEPTH, size, along[0], along[1]);
+            band(size - rows, size, along[0], along[1]);
         }
         if (d & WEST) {
-            band(0, DOORWAY_DEPTH, along[0], along[1]);
+            band(0, rows, along[0], along[1]);
         }
         return out;
     };
-    return { region, cells: names, cellsX: CELLS_X, empty: set.empty, lights, start, load, cellAt, doorways };
+    const doorways = (cell: number): number[] => doorway(cell, NORTH | EAST | SOUTH | WEST);
+    const doorAt = (cell: number, door: number): { x: number; z: number; rotation: number } => {
+        const ox = BASE_X + (cell % CELLS_X) * size;
+        const oy = BASE_Y + Math.floor(cell / CELLS_X) * size;
+        const mid = caves.doorFrom + caves.doorWidth / 2;
+        switch (door) {
+            case NORTH:
+                return { x: ox + mid, z: -(oy + size), rotation: 0 };
+            case SOUTH:
+                return { x: ox + mid, z: -oy, rotation: 0 };
+            case EAST:
+                return { x: ox + size, z: -(oy + mid), rotation: Math.PI / 2 };
+            default:
+                return { x: ox, z: -(oy + mid), rotation: Math.PI / 2 };
+        }
+    };
+    return { region, cells: names, cellsX: CELLS_X, empty: set.empty, lights, start, doors, depth, maxDepth, load, cellAt, doorways, doorway, doorAt };
 }

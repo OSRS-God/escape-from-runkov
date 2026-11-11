@@ -141,7 +141,7 @@ import { isKept } from "./kit";
 import { starterKit } from "./starter";
 import { MERC_CUT, MERC_DEFS, MercDef, MercKind, mercScale, mercWears } from "./mercs";
 import { Region, Tile, TileSet, loadRegion } from "./region";
-import { CASTLE_ROOMS, CAVE_ROOMS, CaveLayout, layoutCave } from "./caves";
+import { CASTLE_ROOMS, CAVE_ROOMS, CaveLayout, DOOR_BITS, DOOR_EAST, DOOR_NORTH, DOOR_SOUTH, DOOR_WEST, layoutCave } from "./caves";
 import {
     ARMOUR_LOC,
     BANQUET_LOC,
@@ -189,6 +189,12 @@ import {
     RACK_LOC,
     THRONE_LOC,
     TRAP_LOC,
+    ANVIL_LOC,
+    COFFIN_LOC,
+    GATE_LOC,
+    STRONGBOX_LOC,
+    WEB_LOC,
+    WELL_LOC,
 } from "./props";
 import { Character, DepthsUpgradeKey, Equipment, Grave, ItemStack } from "./save";
 import { ZOOM_MAX, ZOOM_MIN, saveSettings, settings } from "./settings";
@@ -686,6 +692,9 @@ type Chest = {
     // ornate chest, whose floor gives way, or the brimstone chest a
     // superior's key opens
     room?: "trap" | "brimstone";
+    // Deep in a cave or the castle (DEEP_CHEST of the way in): a piece more
+    // (version 179)
+    deep?: boolean;
 };
 
 // A freed prisoner fighting at someone's side (version 166): the host's to
@@ -1089,6 +1098,38 @@ const BANQUET_BITES = 10;
 const BANQUET_HEAL = 12;
 const BANQUET_POISON = 0.2;
 const PRISONER_ALLY = 0.6;
+// Version 179's (as the user asked for better maps and more in them). A
+// strongbox at the end of a dead end: the hold to force it, heard this far.
+// A web across a dead end's doorway in the Depths: the hold to cut it. The
+// castle's gates, across dead ends' doorways and some deeper in: shut
+// behind you, nothing gets through till it's raised. An anvil mends every
+// worn piece you wear once a run: the hold, heard this far. A steam vent
+// blows every so often: the warning, how far, a share of a hero's
+// hitpoints, and what it does to an enemy (1.8 times more a tier). A well's
+// draught settles poison and gives back this much prayer. A coffin: the
+// hold, and how often what's in it sits up.
+const STRONGBOX_HOLD = 4;
+const STRONGBOX_NOISE = 12;
+const WEB_HOLD = 1.2;
+const GATE_CLEAR = 0.9;
+// (a gate that's up hangs this high over its doorway)
+const GATE_RAISED = 2.6;
+const ANVIL_HOLD = 3;
+const ANVIL_NOISE = 10;
+const VENT_EVERY = 14;
+const VENT_WARN = 1.6;
+const VENT_RADIUS = 1.8;
+const VENT_HURT = 0.2;
+const VENT_HIT = 30;
+const WELL_PRAYER = 30;
+const COFFIN_HOLD = 2;
+const COFFIN_RISE = 0.4;
+// How far in (a cell's depth as a share of the deepest) the champions,
+// packs and elites start, where elites come twice as often, and where a
+// chest has lain long enough untouched to hold more
+const DEEP_FROM = 0.25;
+const DEEP_ELITE = 0.6;
+const DEEP_CHEST = 0.85;
 // A freed prisoner at your side: for so long, keeping this near, going for
 // what's this near them, a swing so often, hitting up to ALLY_HIT (and so
 // much more a tier)
@@ -2687,10 +2728,12 @@ export class Run {
             }
         }
         for (const chest of chestTiles) {
-            // Some chests aren't what they seem, and some are watched
+            // Some chests aren't what they seem, and some are watched; the
+            // deep ones hold more (version 179)
             const mimic = !chest.boss && this.rng() < 1 / MIMIC_ONE_IN;
             const ambush = !chest.boss && !mimic && this.rng() < AMBUSH_CHANCE;
-            const made: Chest = { tile: chest.tile, opened: false, boss: chest.boss, mimic, ambush };
+            const deep = !chest.boss && !mimic && this.depthShare(chest.tile) >= DEEP_CHEST;
+            const made: Chest = { tile: chest.tile, opened: false, boss: chest.boss, mimic, ambush, deep };
             this.chests.push(made);
             jobs.push(this.loadChest(made));
         }
@@ -2721,12 +2764,19 @@ export class Run {
             const tile = region.randomTile(this.rng, reach, this.world.bosses ? 16 : 8, taken);
             if (tile) {
                 // The Depths (DEPTHS_PACK): champions and elites more often,
-                // and some come as a pack, led by a champion as often as not
+                // and some come as a pack, led by a champion as often as not.
+                // The first rooms in hold only the common kinds (version
+                // 179): the champions, packs and elites start DEEP_FROM of
+                // the way in, and elites come twice as often past DEEP_ELITE
                 const depths = this.world.bosses ? DEPTHS_CHAMPIONS : 1;
+                const deep = this.depthShare(tile);
+                const dangerous = deep >= DEEP_FROM;
                 const [packOdds, packSize] = this.eased() ? [EASED_PACK, EASED_PACK_SIZE] : [DEPTHS_PACK, DEPTHS_PACK_SIZE];
-                const pack = this.world.bosses && this.rng() < packOdds ? randInt(this.rng, packSize[0], packSize[1]) - 1 : 0;
+                const pack = this.world.bosses && dangerous && this.rng() < packOdds ? randInt(this.rng, packSize[0], packSize[1]) - 1 : 0;
                 const champion: boolean =
-                    this.rng() < this.threat.champion * depths || (pack > 0 && this.rng() < DEPTHS_PACK_LEADER) || (i === enemyCount - 1 && !anyChampion);
+                    (dangerous && this.rng() < this.threat.champion * depths) ||
+                    (pack > 0 && this.rng() < DEPTHS_PACK_LEADER) ||
+                    (i === enemyCount - 1 && !anyChampion);
                 anyChampion = anyChampion || champion;
                 // Some of the walkers patrol a round instead of standing
                 const route =
@@ -2734,7 +2784,9 @@ export class Run {
                 // Now and then an elite, with a trait of its own
                 const traits = Object.keys(TRAITS) as Trait[];
                 const trait =
-                    !champion && this.rng() < (this.threat.elite * depths) / ELITE_ONE_IN ? traits[Math.floor(this.rng() * traits.length)] : undefined;
+                    !champion && dangerous && this.rng() < (this.threat.elite * depths * (deep >= DEEP_ELITE ? 2 : 1)) / ELITE_ONE_IN
+                        ? traits[Math.floor(this.rng() * traits.length)]
+                        : undefined;
                 for (let p = 0; p < pack && i < enemyCount - 1; p++) {
                     const beside = this.nearTile(tile, taken, reach);
                     if (beside) {
@@ -2847,6 +2899,17 @@ export class Run {
         }
     }
 
+    // How far in a spot is: its room's depth as a share of the deepest (1
+    // off a cave, or where there's no telling)
+    private depthShare(tile: Tile): number {
+        const cave = this.cave;
+        if (!cave || cave.maxDepth <= 0) {
+            return 1;
+        }
+        const depth = cave.depth[cave.cellAt(tile.x, tile.z)] ?? -1;
+        return depth < 0 ? 1 : depth / cave.maxDepth;
+    }
+
     private loadAltar(at: Tile): Promise<void> {
         return createActor("locs", ALTAR_LOC).then((actor) => {
             if (!this.ended) {
@@ -2880,9 +2943,12 @@ export class Run {
             if (chest.boss) {
                 tint(actor, new THREE.Color(1.2, 1.1, 0.7));
             }
-            // The ornate chest bright, the brimstone chest burnt dark
+            // The ornate chest bright, the brimstone chest burnt dark, a
+            // deep one grey with age
             if (chest.room) {
                 tint(actor, chest.room === "trap" ? new THREE.Color(1.4, 1.0, 0.6) : new THREE.Color(0.85, 0.45, 0.4));
+            } else if (chest.deep) {
+                tint(actor, new THREE.Color(0.8, 0.85, 1.0));
             }
             chest.actor = actor;
         });
@@ -2940,8 +3006,9 @@ export class Run {
         const lit = new Set<number>();
         for (const plan of PROP_PLANS) {
             const count = castle ? plan.castle : plan.caves;
-            // (a passage's and a mine cart's two ends go below)
-            if (plan.kind === "passage" || plan.kind === "cart") {
+            // (a passage's and a mine cart's two ends go below, and so do
+            // the dead ends' strongboxes, webs and gates)
+            if (plan.kind === "passage" || plan.kind === "cart" || plan.kind === "strongbox" || plan.kind === "web" || plan.kind === "gate") {
                 continue;
             }
             const free = rooms.filter((c) => anywhere.has(plan.kind) || !busy.has(c));
@@ -3009,6 +3076,57 @@ export class Run {
         for (let i = 0; i < (castle ? carts.castle : carts.caves) / 2; i++) {
             pairUp("cart");
         }
+        // Version 179: a strongbox at the end of the dead ends, each behind a
+        // web (the Depths) or a gate (the castle) across its one doorway;
+        // the castle's gates left over on the doorways of rooms deeper in
+        const planned = (kind: PropKind) => {
+            const plan = PROP_PLANS.find((p) => p.kind === kind)!;
+            return castle ? plan.castle : plan.caves;
+        };
+        const shuffled = (list: number[]) => list.map((cell) => ({ cell, roll: this.rng() })).sort((a, b) => a.roll - b.roll).map((c) => c.cell);
+        const beyond = (cell: number, door: number) => {
+            const dx = door === DOOR_EAST ? 1 : door === DOOR_WEST ? -1 : 0;
+            const dy = door === DOOR_NORTH ? 1 : door === DOOR_SOUTH ? -1 : 0;
+            return cell + dx + dy * cave.cellsX;
+        };
+        const barred = new Set<string>();
+        const across = (kind: PropKind, cell: number, door: number): boolean => {
+            const far = beyond(cell, door);
+            const key = `${Math.min(cell, far)}-${Math.max(cell, far)}`;
+            if (busy.has(far) || barred.has(key)) {
+                return false;
+            }
+            barred.add(key);
+            const at = cave.doorAt(cell, door);
+            this.props.push({ kind, x: at.x, z: at.z, rotation: at.rotation, uses: 1, data: cell * 16 + door });
+            return true;
+        };
+        let boxes = planned("strongbox");
+        let doors = planned(castle ? "gate" : "web");
+        for (const cell of shuffled(free.filter((c) => DOOR_BITS.includes(cave.doors[c])))) {
+            if (boxes <= 0 && doors <= 0) {
+                break;
+            }
+            const tile = boxes > 0 ? tileIn(cell, PROP_PLANS.find((p) => p.kind === "strongbox")!.room) : undefined;
+            if (tile) {
+                boxes--;
+                this.props.push(this.makeProp("strongbox", tile, 0));
+            }
+            if (doors > 0 && across(castle ? "gate" : "web", cell, cave.doors[cell])) {
+                doors--;
+            }
+        }
+        if (castle) {
+            for (const cell of shuffled(free.filter((c) => cave.depth[c] >= 2 && !DOOR_BITS.includes(cave.doors[c])))) {
+                if (doors <= 0) {
+                    break;
+                }
+                const door = pick(DOOR_BITS.filter((bit) => (cave.doors[cell] & bit) !== 0));
+                if (door !== undefined && across("gate", cell, door)) {
+                    doors--;
+                }
+            }
+        }
         // The library's books, each a different one; the lectern names the
         // one the vault's behind
         const books = [...BOOKS.keys()].sort(() => this.rng() - 0.5);
@@ -3021,8 +3139,49 @@ export class Run {
         const kinds = this.world.enemies;
         this.weakHp = kinds.length > 0 ? kinds[Math.floor((kinds.length - 1) * LIT_WEAK_SHARE)].def.hp : 0;
         for (const p of this.props) {
+            this.propPlaced(p);
             jobs.push(this.loadProp(p));
         }
+    }
+
+    // A thing laid out (the host's, or the guest's from the host's word):
+    // a web's doorway blocked from the start (version 179)
+    private propPlaced(p: Prop): void {
+        if (p.kind === "web" || (p.kind === "gate" && p.on)) {
+            this.sealDoor(p, true);
+        }
+    }
+
+    // A web's or gate's doorway blocked or opened again: the row of tiles
+    // on the room's edge (what it blocked, kept: the tiles read as solid
+    // once it's shut)
+    private readonly doorSeals = new Map<Prop, number[]>();
+
+    private sealDoor(p: Prop, on: boolean): void {
+        const cave = this.cave;
+        if (!cave) {
+            return;
+        }
+        const tiles = on ? cave.doorway(Math.floor(p.data / 16), p.data % 16, 1) : (this.doorSeals.get(p) ?? []);
+        for (const i of tiles) {
+            this.region.setSolid(i, on);
+        }
+        if (on) {
+            this.doorSeals.set(p, tiles);
+        } else {
+            this.doorSeals.delete(p);
+        }
+    }
+
+    // Whether a gate can come down: nobody and nothing standing in it
+    private doorClear(p: Prop): boolean {
+        const cave = this.cave;
+        if (!cave) {
+            return false;
+        }
+        const tiles = cave.doorway(Math.floor(p.data / 16), p.data % 16, 1).map((i) => this.region.centreOf(i));
+        const inWay = (x: number, z: number, radius: number) => tiles.some((t) => Math.hypot(t.x - x, t.z - z) < GATE_CLEAR + radius);
+        return !this.heroes().some((h) => !h.dead && inWay(h.x, h.z, PLAYER_RADIUS)) && !this.enemies.some((e) => e.state !== "dead" && inWay(e.x, e.z, e.def.radius));
     }
 
     private makeProp(kind: PropKind, tile: Tile, data: number): Prop {
@@ -3099,12 +3258,31 @@ export class Run {
                 return BELL_LOC;
             case "throne":
                 return THRONE_LOC;
+            // Version 179's
+            case "strongbox":
+                return STRONGBOX_LOC;
+            case "web":
+                return WEB_LOC;
+            case "gate":
+                return GATE_LOC;
+            case "anvil":
+                return ANVIL_LOC;
+            case "vent":
+                return undefined;
+            case "well":
+                return WELL_LOC;
+            case "coffin":
+                return COFFIN_LOC;
         }
     }
 
     private async loadProp(p: Prop): Promise<void> {
         if (p.kind === "pool") {
             this.drawPool(p);
+            return;
+        }
+        if (p.kind === "vent") {
+            this.drawVent(p);
             return;
         }
         const loc = this.propLoc(p);
@@ -3119,10 +3297,18 @@ export class Run {
         if (p.actor) {
             this.scene.remove(p.actor.root);
         }
-        this.placeActor(actor, p.x, p.z, p.rotation, p.kind === "cell" ? CELL_SCALE : p.kind === "lever" ? 1.4 : 1);
+        this.placeActor(actor, p.x, p.z, p.rotation, p.kind === "cell" ? CELL_SCALE : p.kind === "lever" ? 1.4 : p.kind === "strongbox" ? 0.9 : 1);
+        // A web and a gate fitted to the doorway's width (version 179: the
+        // web's model is a tile wide, the portcullis five)
+        if (p.kind === "web") {
+            actor.root.scale.set(4, 1.3, 1);
+        } else if (p.kind === "gate") {
+            actor.root.scale.set(0.8, 0.8, 2);
+        }
         // (none under what's flat on the floor: a trapdoor, a hole, a trap,
-        // which is hidden till it's near: updateHaunts)
-        const flat = p.kind === "ladder" || p.kind === "trap" || (p.kind === "passage" && this.world.id === CASTLE_ID);
+        // which is hidden till it's near: updateHaunts; nor under a web or
+        // a gate)
+        const flat = p.kind === "ladder" || p.kind === "trap" || p.kind === "web" || p.kind === "gate" || (p.kind === "passage" && this.world.id === CASTLE_ID);
         if (p.kind === "trap") {
             actor.root.visible = !!p.on;
         }
@@ -3159,6 +3345,53 @@ export class Run {
         p.extra = { mesh };
     }
 
+    // A steam vent (version 179): a dark crack in the floor with a red
+    // glow at its heart
+    private drawVent(p: Prop): void {
+        if (!this.ventDisc) {
+            this.ventDisc = new THREE.CircleGeometry(1, 20);
+            this.ventCrust = new THREE.MeshBasicMaterial({ color: 0x241410, transparent: true, opacity: 0.9, depthWrite: false });
+            this.ventGlow = new THREE.MeshBasicMaterial({ color: 0xff5a22, transparent: true, opacity: 0.7, depthWrite: false });
+            this.disposables.push(this.ventDisc, this.ventCrust, this.ventGlow);
+        }
+        const mesh = new THREE.Mesh(this.ventDisc, this.ventCrust);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set(p.x, this.groundY(p.x, p.z) + 0.06, p.z);
+        const glow = new THREE.Mesh(this.ventDisc, this.ventGlow);
+        glow.scale.setScalar(0.35);
+        glow.position.z = 0.01;
+        mesh.add(glow);
+        this.scene.add(mesh);
+        p.extra = { mesh };
+    }
+
+    private ventDisc?: THREE.CircleGeometry;
+    private ventCrust?: THREE.MeshBasicMaterial;
+    private ventGlow?: THREE.MeshBasicMaterial;
+    // When each vent blows next (the host's)
+    private readonly ventsAt = new Map<Prop, number>();
+
+    // A vent blowing: a warning ring, then steam that scalds whoever's on
+    // it, hero or monster
+    private blowVent(p: Prop): void {
+        const steam: EnemyDef = { ...this.world.enemies[0].def, name: "The scalding steam" };
+        const hit = Math.round(VENT_HIT * Math.pow(1.8, this.world.tier - 1));
+        this.hazard(
+            p.x,
+            p.z,
+            VENT_RADIUS,
+            VENT_WARN,
+            (h) => this.hurtHero(h, steam, 0, "melee", true, Math.max(1, Math.round(h.maxHp * VENT_HURT))),
+            () => {
+                for (const e of [...this.enemies]) {
+                    if (e.state !== "dead" && Math.hypot(e.x - p.x, e.z - p.z) <= VENT_RADIUS + e.def.radius) {
+                        this.damageEnemy(e, hit);
+                    }
+                }
+            },
+        );
+    }
+
     // A thing's colour for what's left of it: a spent one dulled, the dark
     // ones darker
     private refreshProp(p: Prop): void {
@@ -3166,7 +3399,14 @@ export class Run {
             return;
         }
         const spent =
-            (p.kind === "vein" || p.kind === "search" || p.kind === "corpse" || p.kind === "barrel" || p.kind === "banquet") && p.uses <= 0;
+            (p.kind === "vein" ||
+                p.kind === "search" ||
+                p.kind === "corpse" ||
+                p.kind === "barrel" ||
+                p.kind === "banquet" ||
+                p.kind === "strongbox" ||
+                p.kind === "coffin") &&
+            p.uses <= 0;
         const own =
             p.kind === "passage" && this.world.id !== CASTLE_ID
                 ? new THREE.Color(0.32, 0.3, 0.29)
@@ -3174,12 +3414,24 @@ export class Run {
                   ? new THREE.Color(0.6, 0.56, 0.54)
                   : p.kind === "bookcase"
                     ? new THREE.Color(0.85, 0.8, 0.75)
-                    : WHITE;
+                    : p.kind === "strongbox"
+                      ? new THREE.Color(0.5, 0.55, 0.68)
+                      : p.kind === "gate"
+                        ? new THREE.Color(0.55, 0.55, 0.6)
+                        : WHITE;
         tint(p.actor, spent ? own.clone().multiplyScalar(p.kind === "vein" ? 0.45 : 0.65) : own);
+        // A gate hangs raised over its doorway till it's dropped
+        if (p.kind === "gate") {
+            p.actor.root.position.y = this.region.topAt(p.x, p.z) + (p.on ? 0 : GATE_RAISED);
+        }
     }
 
     private removeProp(p: Prop): void {
         p.gone = true;
+        // (a web cut: the way's open)
+        if (this.doorSeals.has(p)) {
+            this.sealDoor(p, false);
+        }
         if (p.actor) {
             this.scene.remove(p.actor.root);
         }
@@ -3193,7 +3445,25 @@ export class Run {
 
     // How far out from its middle a thing reaches (the big ones)
     private propSize(p: Prop): number {
-        return p.kind === "banquet" ? 1.2 : p.kind === "pool" ? 1 : p.kind === "passage" ? 0.8 : p.kind === "cell" ? 0.6 : p.kind === "corpse" ? 0.4 : 0;
+        switch (p.kind) {
+            case "banquet":
+                return 1.2;
+            case "pool":
+            case "gate":
+                return 1;
+            case "passage":
+            case "vent":
+                return 0.8;
+            case "cell":
+            case "coffin":
+            case "well":
+                return 0.6;
+            case "corpse":
+            case "web":
+                return 0.4;
+            default:
+                return 0;
+        }
     }
 
     // Its dot on the map, once its spot's been seen (a passage's once the
@@ -3211,13 +3481,13 @@ export class Run {
         const spent =
             p.kind === "lever"
                 ? p.on
-                : p.kind === "shrine" || p.kind === "portrait"
+                : p.kind === "shrine" || p.kind === "portrait" || p.kind === "anvil" || p.kind === "well"
                   ? p.mine
                   : p.kind === "font"
                     ? p.mine || p.uses <= 0
                     : p.kind === "pool"
                       ? p.mine && p.uses <= 0
-                      : p.kind === "passage" || p.kind === "lectern"
+                      : p.kind === "passage" || p.kind === "lectern" || p.kind === "gate" || p.kind === "vent"
                         ? false
                         : p.uses <= 0;
         return spent ? "#8a8a8a" : colour;
@@ -3346,7 +3616,47 @@ export class Run {
                 return searched ? { prompt: "The bell's still humming." } : { prompt: "Press E to ring the bell: everything in the castle comes to it", tap: true };
             case "throne":
                 return { prompt: this.kingWoke || p.on ? "The Forgotten King's throne." : "An empty throne, cold as a grave. Something sleeps under the castle." };
+            // Version 179's
+            case "strongbox":
+                return searched
+                    ? { prompt: "The strongbox, forced and empty." }
+                    : { prompt: "Hold E to force the strongbox (loud)", hold: { seconds: STRONGBOX_HOLD, doing: "Forcing the lock" } };
+            case "web":
+                return { prompt: "A thick web across the doorway. Hold E to cut through it", hold: { seconds: WEB_HOLD, doing: "Cutting the web" } };
+            case "gate":
+                return p.on
+                    ? { prompt: "Press E to raise the gate", tap: true }
+                    : { prompt: "Press E to drop the gate across the doorway: nothing gets through till it's raised", tap: true };
+            case "anvil": {
+                if (p.mine) {
+                    return { prompt: "You've mended your armour here." };
+                }
+                return this.wornPieces().length > 0
+                    ? { prompt: "Hold E to hammer the dents out of your armour (loud)", hold: { seconds: ANVIL_HOLD, doing: "Hammering" } }
+                    : { prompt: "An anvil. Nothing you wear needs mending." };
+            }
+            case "vent":
+                return { prompt: "A steam vent. It blows every so often: stand clear, or lead something onto it." };
+            case "well":
+                return p.mine ? { prompt: "You've drunk from the well." } : { prompt: "Press E to draw a bucket from the well", tap: true };
+            case "coffin":
+                return searched
+                    ? { prompt: "An open coffin, empty." }
+                    : { prompt: "Hold E to open the coffin (who knows what was laid in it)", hold: { seconds: COFFIN_HOLD, doing: "Shifting the lid" } };
         }
+    }
+
+    // The armour this player wears that's worn at all (version 179: the
+    // anvil mends it)
+    private wornPieces(): number[] {
+        const worn: number[] = [];
+        for (const slot of SLOTS) {
+            const id = this.equipment[slot];
+            if (slot !== "weapon" && id !== undefined && getItem(id).defence && wearOf(this.wear, id) > 0) {
+                worn.push(id);
+            }
+        }
+        return worn;
     }
 
     // What the shrine asks, and what it gives
@@ -3478,9 +3788,13 @@ export class Run {
             case "rack":
             case "trap":
             case "throne":
+            case "vent":
+            case "well":
                 return false;
             case "cart":
             case "alchemy":
+            case "gate":
+            case "anvil":
                 return true;
             default:
                 return p.uses > 0;
@@ -3567,6 +3881,28 @@ export class Run {
                 return this.brew();
             case "rack":
                 this.borrowWeapon(p);
+                return false;
+            // Version 179's
+            case "anvil": {
+                const worn = this.wornPieces();
+                if (p.mine || worn.length === 0) {
+                    return false;
+                }
+                for (const id of worn) {
+                    this.wear[id] = 0;
+                }
+                p.mine = true;
+                this.applyStats();
+                this.hooks.onChanged();
+                say(`You hammer the dents out of your ${worn.map((id) => getItem(id).name.toLowerCase()).join(", ")}: good as new. The ringing carries.`);
+                return true;
+            }
+            case "well":
+                p.mine = true;
+                this.poisonTicks = 0;
+                this.prayer = Math.min(100, this.prayer + WELL_PRAYER);
+                say("You draw a bucket from the well: cold, clean water. It settles any poison in you and steadies your prayers.");
+                this.hooks.onChanged();
                 return false;
             default:
                 return true;
@@ -3936,6 +4272,57 @@ export class Run {
                 this.sendProp(p);
                 this.ringBell(p);
                 return;
+            // Version 179's
+            case "strongbox":
+                p.uses = 0;
+                this.sendProp(p);
+                this.wakeNear(p.x, p.z, STRONGBOX_NOISE);
+                this.dropGear(this.world.lootTiers, p.x, p.z, PRIZE_FULL);
+                this.dropGear(this.world.lootTiers, p.x + 0.4, p.z, PRIZE_FULL);
+                this.dropPickup(COINS, purse(150, 350), p.x, p.z);
+                this.dropPickup(potion(), 1, p.x, p.z);
+                this.announce("The strongbox's lock gives with a crack that carries. It's full.");
+                return;
+            case "web":
+                p.uses = 0;
+                this.removeProp(p);
+                this.sendProp(p, 1);
+                this.tell(by, "You cut the web down. The way's open.");
+                return;
+            case "gate": {
+                const shut = !p.on;
+                if (shut && !this.doorClear(p)) {
+                    this.tell(by, "Something's standing in the gateway.");
+                    return;
+                }
+                p.on = shut;
+                this.sealDoor(p, shut);
+                this.sendProp(p);
+                this.announce(shut ? "The gate crashes down across the doorway. Nothing gets through till it's raised." : "The gate grinds up.");
+                return;
+            }
+            case "anvil":
+                this.wakeNear(p.x, p.z, ANVIL_NOISE);
+                return;
+            case "coffin": {
+                p.uses = 0;
+                this.sendProp(p);
+                if (this.rng() < COFFIN_RISE) {
+                    const undead = this.world.enemies.filter((e) => HOLY_BANE.test(e.def.id)).map((e) => e.def);
+                    const def = undead.length > 0 ? undead[Math.floor(this.rng() * undead.length)] : this.humanFoe("Restless dead");
+                    const beside = { x: p.x + 1, z: p.z };
+                    void this.spawnEnemy(this.champion(def), this.region.fits(beside.x, beside.z, 0.4) ? beside : { x: p.x, z: p.z }).then((e) => {
+                        e.cooldown = 0.8;
+                        this.rouse(e);
+                    });
+                    this.announce("The coffin's lid slides off, and what was laid in it sits up!");
+                    return;
+                }
+                this.dropGear(this.world.lootTiers, by.x, by.z, PRIZE_FULL);
+                give(COINS, purse(100, 250));
+                this.tell(by, "Whoever was laid here was buried with their riches.");
+                return;
+            }
             default:
                 return;
         }
@@ -4044,7 +4431,14 @@ export class Run {
             return;
         }
         p.uses = message.u;
-        if (message.on && !p.on) {
+        // (a gate goes both ways: version 179)
+        if (p.kind === "gate") {
+            const shut = !!message.on;
+            if (shut !== !!p.on) {
+                p.on = shut;
+                this.sealDoor(p, shut);
+            }
+        } else if (message.on && !p.on) {
             p.on = true;
             if (p.kind === "brazier") {
                 this.lightBrazier(p);
@@ -4065,6 +4459,17 @@ export class Run {
                 continue;
             }
             p.extra?.actor?.mixer.update(dt);
+            // The Depths' steam vents blow every VENT_EVERY seconds, each on
+            // its own clock (version 179; the host's, as the hazard goes out)
+            if (p.kind === "vent" && this.coop?.role !== "guest") {
+                const at = this.ventsAt.get(p) ?? this.time + this.rng() * VENT_EVERY;
+                if (this.time >= at) {
+                    this.ventsAt.set(p, this.time + VENT_EVERY);
+                    this.blowVent(p);
+                } else {
+                    this.ventsAt.set(p, at);
+                }
+            }
             if (p.kind === "armour" && p.data === 1 && this.coop?.role !== "guest") {
                 const woken = this.heroes().find((h) => !h.dead && Math.hypot(h.x - p.x, h.z - p.z) < ARMOUR_WAKE);
                 if (woken) {
@@ -10689,7 +11094,9 @@ export class Run {
                 ? "Press E to unlock the vault"
                 : chest.boss
                   ? "Press E to open the golden chest"
-                  : "Press E to open the chest";
+                  : chest.deep
+                    ? "Press E to open the old chest (this deep in, nobody's been at it)"
+                    : "Press E to open the chest";
             if (pressed) {
                 this.openChest(chest);
             }
@@ -10843,6 +11250,13 @@ export class Run {
         // Now and then a scrap of an old map under the rest (version 172)
         if (this.world.caves && this.rng() < SCRAP_CHANCE) {
             drop(MAP_SCRAP, 1);
+        }
+        // Deep in the map a chest has lain a long time untouched (version
+        // 179): a piece at a champion's prize odds and a purse on top
+        if (chest.deep) {
+            gear(this.world.lootTiers, PRIZE_FULL);
+            drop(COINS, purse(40, 120));
+            this.announce("The old chest's hinges shriek. Nobody's had this one in a long time: there's more in it.");
         }
         // About half the chests hold gear, mostly the map's own tier; the
         // rest supplies, or a purse
@@ -11009,7 +11423,11 @@ export class Run {
         coop.send({
             k: "world",
             exits: exits.map((e) => [round2(e.x), round2(e.z)] as [number, number]),
-            chests: this.chests.map((c) => [round2(c.tile.x), round2(c.tile.z), c.vault ? 2 : c.boss ? 1 : c.room === "trap" ? 3 : c.room === "brimstone" ? 4 : 0]),
+            chests: this.chests.map((c) => [
+                round2(c.tile.x),
+                round2(c.tile.z),
+                c.vault ? 2 : c.boss ? 1 : c.room === "trap" ? 3 : c.room === "brimstone" ? 4 : c.deep ? 5 : 0,
+            ]),
             altars: this.altars.map((a) => [round2(a.x), round2(a.z)]),
             props: this.props.map((p) => [PROP_KINDS.indexOf(p.kind), round2(p.x), round2(p.z), round2(p.rotation), p.data, p.uses]),
             trader: this.trader ? [round2(this.trader.x), round2(this.trader.z), round2(this.trader.rotation)] : undefined,
@@ -11288,6 +11706,7 @@ export class Run {
             boss: kind === 1,
             vault: kind === 2,
             room: kind === 3 ? "trap" : kind === 4 ? "brimstone" : undefined,
+            deep: kind === 5,
         }));
         for (const chest of this.chests) {
             void this.loadChest(chest);
@@ -11299,6 +11718,7 @@ export class Run {
         // (in the host's order: a thing's place is how it's named after)
         this.props = (message.props ?? []).map(([k, x, z, rotation, data, uses]) => ({ kind: PROP_KINDS[k] ?? "search", x, z, rotation, data, uses }));
         for (const p of this.props) {
+            this.propPlaced(p);
             void this.loadProp(p);
         }
         if (message.trader) {

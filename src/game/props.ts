@@ -37,7 +37,18 @@ export type PropKind =
     | "alchemy"
     | "rack"
     | "bell"
-    | "throne";
+    | "throne"
+    // Version 179: a strongbox at the end of every dead end, behind a web
+    // (the Depths) or a gate to shut behind you (the castle); an anvil to
+    // mend worn armour; the Depths' steam vents; the castle's wells and
+    // sarcophagi
+    | "strongbox"
+    | "web"
+    | "gate"
+    | "anvil"
+    | "vent"
+    | "well"
+    | "coffin";
 
 // The kinds in order: a kind's place here is its code over the wire (party.ts)
 export const PROP_KINDS: PropKind[] = [
@@ -67,6 +78,13 @@ export const PROP_KINDS: PropKind[] = [
     "rack",
     "bell",
     "throne",
+    "strongbox",
+    "web",
+    "gate",
+    "anvil",
+    "vent",
+    "well",
+    "coffin",
 ];
 
 export type Prop = {
@@ -79,12 +97,15 @@ export type Prop = {
     uses: number;
     // Its own: a search spot's or corpse's look, a vein's ore, the shrine's
     // trade, a bookcase's book (the lectern's is the right one), the far end
-    // of a passage, whether a suit of armour wakes
+    // of a passage, whether a suit of armour wakes, a web's or gate's
+    // doorway (its cell times 16, plus its door bit: caves.ts DOOR_BITS)
     data: number;
-    // A brazier lit, the lever pulled (and the passages it opens)
+    // A brazier lit, the lever pulled (and the passages it opens), a gate
+    // shut
     on?: boolean;
     // What this player's had of it already: a drink from a pool, a vial from
-    // the font, the shrine's trade, a look at the portraits
+    // the font, the shrine's trade, a look at the portraits, the anvil's
+    // mending, a well's draught
     mine?: boolean;
     // Gone from the map: a barrel burst, a crack broken through, a suit of
     // armour awake, a cage opened, a corpse up and walking
@@ -128,6 +149,15 @@ export const PROP_PLANS: PropPlan[] = [
     { kind: "rack", caves: 0, castle: 3, rooms: ["hall", "dungeon"], room: 0.9 },
     { kind: "bell", caves: 0, castle: 1, rooms: ["court"], room: 1 },
     { kind: "throne", caves: 0, castle: 1, rooms: ["hall"], room: 1.6 },
+    // Version 179's (the strongboxes go to dead ends, the webs and gates
+    // across doorways: run.ts placeProps)
+    { kind: "strongbox", caves: 3, castle: 3, room: 0.8 },
+    { kind: "web", caves: 4, castle: 0 },
+    { kind: "gate", caves: 0, castle: 4 },
+    { kind: "anvil", caves: 2, castle: 2, rooms: ["dungeon", "hall"], room: 0.8 },
+    { kind: "vent", caves: 3, castle: 0, room: 1.6 },
+    { kind: "well", caves: 0, castle: 2, rooms: ["court"], room: 1 },
+    { kind: "coffin", caves: 0, castle: 4, rooms: ["chapel", "dungeon"], room: 1 },
 ];
 
 // Their models (cache loc ids; the pool's is drawn: water)
@@ -164,6 +194,16 @@ export const RACK_LOC = 13994;
 export const BELL_LOC = 6847;
 export const THRONE_LOC = 1109;
 export const MORT_MYRE = 2970;
+// Version 179's: an iron-bound chest (the closed chest, dark), a spider's
+// web, a portcullis for the gate (five tiles wide, scaled to the doorway's
+// four), an anvil, a well and a stone coffin (the vent is drawn: a crack
+// in the floor)
+export const STRONGBOX_LOC = 172;
+export const WEB_LOC = 1810;
+export const GATE_LOC = 29726;
+export const ANVIL_LOC = 2031;
+export const WELL_LOC = 878;
+export const COFFIN_LOC = 398;
 // The courtyard herbs, by weight: guam, marrentill, tarromin, ranarr
 export const HERBS: [number, number][] = [
     [199, 40],
@@ -246,4 +286,11 @@ export const PROP_DOTS: Partial<Record<PropKind, string>> = {
     rack: "#d0d0d0",
     bell: "#ffd27a",
     throne: "#ffd700",
+    strongbox: "#ffd27a",
+    web: "#e8e8e8",
+    gate: "#d0d0d0",
+    anvil: "#b0b0b0",
+    vent: "#ff6a3c",
+    well: "#4aa8ff",
+    coffin: "#c8a878",
 };
