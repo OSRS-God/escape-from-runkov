@@ -189,7 +189,7 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 185 (main site release 2026.11.11.2, 11 November 2026), as the user asked: the owner's
+Version 185 (built 11 November 2026 for main site release 2026.11.11.2, not yet deployed), as the user asked: the owner's
 crown kept with the account ElmoTheGod, so it's worn on any device logged in to it. Until now a
 crown was a key in one browser only (crown.ts, from a ?crown= link); the key's still in no
 build, nor did it pass through this work. functions' new `crowns` table (account, crown, key)
