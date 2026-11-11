@@ -663,14 +663,20 @@ export class UI {
                 this.openFullMap();
                 return;
             }
-            // Esc pauses; paused, it backs out of a page or resumes
+            // Esc shuts the pack (version 183) or pauses; paused, it backs
+            // out of a page or resumes
+            const packKeys = this.hud.pause.hidden && !this.hud.fullMap.isOpen;
             if (e.code === "Escape") {
                 e.preventDefault();
-                this.togglePause();
-            } else if ((e.code === "KeyI" || e.code === "Tab") && !this.hud.run.paused) {
+                if (packKeys && this.hud.inventoryOpen) {
+                    this.toggleInventory(this.hud.inventoryView);
+                } else {
+                    this.togglePause();
+                }
+            } else if ((e.code === "KeyI" || e.code === "Tab") && packKeys) {
                 e.preventDefault();
                 this.toggleInventory("pack");
-            } else if (e.code === "KeyB" && !this.hud.run.paused && !(document.activeElement instanceof HTMLInputElement)) {
+            } else if (e.code === "KeyB" && packKeys && !(document.activeElement instanceof HTMLInputElement)) {
                 e.preventDefault();
                 this.toggleInventory("spells");
             }
@@ -686,9 +692,23 @@ export class UI {
         }
         if (portrait) {
             hud.run.setPaused(true);
-        } else if (hud.pause.hidden) {
-            hud.run.setPaused(false);
+        } else {
+            this.holdRun();
         }
+    }
+
+    // A solo run stands still while anything's up over it: the pause menu,
+    // the full map, or the pack (version 183, as the user asked). In a party
+    // the world goes on under all of them, the menu and the map only taking
+    // the controls, and the pack not even those
+    private holdRun(): void {
+        const hud = this.hud;
+        if (!hud) {
+            return;
+        }
+        const menu = !hud.pause.hidden || hud.fullMap.isOpen;
+        hud.run.packOpen = hud.inventoryOpen && !menu;
+        hud.run.setPaused(menu || (hud.inventoryOpen && !hud.run.coop));
     }
 
     // The full map over the run: it takes the controls (and stops the world
@@ -699,7 +719,7 @@ export class UI {
             return;
         }
         if (hud.fullMap.show()) {
-            hud.run.setPaused(true);
+            this.holdRun();
         }
     }
 
@@ -714,6 +734,7 @@ export class UI {
         } else {
             this.hud.inventoryOpen = !this.hud.inventoryOpen;
             this.hud.inventoryView = view;
+            this.holdRun();
         }
         this.hud.signature = "";
         this.updateHud();
@@ -2751,8 +2772,8 @@ export class UI {
             return;
         }
         if (hud.pause.hidden) {
-            hud.run.setPaused(true);
             this.showPauseView("menu");
+            this.holdRun();
         } else if (hud.pauseView === "trade") {
             this.resume();
         } else if (hud.pauseView !== "menu") {
@@ -2768,8 +2789,8 @@ export class UI {
         if (!hud || !hud.pause.hidden) {
             return;
         }
-        hud.run.setPaused(true);
         this.showPauseView("trade");
+        this.holdRun();
     }
 
     private resume(): void {
@@ -2779,7 +2800,7 @@ export class UI {
         }
         hud.pause.hidden = true;
         hud.pause.replaceChildren();
-        hud.run.setPaused(false);
+        this.holdRun();
     }
 
     private showPauseView(view: PauseView): void {
@@ -4624,11 +4645,7 @@ export class UI {
         minimap.title =
             "You are the white dot. Yellow is an enemy, red the boss, orange a chest, gold the golden one, light blue the vault, green a way out, lilac your gravestone, blue the trader. Click (or M) for the full map.";
         // The full map: the minimap, or M, opens it over the run
-        const fullMap = new FullMap(run, () => {
-            if (this.hud?.pause.hidden) {
-                run.setPaused(false);
-            }
-        });
+        const fullMap = new FullMap(run, () => this.holdRun());
         minimap.addEventListener("click", () => this.openFullMap());
         const hotbar = h("div", { class: "hotbar" });
         const pause = h("div", { class: "pause", hidden: true });

@@ -189,7 +189,21 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 182 (not yet deployed), as the user asked: a mercenary takes only their own kind's gear,
+Version 183 (not yet deployed), as the user asked: a solo run pauses while the pack's open. ui.ts
+`holdRun` is now the one place the run's pause is set from: the world stands still under the
+pause menu, the full map, or (solo only) the pack panel, and runs on once they're all down (so
+closing the pause menu over an open pack keeps the run still). Esc shuts an open pack before it
+opens the pause menu; I, Tab and B only need the menu and the map down, not the run going, so
+they shut the pack that paused it. run.ts `packOpen` (set by holdRun: the pack's up and no
+menu over it) lets the pack's own hotkeys through `onKeyDown` while paused, F eating and 1 to
+4 drinking, with no other key taken (W and Space do nothing); one bite still waits out
+EAT_DELAY, which doesn't tick while paused, so a second click says "You're still chewing" until
+the pack's shut. In a party nothing changes: the pack takes neither the world nor the controls.
+Tested in a solo Depths run: the clock ran 1.50s over 1.5s before, 0 while the pack was up,
+1.50s after it was shut (the paused time isn't a frame); F ate a shrimp with the pack up, W
+wasn't held; Esc shut the pack with no menu shown.
+
+Version 182 (deployed to the playtest site 10 November 2026 as build 2026.11.10.20), as the user asked: a mercenary takes only their own kind's gear,
 fetches what they can use from afar, and strides properly. mercs.ts `mercFits`: a weapon of
 their style (never a thrown one), armour of their style or the neutral kind (jewellery, a
 cape, void: items.ts leaves those unstyled); `mercBetter`: a fitting piece that beats the
@@ -216,7 +230,7 @@ on; an Ahrim's staff dropped 16–18 tiles off announced once (through a ghoul f
 and wielded, and they walked back; shrimps a tile from you left, shrimps 8 tiles off packed
 after 3s; the clip went run 1.26 → walk 1.05 over the last 4 tiles → idle.
 
-Version 181 (not yet deployed), as the user asked: ten more mercenaries, unlocked by the depth
+Version 181 (deployed to the playtest site 10 November 2026 as build 2026.11.10.20), as the user asked: ten more mercenaries, unlocked by the depth
 you've cleared, in better gear, each with a perk (mercs.ts: `MERC_ELITE_KINDS`, `MercPerk`,
 `tier` and `perk` on MercDef; `mercTierReached` takes the best of save.depths.cleared, 4 for
 the castle, 5 for the abyss; `mercUnlocked`, `mercLockText`). Tier 2: the knight (tough:

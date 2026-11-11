@@ -1725,6 +1725,9 @@ export class Run {
     ended = false;
     // Stood still from the pause menu: nothing moves, nothing is heard
     paused = false;
+    // The pack panel's up (version 183): a solo run stands still under it
+    // too, but its hotkeys (F eats, 1 to 4 drink) still work there
+    packOpen = false;
 
     private player!: PlayerLook;
     // The moderator's crown over this player's head, for the game's maker
@@ -7016,13 +7019,18 @@ export class Run {
     };
 
     private onKeyDown = (e: KeyboardEvent): void => {
-        if ((e.target as HTMLElement).tagName === "INPUT" || this.paused || this.menuOpen || this.done) {
+        // Stood still under the pack alone (version 183), the hotkeys below
+        // still eat and drink from it; nothing else moves
+        const held = this.paused || this.menuOpen;
+        if ((e.target as HTMLElement).tagName === "INPUT" || this.done || (held && !this.packOpen)) {
             return;
         }
-        this.keys.add(e.code);
-        if (e.code === "Space") {
-            this.wantAttack = true;
-            e.preventDefault();
+        if (!held) {
+            this.keys.add(e.code);
+            if (e.code === "Space") {
+                this.wantAttack = true;
+                e.preventDefault();
+            }
         }
         // A held key's repeats move and swing, but don't drink, eat, spend
         // or flick prayers over and over (version 154: holding 4 drank
