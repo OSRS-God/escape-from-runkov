@@ -189,6 +189,18 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 190 (built for main site release 2026.11.11.5, not yet deployed): a crown's kept
+pieces survive the account's save. On load the crown's check put them back in the page's save,
+then the account's save from the server replaced it (`adoptAccountSave` gave back only the
+crown pet), so the fire max cape never showed on ElmoTheGod. Now `adoptAccountSave` runs
+`restoreKit` too and sends the save up if anything went back in, and Start over keeps them
+(it wiped them till the next load, which then lost them the same way). The user pressed Start
+over on ElmoTheGod looking for the cape (rev 13, 948 bytes after). Cloudflare D1 time travel
+holds the database from before it; restoring it rolls back every account, so it waits for the
+user's word. Tested on localhost with the throwaway test key as an owner crown (removed after):
+with the account's save stripped of the cape, the next load had it in the bank and on the
+server again; Start over kept it.
+
 Version 189 (deployed to the main site 11 November 2026 as 2026.11.11.4; not on the playtest,
 and God's playtest crown row not stored yet, as the user said main only), as the user asked:
 the fire max cape (13329) for ElmoTheGod and God, always kept. Run Escape's `export-assets.ts

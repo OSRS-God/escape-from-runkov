@@ -75,7 +75,7 @@ import {
     staffCasts,
 } from "../content/spells";
 import { TASKS, Task } from "../content/tasks";
-import { isKept, restoreCrownPets } from "../game/kit";
+import { isKept, restoreCrownPets, restoreKit } from "../game/kit";
 import { STARTER_COINS, STARTER_KITS, StarterKit, applyStarter, pickClass } from "../game/starter";
 import { MERC_DEFS, MERC_ELITE_KINDS, MERC_MAX_LEVEL, MercGain, MercKind, mercLockText, mercPrice, mercTierReached, mercUnlocked, mercWears, mercsOffered } from "../game/mercs";
 import { Chat } from "./chat";
@@ -1199,9 +1199,13 @@ export class UI {
             this.replaceSave(parsed);
         }
         this.save.character.name = name;
-        // A crown's own pet (version 118) is this browser's crown's to give
+        // A crown's own pet (version 118) is this browser's crown's to give,
+        // and (version 190) its kept pieces too: the account's save comes
+        // after the page's start put them back, so it took them away again
+        // (the fire max cape never showed). Sent up if they had to go back in
         restoreCrownPets(this.save);
-        writeSave(this.save, true);
+        const kit = restoreKit(this.save);
+        writeSave(this.save, !kit);
         this.accountChanged();
     }
 
@@ -1545,6 +1549,9 @@ export class UI {
                         if (confirm(this.account?.name ? "Start over? The stash, coins and character are wiped, on every device this account is on." : "Start over? The stash, coins and character are wiped.")) {
                             this.replaceSave(resetSave());
                             this.keepAccountName();
+                            // What a crown keeps stays through it (version 190)
+                            restoreKit(this.save);
+                            restoreCrownPets(this.save);
                             this.persist();
                             this.showMenu();
                         }
