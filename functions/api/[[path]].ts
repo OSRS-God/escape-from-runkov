@@ -79,15 +79,15 @@ const SCHEMA = [
 ];
 // The crowns by the SHA-256 of their keys (crown.ts CROWNS), and the
 // accounts (by canon name) each may be kept with: the owner's on
-// ElmoTheGod, and the developer's on Salmon Jesus, Salmon Dev's (version
-// 186), as the user asked
+// ElmoTheGod, and (version 189) God, the owner's playtest account; the
+// developer's on Salmon Jesus, Salmon Dev's (version 186), as the user asked
 const CROWN_HASHES: Record<string, string> = {
     "4e0f860e8d27645123e773042753a6cf8ad67908bf69c0a660d06809cbb539bd": "owner",
     // The owner's second key (version 187), kept with ElmoTheGod's row
     "85a94f7a20da34666f8c1a970848d26bf0a11c2f63d0507c62f64ed5c72ae0a0": "owner",
     "355ef517371c4a0d44209d2ec6ce627ecfed14eabc61695fc7dd94ecc07ef6ca": "developer",};
 const CROWN_ACCOUNTS: Record<string, string[]> = {
-    owner: ["elmothegod"],
+    owner: ["elmothegod", "god"],
     developer: ["salmon_jesus"],
 };
 const CROWN_TRIES_PER_ADDRESS = 20;

@@ -8,7 +8,7 @@
 // opening, a run ending), unworn, so a death, a drop or a meal costs nothing
 // of it; it can't be sold, and it stays out of gravestones so coming back
 // doesn't make two.
-import { AMMO_LIMITS, ANKOU, COINS, FOOD_LIMIT, GILDED, GUTHIX_SUNFIRE, ITEMS, ItemDef, RED_GHOSTLY, SANGUINE_TORVA, THROWN_LIMIT } from "../content/items";
+import { AMMO_LIMITS, ANKOU, COINS, FIRE_MAX_CAPE, FOOD_LIMIT, GILDED, GUTHIX_SUNFIRE, ITEMS, ItemDef, RED_GHOSTLY, SANGUINE_TORVA, THROWN_LIMIT } from "../content/items";
 import { CROWN_PETS } from "../content/crownpets";
 import { playingEndless } from "../content/worlds";
 import { crownKey, crownKnown, crownVerified } from "./crown";
@@ -50,8 +50,8 @@ const OWNER_KIT = [...KIT, ...GILDED.map((id) => ({ id, count: 1 }))];
 const PLAYTESTER_KIT = [...KIT, ...GUTHIX_SUNFIRE.map((id) => ({ id, count: 1 }))];
 // The owner's own character, the first (version 120, as the user asked): the
 // Ankou outfit, kept the same way, (version 121) the red ghostly robes and
-// (version 128) Sanguine torva
-const OWNER_MAIN_KIT = [...ANKOU, ...RED_GHOSTLY, ...SANGUINE_TORVA].map((id) => ({ id, count: 1 }));
+// (version 128) Sanguine torva, and (version 189) the fire max cape
+const OWNER_MAIN_KIT = [...ANKOU, ...RED_GHOSTLY, ...SANGUINE_TORVA, FIRE_MAX_CAPE].map((id) => ({ id, count: 1 }));
 // The playtester's own character, the first (version 138, as the user
 // asked): their Guthix sunfire set, kept the same way
 const PLAYTESTER_MAIN_KIT = GUTHIX_SUNFIRE.map((id) => ({ id, count: 1 }));

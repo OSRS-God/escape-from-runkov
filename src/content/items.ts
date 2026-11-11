@@ -1996,6 +1996,19 @@ export const SANGUINE_TORVA: number[] = [];
     }
 }
 
+// The fire max cape (version 189), for the owner's own first character
+// alone too (kit.ts keeps it), as the user asked: OSRS's is the fire cape
+// sewn to the max cape, so it's the fire cape's twin, its own look. Its
+// lava is the fire cape's texture (40), which scrolls as the client's does
+export const FIRE_MAX_CAPE = 13329;
+{
+    const base = ITEMS.find((i) => i.id === 6570);
+    if (!base) {
+        throw new Error("No fire cape for the fire max cape to be the twin of");
+    }
+    ITEMS.push({ ...base, id: FIRE_MAX_CAPE, name: "Fire max cape", exclusive: "owner" });
+}
+
 export const ITEM_BY_ID: Map<number, ItemDef> = new Map(ITEMS.map((i) => [i.id, i]));
 
 export function getItem(id: number): ItemDef {
