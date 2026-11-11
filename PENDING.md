@@ -189,6 +189,15 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 186 (deployed to the main site 11 November 2026, the account server only, so the game
+stays build 2026.11.11.2), as the user asked: the developer's crown kept with Salmon Jesus,
+Salmon Dev's account (the user said so), the way version 185 keeps the owner's with
+ElmoTheGod: functions' CROWN_ACCOUNTS developer is ["salmon_jesus"]. Their browser hands the
+key over the next time it opens the game logged in to that account (a link's key is offered
+once a page); from then on any device logged in to it wears the crown. Their own browser's key
+stays theirs either way: tested on localhost before this, a link's key was neither replaced by
+an account's crown nor dropped at log-out.
+
 Version 185 (deployed to the main site 11 November 2026 as 2026.11.11.2), as the user asked: the owner's
 crown kept with the account ElmoTheGod, so it's worn on any device logged in to it. Until now a
 crown was a key in one browser only (crown.ts, from a ?crown= link); the key's still in no
