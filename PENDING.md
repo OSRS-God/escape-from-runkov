@@ -189,7 +189,8 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 187 (main site release 2026.11.11.3 and the relay, 11 November 2026), as the user
+Version 187 (built 11 November 2026 for main site release 2026.11.11.3 and the relay, not yet
+deployed, and the key not yet stored), as the user
 asked after the owner's key couldn't be found: a second owner key, made for ElmoTheGod and kept
 only in its row of the production `crowns` table, so the account's devices get the crown with
 no link. It was made by a script that wrote it straight into the SQL for that row and printed
