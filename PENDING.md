@@ -189,7 +189,7 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 191 (not yet deployed), as the user asked: the Giant Mole can't dig off and heal
+Version 191 (deployed to the main site 11 November 2026 as 2026.11.11.6), as the user asked: the Giant Mole can't dig off and heal
 itself whole. Its dig (at three quarters, half and a quarter of its health, three seconds
 under) brought it up anywhere within ten tiles of its lair's spot, often far off or where you
 couldn't get to it, and its time under and walking back counted toward a boss's heal (a tenth
