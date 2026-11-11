@@ -10,6 +10,13 @@ export function isFood(item: ItemDef): boolean {
     return !!item.heal || item.potion === "brew";
 }
 
+// What a bite of it heals: food its own, a brew BREW_HEAL (items.ts's
+// POTION_EFFECT says so)
+export const BREW_HEAL = 40;
+export function healOf(item: ItemDef): number {
+    return item.heal ?? (item.potion === "brew" ? BREW_HEAL : 0);
+}
+
 // Whether a pack can take this many more of something, by what it's
 // carrying already: food and brews are FOOD_LIMIT in all, ammunition
 // AMMO_LIMITS arrows in all and runes of each kind (AMMO_PER_ITEM), thrown

@@ -119,6 +119,7 @@ import {
     GearStats,
     INVENTORY_SIZE,
     WEAR_PER_HIT,
+    BREW_HEAL,
     Wear,
     addItem,
     canCarry,
@@ -126,6 +127,7 @@ import {
     countOf,
     equip,
     gearStats,
+    healOf,
     removeItem,
     roomFor,
     sellPrice,
@@ -4930,12 +4932,13 @@ export class Run {
 
     // Something you put down, taken up: gear goes on (what it replaces of
     // yours goes down where they stand, their own kit's they keep to
-    // themselves), food into their pack; anything else they leave
+    // themselves), food and brews into their pack (a bite at once if
+    // they're hurt enough for it: version 176); anything else they leave
     private mercTakes(p: Pickup): void {
         const m = this.merc!;
         const item = getItem(p.id);
         const name = item.name.toLowerCase();
-        if (item.heal) {
+        if (healOf(item) > 0) {
             this.removePickup(p);
             const have = m.food.find((s) => s.id === p.id);
             if (have) {
@@ -4943,7 +4946,13 @@ export class Run {
             } else {
                 m.food.push({ id: p.id, count: p.count });
             }
-            this.hooks.onMessage(`${m.name} packs the ${name}, to eat when they're hurt.`);
+            const verb = item.heal ? "eat" : "drink";
+            if (m.eatIn <= 0 && m.hero.maxHp - m.hero.hp >= healOf(item)) {
+                this.mercEat(m.food.find((s) => s.id === p.id)!);
+                this.hooks.onMessage(p.count > 1 ? `${m.name} takes the ${name}: one to ${verb} now, the rest for later.` : `${m.name} takes the ${name} and ${verb}s it.`);
+            } else {
+                this.hooks.onMessage(`${m.name} packs the ${name}, to ${verb} when they're hurt.`);
+            }
             return;
         }
         const slot = item.slot;
@@ -4968,6 +4977,17 @@ export class Run {
         this.mercStats();
         void this.dressMerc();
         this.hooks.onMessage(slot === "weapon" || slot === "shield" ? `${m.name} takes up the ${name}.` : `${m.name} takes the ${name} and puts it on.`);
+    }
+
+    // A bite from their pack, then EAT_DELAY to the next, as yours
+    private mercEat(bite: ItemStack): void {
+        const m = this.merc!;
+        m.hero.hp = Math.min(m.hero.maxHp, m.hero.hp + healOf(getItem(bite.id)));
+        bite.count--;
+        if (bite.count <= 0) {
+            m.food.splice(m.food.indexOf(bite), 1);
+        }
+        m.eatIn = EAT_DELAY;
     }
 
     // A hit on the mercenary (hurtHero's), their armour off it; at none
@@ -5012,14 +5032,9 @@ export class Run {
         // Hurt, they eat what you gave them (version 175)
         m.eatIn -= dt;
         if (m.eatIn <= 0 && m.hero.hp < m.hero.maxHp * 0.5 && m.food.length > 0) {
-            const bite = m.food.reduce((a, b) => ((getItem(b.id).heal ?? 0) > (getItem(a.id).heal ?? 0) ? b : a));
-            m.hero.hp = Math.min(m.hero.maxHp, m.hero.hp + (getItem(bite.id).heal ?? 0));
-            bite.count--;
-            if (bite.count <= 0) {
-                m.food.splice(m.food.indexOf(bite), 1);
-            }
-            m.eatIn = EAT_DELAY;
+            this.mercEat(m.food.reduce((a, b) => (healOf(getItem(b.id)) > healOf(getItem(a.id)) ? b : a)));
         }
+        // A medic patches themselves as well as you, each time (version 176)
         if (m.def.heal && !this.dead && !this.done) {
             m.healIn -= dt;
             if (m.healIn <= 0) {
@@ -5027,6 +5042,9 @@ export class Run {
                 if (this.hp < this.maxHp && Math.hypot(m.x - this.px, m.z - this.pz) < ALLY_REACH) {
                     this.hp = Math.min(this.maxHp, this.hp + Math.max(1, Math.round(this.maxHp * m.def.heal.share * scale)));
                     this.hooks.onChanged();
+                }
+                if (m.hero.hp < m.hero.maxHp) {
+                    m.hero.hp = Math.min(m.hero.maxHp, m.hero.hp + Math.max(1, Math.round(m.hero.maxHp * m.def.heal.share * scale)));
                 }
             }
         }
@@ -5045,12 +5063,14 @@ export class Run {
                 target = e;
             }
         }
-        // Nothing to fight: what you've put down for them, if it's near
+        // Nothing to fight: what you've put down for them, if it's near, or
+        // food or a brew you've no room for (version 176)
         let fetch: Pickup | undefined;
         if (!target) {
             let near = ALLY_REACH;
             for (const p of this.pickups) {
-                if (!this.givenUids.has(p.uid) || this.mercLeft.has(p.uid)) {
+                const theirs = this.givenUids.has(p.uid) || (p.age >= 0.4 && healOf(getItem(p.id)) > 0 && this.roomInPack(p.id, p.count) === 0);
+                if (!theirs || this.mercLeft.has(p.uid)) {
                     continue;
                 }
                 const d = Math.hypot(p.x - m.x, p.z - m.z);
@@ -11553,7 +11573,7 @@ export class Run {
             this.boosts[item.potion] = item.potion === "holy" ? HOLY_SECONDS : POTION_SECONDS;
             this.applyStats();
             if (item.potion === "brew") {
-                this.hp = Math.min(this.maxHp, this.hp + 40);
+                this.hp = Math.min(this.maxHp, this.hp + BREW_HEAL);
             }
         }
         this.drank++;

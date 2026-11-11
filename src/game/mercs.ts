@@ -30,7 +30,8 @@ export type MercDef = {
     // How many tiles nearer the enemies take him to be (they go for him
     // rather than you)
     draw: number;
-    // A medic's: a share of your hitpoints healed every so many seconds
+    // A medic's: a share of your hitpoints healed every so many seconds, and
+    // of their own (version 176)
     heal?: { share: number; every: number };
     names: string[];
     // His colours (the character's colour groups: hair, torso, legs, feet,
@@ -90,7 +91,7 @@ export const MERC_DEFS: Record<MercKind, MercDef> = {
     medic: {
         kind: "medic",
         title: "Field medic",
-        blurb: "A weak swing, but patches you up every few seconds.",
+        blurb: "A weak swing, but patches you and themselves up every few seconds.",
         style: "melee",
         price: 450,
         hp: 55,

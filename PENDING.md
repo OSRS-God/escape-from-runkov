@@ -189,6 +189,18 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 176 (not yet deployed), as the user asked: mercenaries heal themselves.
+- With no foe near, a mercenary takes up food or a Saradomin brew lying near that your pack has
+  no room for (`roomInPack` is 0: full, or at FOOD_LIMIT), as well as what you drop for them.
+  Brews count as healing now (inventory.ts `healOf`, BREW_HEAL moved there from gear.ts).
+- Taking it, if they're missing at least its heal (and not still chewing), they eat or drink
+  one at once; the rest is packed for below half health, as before.
+- The field medic's patch now heals the medic too, the same share of their own hitpoints, on
+  each tick (whether or not you need it).
+- Tested: with a full pack, a hurt medic fetched three lobsters, ate one and packed two; a
+  lobster you had room for was left for you; dropped brews were packed; medic and player
+  both healed each tick.
+
 Version 175 (not yet deployed), as the user asked: mercenaries wear and wield what you give
 them, as a player would.
 - Drop an item on a solo run while your mercenary stands: with no foe near they walk to it

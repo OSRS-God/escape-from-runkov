@@ -2,7 +2,7 @@
 // (version 115): a combat level for what's worn, what a death would cost,
 // and how long the food and the prayer potions last.
 import { COINS, ITEMS, PRAYER_BONUS_SCALE, PRAYER_RESTORE, SLOTS, Slot, getItem, gearPower, price } from "../content/items";
-import { gearStats } from "./inventory";
+import { BREW_HEAL, gearStats } from "./inventory";
 import { isKept } from "./kit";
 import { PRAYER_DRAIN } from "./run";
 import { Equipment, ItemStack, Stats } from "./save";
@@ -53,9 +53,6 @@ export type PackSummary = {
     // but the insured piece and anything kept
     risk: number;
 };
-
-// A brew heals this (items.ts's POTION_EFFECT says so)
-const BREW_HEAL = 40;
 
 export function packSummary(equipment: Equipment, backpack: ItemStack[], insured?: number): PackSummary {
     let food = 0;
