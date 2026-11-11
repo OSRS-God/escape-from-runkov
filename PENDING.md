@@ -189,7 +189,8 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 189 (built for main site release 2026.11.11.4, not yet deployed), as the user asked:
+Version 189 (deployed to the main site 11 November 2026 as 2026.11.11.4; not on the playtest,
+and God's playtest crown row not stored yet, as the user said main only), as the user asked:
 the fire max cape (13329) for ElmoTheGod and God, always kept. Run Escape's `export-assets.ts
 player items 13329` exported its worn piece with all 42 player clips (the fire cape's had 39:
 the three emotes are new to this export), its lava on texture 40, the fire cape's, which
@@ -205,7 +206,7 @@ after): a new Squire had it in the bank; worn in a Depths run, its piece had 42 
 texture_40 offset moved (0.61 to 0.06 in 0.7 s, wrapping); deleted from the save entirely, it
 was back in the bank on the next load.
 
-Version 188 (not yet deployed), as the user asked: a mercenary takes up a piece only if it's
+Version 188 (deployed to the main site 11 November 2026 with 2026.11.11.4), as the user asked: a mercenary takes up a piece only if it's
 their class's and better than what they wear in its slot, their own kit's or yours. The
 fetch from afar already asked that (mercUses, mercBetter); gear you dropped for them was taken
 whenever it fitted. run.ts `mercRefusal` gives the reason they'd leave a piece (not their
