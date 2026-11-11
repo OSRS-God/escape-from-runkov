@@ -189,6 +189,26 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 185 (main site release 2026.11.11.2, 11 November 2026), as the user asked: the owner's
+crown kept with the account ElmoTheGod, so it's worn on any device logged in to it. Until now a
+crown was a key in one browser only (crown.ts, from a ?crown= link); the key's still in no
+build, nor did it pass through this work. functions' new `crowns` table (account, crown, key)
+and POST /api/crown { key }: a signed-in browser hands over a key, taken only when it hashes
+to a crown (CROWN_HASHES, crown.ts's two) and the account is one that crown may be kept with
+(CROWN_ACCOUNTS: owner on "elmothegod", developer on none), 20 tries per network in 15 minutes;
+log in and GET /api/save then carry `crown`, the key, for that account's sessions alone.
+account.ts `crownFrom`: a key the account gives is kept (`keepAccountCrown`, marked with
+`dungeon-extraction-crown-account`) and the page loads again to wear it from the start (the
+slot, kit, pets and relay all read it then); a key this browser holds of its own (a link's,
+unmarked) is offered once a page after checking it's a crown, and never replaced by an
+account's. Logging out (or being logged out) drops an account's key, never a link's. The first
+hand-over has to come from a browser that already holds the owner key, logged in to
+ElmoTheGod on the main site: opening the game there does it. Tested on localhost with
+`wrangler pages dev` and a throwaway test key added as an owner crown for the test (removed
+after): another account's hand-over refused (403), a junk key refused (400); the crowned
+browser logged in as a local ElmoTheGod handed it over; with the key cleared, the next load
+got it back, reloaded once and showed "ElmoTheGod, Owner"; Log out took it off again.
+
 Main site release 2026.11.11 (11 November 2026, `GAME_BUILD` "2026.11.11"), as the user asked
 ("push all updates from playtest to main"): everything from version 150 to 184 on the main
 site, the first release there since 2026.11.08.4. It carries version 164's fresh start

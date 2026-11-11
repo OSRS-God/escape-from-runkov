@@ -5,6 +5,7 @@
 // and which revision of the save it last had; every change to the save is
 // sent a moment later, and one from another device that's newer comes back
 // in its place.
+import { crownIsOwn, crownKey, crownOfKey, dropAccountCrown, keepAccountCrown } from "./crown";
 import { SaveData } from "./save";
 
 const STORAGE = "dungeon-extraction-account";
@@ -105,12 +106,43 @@ export class Account {
     }
 
     async logIn(name: string, password: string): Promise<ApiResult<{ token: string; name: string; save: SaveData | null; rev: number }>> {
-        const result = await call<{ token: string; name: string; save: SaveData | null; rev: number }>("POST", "login", { name, password });
+        const result = await call<{ token: string; name: string; save: SaveData | null; rev: number; crown?: string }>("POST", "login", { name, password });
         if (result.ok) {
             this.state = { name: result.data.name, token: result.data.token, rev: result.data.rev };
             keep(this.state);
+            this.crownFrom(result.data.crown);
         }
         return result;
+    }
+
+    // A crown kept with the account (version 185): the one it has comes to
+    // this browser (and the page loads again to wear it: `crownArrived`);
+    // one this browser holds of its own goes to the account once a page,
+    // the server keeping it only for the account that crown is for
+    crownArrived = false;
+    private crownOffered = false;
+
+    private crownFrom(key: string | undefined): void {
+        const state = this.state;
+        if (!state) {
+            return;
+        }
+        if (key) {
+            if (keepAccountCrown(key, state.name)) {
+                this.crownArrived = true;
+            }
+            return;
+        }
+        const held = crownKey();
+        if (!held || !crownIsOwn() || this.crownOffered) {
+            return;
+        }
+        this.crownOffered = true;
+        void crownOfKey(held).then((crown) => {
+            if (crown && this.state?.token === state.token) {
+                void call("POST", "crown", { key: held }, state.token);
+            }
+        });
     }
 
     // The account's save as the server has it now
@@ -118,10 +150,11 @@ export class Account {
         if (!this.state) {
             return { ok: false, status: 401, error: "Not logged in." };
         }
-        const result = await call<{ name: string; save: SaveData | null; rev: number }>("GET", "save", undefined, this.state.token);
+        const result = await call<{ name: string; save: SaveData | null; rev: number; crown?: string }>("GET", "save", undefined, this.state.token);
         if (result.ok) {
             this.state = { ...this.state, name: result.data.name, rev: result.data.rev };
             keep(this.state);
+            this.crownFrom(result.data.crown);
         } else if (result.status === 401) {
             this.forget();
         }
@@ -255,6 +288,10 @@ export class Account {
         }
         this.state = undefined;
         keep(undefined);
+        // An account's crown goes with it (version 185)
+        dropAccountCrown();
+        this.crownArrived = false;
+        this.crownOffered = false;
         if (tell) {
             this.onLoggedOut?.();
         }

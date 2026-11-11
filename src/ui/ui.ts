@@ -1097,6 +1097,12 @@ export class UI {
                 account.push(this.save, false);
             }
             this.accountTyped = "";
+            // The account's crown (version 185) is worn from the page's start
+            if (account.crownArrived) {
+                await account.flush(this.save);
+                location.reload();
+                return;
+            }
             this.showMenu();
         };
         const form = h(

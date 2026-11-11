@@ -788,6 +788,11 @@ async function openGame(): Promise<void> {
     }
     ui.showLoading("Loading your account");
     const result = await account.pull();
+    // The account's crown came (version 185): worn from the page's start
+    if (result.ok && account.crownArrived) {
+        location.reload();
+        return;
+    }
     if (result.ok) {
         if (result.data.save) {
             ui.adoptAccountSave(result.data.save, result.data.name);

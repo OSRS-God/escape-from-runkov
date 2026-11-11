@@ -112,6 +112,8 @@ export function takeCrownFromUrl(): boolean {
         } else {
             localStorage.removeItem(CROWN_STORAGE);
         }
+        // A link's key is this browser's own, not an account's (version 185)
+        localStorage.removeItem(CROWN_FROM_ACCOUNT);
     } catch {
         // No storage: no crown
     }
@@ -122,6 +124,56 @@ export function takeCrownFromUrl(): boolean {
     const rest = params.toString();
     history.replaceState(null, "", location.pathname + (rest ? `?${rest}` : "") + location.hash);
     return kept;
+}
+
+// A crown kept with an account (version 185, functions' /api/crown): the
+// key the account gave this browser, and which account it came with, so
+// logging out of that account takes it off again. A key this browser was
+// given by a link is its own, and an account's never replaces it.
+const CROWN_FROM_ACCOUNT = "dungeon-extraction-crown-account";
+
+// True when the key is new here (the page should load again to wear it)
+export function keepAccountCrown(key: string, account: string): boolean {
+    try {
+        const held = localStorage.getItem(CROWN_STORAGE);
+        if (held === key) {
+            return false;
+        }
+        if (held && localStorage.getItem(CROWN_FROM_ACCOUNT) === null) {
+            return false;
+        }
+        localStorage.setItem(CROWN_STORAGE, key);
+        localStorage.setItem(CROWN_FROM_ACCOUNT, account);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+// Logged out: an account's crown goes with it
+export function dropAccountCrown(): void {
+    try {
+        if (localStorage.getItem(CROWN_FROM_ACCOUNT) !== null) {
+            localStorage.removeItem(CROWN_STORAGE);
+            localStorage.removeItem(CROWN_FROM_ACCOUNT);
+        }
+    } catch {
+        // No storage: no crown
+    }
+}
+
+// Whether this browser's key is its own (a link's), not an account's
+export function crownIsOwn(): boolean {
+    try {
+        return localStorage.getItem(CROWN_STORAGE) !== null && localStorage.getItem(CROWN_FROM_ACCOUNT) === null;
+    } catch {
+        return false;
+    }
+}
+
+// Which crown a key is for, waited on
+export async function crownOfKey(key: string): Promise<Crown | undefined> {
+    return CROWNS[await hash(key)];
 }
 
 // Which crown a key is for, if any: known once checked (the check is a

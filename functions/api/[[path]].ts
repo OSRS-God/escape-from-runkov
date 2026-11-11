@@ -15,6 +15,13 @@
 //   POST /api/daily        { day, score } (Bearer token) -> { best, rank }
 //   GET  /api/abyss        the Abyss's board, deepest beaten -> { top: [{ name, score }] }
 //   POST /api/abyss        { score } (Bearer token) -> { best, rank }
+//   POST /api/crown        { key } (Bearer token)   -> { crown }
+//
+// A crown kept with its account (version 185): a browser that holds a crown
+// key (crown.ts, given by a link) and is logged in to the one account that
+// crown is for (CROWN_ACCOUNTS) hands the key over once, and from then on
+// log in and GET /api/save give it back (`crown`) to any device logged in
+// to that account. The key is only ever told to that account's sessions.
 //
 // The daily cave (version 161): the Depths' cave of the day, the same for
 // everyone; each account's best haul escaped from it that day, today's or
@@ -68,7 +75,20 @@ const SCHEMA = [
     "CREATE INDEX IF NOT EXISTS sessions_account ON sessions (account)",
     "CREATE TABLE IF NOT EXISTS daily (day INTEGER NOT NULL, account INTEGER NOT NULL, name TEXT NOT NULL, score INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (day, account))",
     "CREATE INDEX IF NOT EXISTS daily_board ON daily (day, score DESC)",
+    "CREATE TABLE IF NOT EXISTS crowns (account INTEGER PRIMARY KEY, crown TEXT NOT NULL, key TEXT NOT NULL, at INTEGER NOT NULL)",
 ];
+// The crowns by the SHA-256 of their keys (crown.ts CROWNS), and the
+// accounts (by canon name) each may be kept with: the owner's on
+// ElmoTheGod, as the user asked; the developer's on none yet, so theirs
+// stays the browser's alone
+const CROWN_HASHES: Record<string, string> = {
+    "4e0f860e8d27645123e773042753a6cf8ad67908bf69c0a660d06809cbb539bd": "owner",
+    "355ef517371c4a0d44209d2ec6ce627ecfed14eabc61695fc7dd94ecc07ef6ca": "developer",};
+const CROWN_ACCOUNTS: Record<string, string[]> = {
+    owner: ["elmothegod"],
+    developer: [],
+};
+const CROWN_TRIES_PER_ADDRESS = 20;
 // The board's length, and the most a haul out of one cave can be worth
 const DAILY_TOP = 20;
 const DAILY_MAX_SCORE = 5_000_000_000;
@@ -238,6 +258,13 @@ async function signedIn(db: D1Database, request: Request): Promise<{ id: number;
     return row;
 }
 
+// The crown key kept with an account, if any, and only while the account's
+// still one its crown may be kept with
+async function crownOf(db: D1Database, account: { id: number; name: string }): Promise<string | undefined> {
+    const row = await db.prepare("SELECT crown, key FROM crowns WHERE account = ?").bind(account.id).first<{ crown: string; key: string }>();
+    return row && CROWN_ACCOUNTS[row.crown]?.includes(canonName(account.name)) ? row.key : undefined;
+}
+
 export async function onRequest(context: Context): Promise<Response> {
     const { request, env } = context;
     if (request.method === "OPTIONS") {
@@ -339,6 +366,7 @@ export async function onRequest(context: Context): Promise<Response> {
                 name: row.name,
                 save: row.save ? JSON.parse(row.save) : null,
                 rev: row.rev,
+                crown: await crownOf(db, row),
             });
         }
         if (route === "save") {
@@ -347,7 +375,7 @@ export async function onRequest(context: Context): Promise<Response> {
                 return fail(401, "Log in again: this device isn't logged in.");
             }
             if (request.method === "GET") {
-                return json(200, { name: account.name, save: account.save ? JSON.parse(account.save) : null, rev: account.rev });
+                return json(200, { name: account.name, save: account.save ? JSON.parse(account.save) : null, rev: account.rev, crown: await crownOf(db, account) });
             }
             if (request.method === "PUT") {
                 const body = await readJson(request);
@@ -436,6 +464,32 @@ export async function onRequest(context: Context): Promise<Response> {
                 .bind(ABYSS_DAY, best?.score ?? score)
                 .first<{ n: number }>();
             return json(200, { best: best?.score ?? score, rank: (above?.n ?? 0) + 1 });
+        }
+        // A crown handed to the account it's for (version 185)
+        if (route === "crown" && request.method === "POST") {
+            const account = await signedIn(db, request);
+            if (!account) {
+                return fail(401, "Log in again: this device isn't logged in.");
+            }
+            const fromHere = `crown@${address}`;
+            await note(db, fromHere);
+            if ((await recent(db, fromHere, Date.now() - LOGIN_WINDOW_MS)) > CROWN_TRIES_PER_ADDRESS) {
+                return fail(429, "Too many tries. Wait 15 minutes and try again.");
+            }
+            const body = await readJson(request);
+            const key = String(body?.key ?? "");
+            const crown = key.length > 0 && key.length <= 256 ? CROWN_HASHES[await sha256(key)] : undefined;
+            if (!crown) {
+                return fail(400, "That isn't a crown.");
+            }
+            if (!CROWN_ACCOUNTS[crown]?.includes(canonName(account.name))) {
+                return fail(403, "That crown isn't this account's.");
+            }
+            await db
+                .prepare("INSERT INTO crowns (account, crown, key, at) VALUES (?, ?, ?, ?) ON CONFLICT (account) DO UPDATE SET crown = excluded.crown, key = excluded.key, at = excluded.at")
+                .bind(account.id, crown, key, Date.now())
+                .run();
+            return json(200, { crown });
         }
         if (route === "logout" && request.method === "POST") {
             const token = /^Bearer ([0-9a-f]{64})$/.exec(request.headers.get("Authorization") ?? "")?.[1];
