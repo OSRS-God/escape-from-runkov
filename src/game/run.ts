@@ -1723,11 +1723,9 @@ export class Run {
     boss?: { name: string; hp: number; maxHp: number };
     dead = false;
     ended = false;
-    // Stood still from the pause menu: nothing moves, nothing is heard
+    // Stood still from the pause menu, or (version 183) a solo run's open
+    // pack: nothing moves, nothing is heard, nothing's eaten or drunk
     paused = false;
-    // The pack panel's up (version 183): a solo run stands still under it
-    // too, but its hotkeys (F eats, 1 to 4 drink) still work there
-    packOpen = false;
 
     private player!: PlayerLook;
     // The moderator's crown over this player's head, for the game's maker
@@ -7019,18 +7017,13 @@ export class Run {
     };
 
     private onKeyDown = (e: KeyboardEvent): void => {
-        // Stood still under the pack alone (version 183), the hotkeys below
-        // still eat and drink from it; nothing else moves
-        const held = this.paused || this.menuOpen;
-        if ((e.target as HTMLElement).tagName === "INPUT" || this.done || (held && !this.packOpen)) {
+        if ((e.target as HTMLElement).tagName === "INPUT" || this.paused || this.menuOpen || this.done) {
             return;
         }
-        if (!held) {
-            this.keys.add(e.code);
-            if (e.code === "Space") {
-                this.wantAttack = true;
-                e.preventDefault();
-            }
+        this.keys.add(e.code);
+        if (e.code === "Space") {
+            this.wantAttack = true;
+            e.preventDefault();
         }
         // A held key's repeats move and swing, but don't drink, eat, spend
         // or flick prayers over and over (version 154: holding 4 drank
@@ -12559,7 +12552,7 @@ export class Run {
 
     eat(id: number): void {
         const item = getItem(id);
-        if (!item.heal || this.dead) {
+        if (!item.heal || this.dead || this.stoodStill("eat")) {
             return;
         }
         // One bite at a time: the next waits EAT_DELAY
@@ -12583,6 +12576,19 @@ export class Run {
             }
             this.hooks.onChanged();
         }
+    }
+
+    // Nothing's eaten or drunk while the world stands still (version 183,
+    // as the user asked): the pack's for sorting, not a safe meal
+    private stoodStill(verb: "eat" | "drink"): boolean {
+        if (!this.paused) {
+            return false;
+        }
+        if (this.time - this.fullMessageAt > 1.5) {
+            this.hooks.onMessage(`The world's stood still while the pack's open: shut it to ${verb}.`);
+            this.fullMessageAt = this.time;
+        }
+        return true;
     }
 
     // Something put down from the pack, a step ahead: to make room, or for
@@ -12662,7 +12668,7 @@ export class Run {
 
     drink(id: number): void {
         const item = getItem(id);
-        if (!item.potion || this.dead) {
+        if (!item.potion || this.dead || this.stoodStill("drink")) {
             return;
         }
         // A brew is a bite like any food (version 150): it waits out

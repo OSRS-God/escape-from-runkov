@@ -707,7 +707,6 @@ export class UI {
             return;
         }
         const menu = !hud.pause.hidden || hud.fullMap.isOpen;
-        hud.run.packOpen = hud.inventoryOpen && !menu;
         hud.run.setPaused(menu || (hud.inventoryOpen && !hud.run.coop));
     }
 
@@ -4897,12 +4896,18 @@ export class UI {
                     return h("div", { class: "slot empty" });
                 }
                 const item = getItem(stack.id);
+                // A solo run's pack stands the world still (version 183), and
+                // nothing's eaten or drunk till it's shut
                 const action = hud.dropMode
                     ? "Click to drop it."
                     : item.heal
-                      ? "Click to eat, or press F."
+                      ? run.paused
+                          ? "Shut the pack to eat it (F)."
+                          : "Click to eat, or press F."
                       : item.potion
-                        ? "Click to drink, or press 1 to 4."
+                        ? run.paused
+                            ? "Shut the pack to drink it (1 to 4)."
+                            : "Click to drink, or press 1 to 4."
                         : item.clue
                           ? "Click to read it again from where you stand."
                           : item.slot

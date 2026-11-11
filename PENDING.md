@@ -194,14 +194,16 @@ Version 183 (not yet deployed), as the user asked: a solo run pauses while the p
 pause menu, the full map, or (solo only) the pack panel, and runs on once they're all down (so
 closing the pause menu over an open pack keeps the run still). Esc shuts an open pack before it
 opens the pause menu; I, Tab and B only need the menu and the map down, not the run going, so
-they shut the pack that paused it. run.ts `packOpen` (set by holdRun: the pack's up and no
-menu over it) lets the pack's own hotkeys through `onKeyDown` while paused, F eating and 1 to
-4 drinking, with no other key taken (W and Space do nothing); one bite still waits out
-EAT_DELAY, which doesn't tick while paused, so a second click says "You're still chewing" until
-the pack's shut. In a party nothing changes: the pack takes neither the world nor the controls.
+they shut the pack that paused it. Nothing's eaten or drunk while the world stands still (the
+user asked, after a first cut let the hotkeys through): run.ts `stoodStill` in `eat` and
+`drink` refuses with "The world's stood still while the pack's open: shut it to eat/drink"
+(once per 1.5s of run time), so a click on the food, F, 1 to 4 and the hotbar all do nothing
+with the pack up; the slot's hint says "Shut the pack to eat it (F)" while it's paused. In a
+party nothing changes: the pack takes neither the world nor the controls, and eating goes on.
 Tested in a solo Depths run: the clock ran 1.50s over 1.5s before, 0 while the pack was up,
-1.50s after it was shut (the paused time isn't a frame); F ate a shrimp with the pack up, W
-wasn't held; Esc shut the pack with no menu shown.
+1.50s after it was shut (the paused time isn't a frame); with the pack up a click on the
+shrimps, F and the hotbar's eat all refused with the message and ate nothing; Esc shut the pack
+with no menu shown, and F then ate.
 
 Version 182 (deployed to the playtest site 10 November 2026 as build 2026.11.10.20), as the user asked: a mercenary takes only their own kind's gear,
 fetches what they can use from afar, and strides properly. mercs.ts `mercFits`: a weapon of
