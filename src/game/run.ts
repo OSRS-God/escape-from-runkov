@@ -1094,6 +1094,21 @@ const ALLY_EVERY = 1.6;
 const ALLY_HIT = 8;
 const ALLY_HIT_TIER = 6;
 const ALLY_STUCK = 1.5;
+// The mercenary's head (version 177, as the user asked for a far smarter
+// one): no further from you than this, and a medic no further from you than
+// MERC_MEDIC_RANGE; a bite below this share of their health, or this beside
+// a boss; back behind you below this share (a sellsword, whose job's to be
+// hit, below this) till they're up to this; a bowman or mage backs off what's
+// this close; a shout about what's coming at your back from this close
+const ALLY_LEASH = ALLY_REACH * 1.5;
+const MERC_MEDIC_RANGE = 5;
+const MERC_EAT = 0.5;
+const MERC_EAT_BOSS = 0.65;
+const MERC_RETREAT = 0.35;
+const MERC_RETREAT_TOUGH = 0.2;
+const MERC_RALLY = 0.6;
+const MERC_KITE = 2.2;
+const MERC_CALL_RANGE = 4.5;
 // A lit brazier keeps the weakest third of the map's kinds out of its room
 const LIT_WEAK_SHARE = 1 / 3;
 
@@ -4197,8 +4212,11 @@ export class Run {
     }
 
     // A step toward a spot: straight where nothing's in the way, else down
-    // the field the enemies follow to his hero (round the castle's walls)
-    private allyStep(a: Walker, gx: number, gz: number, owner: Hero, dt: number): void {
+    // the field the enemies follow to his hero (round the castle's walls).
+    // Version 177: a mercenary's step can be quicker (hurry), and goes round
+    // what they'd rather not tread on (avoid: a spike trap), sideways if
+    // need be
+    private allyStep(a: Walker, gx: number, gz: number, owner: Hero, dt: number, how: { hurry?: number; avoid?: (x: number, z: number) => boolean } = {}): void {
         const region = this.region;
         let dx = gx - a.x;
         let dz = gz - a.z;
@@ -4234,12 +4252,32 @@ export class Run {
         if (len < 0.01) {
             return;
         }
-        const step = PLAYER_SPEED * 0.9 * dt;
-        const [nx, nz] = this.moveCircle(a.x, a.z, (dx / len) * step, (dz / len) * step, COLLISION_RADIUS);
+        const step = PLAYER_SPEED * 0.9 * (how.hurry ?? 1) * dt;
+        let ux = dx / len;
+        let uz = dz / len;
+        let [nx, nz] = this.moveCircle(a.x, a.z, ux * step, uz * step, COLLISION_RADIUS);
+        if (how.avoid?.(nx, nz)) {
+            // Round it: the side that's clear, else no step
+            let found = false;
+            for (const turn of [1, -1]) {
+                const sx = uz * turn;
+                const sz = -ux * turn;
+                const [tx, tz] = this.moveCircle(a.x, a.z, sx * step, sz * step, COLLISION_RADIUS);
+                if (!how.avoid(tx, tz)) {
+                    [nx, nz, ux, uz] = [tx, tz, sx, sz];
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                a.stuck += dt;
+                return;
+            }
+        }
         a.stuck = Math.hypot(nx - a.x, nz - a.z) < step * 0.3 ? a.stuck + dt : 0;
         a.x = nx;
         a.z = nz;
-        a.facing = Math.atan2(dx, dz);
+        a.facing = Math.atan2(ux, uz);
         a.walking = true;
     }
 
@@ -4829,11 +4867,19 @@ export class Run {
         healIn: number;
         deadFor: number;
         gone: boolean;
+        // Version 177: hurt badly, keeping behind you till they've mended;
+        // what they've shouted about, and when they last shouted
+        fallingBack: boolean;
+        called: WeakSet<Enemy>;
+        calledAt: number;
     };
     // What you've put down for them to take (dropItem's), and what they've
     // looked at and left
     private readonly givenUids = new Set<number>();
     private readonly mercLeft = new Set<number>();
+    // What you last hit, and when: the mercenary goes for it first
+    private playerFoe?: Enemy;
+    private playerFoeAt = -10;
 
     // The mercenary, beside you where you came in, at their kind's numbers
     // for the map's tier and their level, and their gear's
@@ -4883,6 +4929,9 @@ export class Run {
             healIn: def.heal?.every ?? 0,
             deadFor: 0,
             gone: false,
+            fallingBack: false,
+            called: new WeakSet(),
+            calledAt: -10,
         };
         this.mercStats(true);
         await this.dressMerc();
@@ -5007,8 +5056,15 @@ export class Run {
         }
     }
 
-    // Every frame (a solo run's): after what's near you that they can see,
-    // or at your side; a medic's patching; their bar over their head
+    // Every frame (a solo run's). Version 177, as the user asked for a far
+    // smarter one. Hurt, they eat (sooner beside a boss); a medic patches.
+    // Then, first things first: out of a ring about to burst; a bowman or
+    // mage back from what's closing on them; hurt badly, behind you till
+    // they've mended; at the foe that matters most (mercFoe), a swordsman
+    // round to its far side from you; what you've put down; else at your
+    // back, out of your way. Never further from you than ALLY_LEASH, never
+    // at what's still asleep (a fight you haven't picked stays unpicked),
+    // never onto a spike trap; and a shout about what's coming at your back
     private updateMerc(dt: number): void {
         const m = this.merc;
         if (!m) {
@@ -5029,10 +5085,14 @@ export class Run {
         const scale = mercScale(m.level);
         m.busy -= dt;
         m.swingIn -= dt;
-        // Hurt, they eat what you gave them (version 175)
+        // Hurt, they eat what you gave them (version 175): what fills the
+        // gap best, as F does for you
         m.eatIn -= dt;
-        if (m.eatIn <= 0 && m.hero.hp < m.hero.maxHp * 0.5 && m.food.length > 0) {
-            this.mercEat(m.food.reduce((a, b) => (healOf(getItem(b.id)) > healOf(getItem(a.id)) ? b : a)));
+        if (m.eatIn <= 0 && m.food.length > 0) {
+            const bossNear = this.enemies.some((e) => e.def.boss && e.state !== "idle" && e.state !== "dead" && Math.hypot(e.x - m.x, e.z - m.z) < ALLY_REACH);
+            if (m.hero.hp < m.hero.maxHp * (bossNear ? MERC_EAT_BOSS : MERC_EAT)) {
+                this.mercEat(this.mercBite(m));
+            }
         }
         // A medic patches themselves as well as you, each time (version 176)
         if (m.def.heal && !this.dead && !this.done) {
@@ -5048,25 +5108,26 @@ export class Run {
                 }
             }
         }
+        // Hurt badly, they keep behind you till they've mended (a sellsword
+        // stands longer: the monsters are meant to go for them)
+        if (!m.fallingBack && m.hero.hp < m.hero.maxHp * (m.def.draw > 0 ? MERC_RETREAT_TOUGH : MERC_RETREAT)) {
+            m.fallingBack = true;
+            this.hooks.onMessage(`${m.name} falls back, hurt.`);
+        } else if (m.fallingBack && m.hero.hp >= m.hero.maxHp * MERC_RALLY) {
+            m.fallingBack = false;
+        }
         // (a bow's or a staff's reach since version 175: their weapon's, as a
         // player's; no arrows or runes asked of them)
         const reach = m.stats.ranged ? m.stats.range : 0;
-        let target: Enemy | undefined;
-        let best = ALLY_REACH + reach;
-        for (const e of this.enemies) {
-            if (e.state === "dead" || e.def.passive || (e.burrowed !== undefined && e.burrowed > 0) || Math.hypot(e.x - this.px, e.z - this.pz) > ALLY_REACH * 1.5) {
-                continue;
-            }
-            const d = Math.hypot(e.x - m.x, e.z - m.z);
-            if (d < best && this.region.lineOfSight(m.x, m.z, e.x, e.z)) {
-                best = d;
-                target = e;
-            }
-        }
+        const toYou = Math.hypot(this.px - m.x, this.pz - m.z);
+        const target = toYou > ALLY_LEASH ? undefined : this.mercFoe(m, reach);
+        // Falling back, a bowman or mage still shoots from behind you
+        const fighting = target && (!m.fallingBack || reach > 0);
+        this.mercCallOut(m);
         // Nothing to fight: what you've put down for them, if it's near, or
         // food or a brew you've no room for (version 176)
         let fetch: Pickup | undefined;
-        if (!target) {
+        if (!target && !m.fallingBack) {
             let near = ALLY_REACH;
             for (const p of this.pickups) {
                 const theirs = this.givenUids.has(p.uid) || (p.age >= 0.4 && healOf(getItem(p.id)) > 0 && this.roomInPack(p.id, p.count) === 0);
@@ -5080,31 +5141,61 @@ export class Run {
                 }
             }
         }
-        const gx = target ? target.x : fetch ? fetch.x : this.px;
-        const gz = target ? target.z : fetch ? fetch.z : this.pz;
-        const stop = target ? (reach > 0 ? reach : target.def.radius + 0.8) : fetch ? 0.6 : ALLY_FOLLOW;
+        // Where they're going, and how close is close enough
+        let gx: number;
+        let gz: number;
+        let stop: number;
+        if (target && !m.fallingBack) {
+            [gx, gz] = [target.x, target.z];
+            stop = reach > 0 ? reach : target.def.radius + 0.8;
+            // A swordsman works round to its far side from you, so the two
+            // of you aren't queued up where its swings land
+            const side = reach > 0 ? undefined : this.mercFlank(m, target);
+            if (side) {
+                [gx, gz] = side;
+                stop = 0.4;
+            }
+        } else if (fetch) {
+            [gx, gz] = [fetch.x, fetch.z];
+            stop = 0.6;
+        } else {
+            [gx, gz] = this.mercPost(m.fallingBack);
+            stop = m.fallingBack ? 0.8 : ALLY_FOLLOW;
+        }
         const d = Math.hypot(gx - m.x, gz - m.z);
+        const inReach = target ? Math.hypot(target.x - m.x, target.z - m.z) <= (reach > 0 ? reach : target.def.radius + 0.8) && this.region.lineOfSight(m.x, m.z, target.x, target.z) : false;
         m.walking = false;
-        if (fetch && d <= stop) {
-            this.mercTakes(fetch);
-        } else if ((!target && !fetch && d > 20) || m.stuck > ALLY_STUCK) {
-            this.allyCatchUp(m, this.self);
-        } else if (d > stop) {
-            this.allyStep(m, gx, gz, this.self, dt);
+        // Out of a ring about to burst before anything; a bowman or mage
+        // back from what's closing on them (they shoot once it's off them)
+        const away = this.mercDanger(m) ?? (reach > 0 ? this.mercKite(m, toYou) : undefined);
+        const avoid = this.mercAvoids();
+        if (away) {
+            this.allyStep(m, m.x + away[0] * 2, m.z + away[1] * 2, this.self, dt, { avoid, hurry: 1.1 });
             if (m.busy <= 0) {
                 m.look?.play("run", { speed: RUN_CLIP_SPEED });
             }
-        } else if (target) {
-            m.facing = Math.atan2(gx - m.x, gz - m.z);
-            if (m.swingIn <= 0) {
-                // Their weapon's swing and hit, as a player's (version 175),
-                // their kind's share of it and their level's on top
-                m.swingIn = Math.max(0.6, m.stats.speed);
-                m.busy = 0.9;
-                m.look?.play(m.attackClip, { once: true });
-                const lands = this.rng() < hitChance(m.stats.weapon?.tier ?? 1, this.world.tier, !!target.def.boss);
-                this.damageEnemy(target, lands ? Math.max(1, Math.round(playerHit(m.stats, this.rng()) * m.def.hit * scale)) : 0, this.self);
-            } else if (m.busy <= 0) {
+        } else if (fetch && d <= stop) {
+            this.mercTakes(fetch);
+        } else if ((!target && !fetch && toYou > 20) || m.stuck > ALLY_STUCK) {
+            this.allyCatchUp(m, this.self);
+        } else if (fighting && inReach && m.swingIn <= 0) {
+            // Their weapon's swing and hit, as a player's (version 175),
+            // their kind's share of it and their level's on top
+            m.facing = Math.atan2(target.x - m.x, target.z - m.z);
+            m.swingIn = Math.max(0.6, m.stats.speed);
+            m.busy = 0.9;
+            m.look?.play(m.attackClip, { once: true });
+            const lands = this.rng() < hitChance(m.stats.weapon?.tier ?? 1, this.world.tier, !!target.def.boss);
+            this.damageEnemy(target, lands ? Math.max(1, Math.round(playerHit(m.stats, this.rng()) * m.def.hit * scale)) : 0, this.self);
+        } else if (d > stop) {
+            // (quicker when they've fallen behind)
+            this.allyStep(m, gx, gz, this.self, dt, { avoid, hurry: !target && !fetch && toYou > 6 ? 1.2 : 1 });
+            if (m.busy <= 0) {
+                m.look?.play("run", { speed: RUN_CLIP_SPEED });
+            }
+        } else if (fighting) {
+            m.facing = Math.atan2(target.x - m.x, target.z - m.z);
+            if (m.busy <= 0) {
                 m.look?.play("idle");
             }
         } else if (m.busy <= 0) {
@@ -5120,6 +5211,234 @@ export class Run {
         m.bar.group.visible = settings.healthBars;
         m.bar.group.position.set(m.x, this.groundY(m.x, m.z) + (m.look?.height ?? 1.6) * this.character.size + 0.3, m.z);
         m.bar.fill.scale.x = Math.max(0.001, m.hero.hp / m.hero.maxHp) * BAR_WIDTH;
+    }
+
+    // The bite that fills the gap best: the biggest heal that isn't wasted,
+    // else the smallest there is (foodToEat's rule)
+    private mercBite(m: NonNullable<Run["merc"]>): ItemStack {
+        const missing = m.hero.maxHp - m.hero.hp;
+        let best: ItemStack | undefined;
+        let bestHeal = 0;
+        let smallest = m.food[0];
+        let smallestHeal = Infinity;
+        for (const stack of m.food) {
+            const heal = healOf(getItem(stack.id));
+            if (heal <= missing && heal > bestHeal) {
+                best = stack;
+                bestHeal = heal;
+            }
+            if (heal < smallestHeal) {
+                smallest = stack;
+                smallestHeal = heal;
+            }
+        }
+        return best ?? smallest;
+    }
+
+    // The foe that matters most (version 177): what they can see that's
+    // awake and near you, the nearest first, but sooner what you're
+    // hitting, what's on you, what's on them, and what a hit of theirs
+    // would finish; later a boss while its company's about, and what's
+    // running for help (chasing it wakes more). A medic keeps nearer you,
+    // to go on patching
+    private mercFoe(m: NonNullable<Run["merc"]>, reach: number): Enemy | undefined {
+        const leash = m.def.heal ? MERC_MEDIC_RANGE : ALLY_LEASH;
+        const maxHit = Math.round(playerHit(m.stats, 1) * m.def.hit * mercScale(m.level));
+        const yours = this.time - this.playerFoeAt < 4 ? this.playerFoe : undefined;
+        let company = false;
+        for (const e of this.enemies) {
+            if (!e.def.boss && !e.def.passive && e.state !== "idle" && e.state !== "dead" && Math.hypot(e.x - this.px, e.z - this.pz) < ALLY_REACH) {
+                company = true;
+                break;
+            }
+        }
+        let best: Enemy | undefined;
+        let bestScore = ALLY_REACH + reach;
+        for (const e of this.enemies) {
+            if (e.state === "idle" || e.state === "dead" || e.def.passive || (e.burrowed !== undefined && e.burrowed > 0)) {
+                continue;
+            }
+            if (Math.hypot(e.x - this.px, e.z - this.pz) > leash) {
+                continue;
+            }
+            let score = Math.hypot(e.x - m.x, e.z - m.z);
+            if (e === yours) {
+                score -= 5;
+            }
+            if (e.target === this.self) {
+                score -= 4;
+            }
+            if (e.target === m.hero) {
+                score -= 3;
+            }
+            if (e.hp <= maxHit) {
+                score -= 5;
+            }
+            if (e.def.boss && company) {
+                score += 3;
+            }
+            if (e.state === "flee") {
+                score += 6;
+            }
+            if (score < bestScore && this.region.lineOfSight(m.x, m.z, e.x, e.z)) {
+                bestScore = score;
+                best = e;
+            }
+        }
+        return best;
+    }
+
+    // Where a swordsman stands to a foe: a spot at its side or its far side
+    // from you, as far from you as there's room for and a straight walk to
+    // (not through the foe, nor a wall); none where there's no such spot
+    private mercFlank(m: NonNullable<Run["merc"]>, target: Enemy): [number, number] | undefined {
+        const ax = target.x - this.px;
+        const az = target.z - this.pz;
+        const len = Math.hypot(ax, az);
+        if (len < 0.5) {
+            return undefined;
+        }
+        const base = Math.atan2(ax, az);
+        const r = target.def.radius + 0.7;
+        let best: [number, number] | undefined;
+        let bestScore = -Infinity;
+        for (const turn of [0, 1, -1, 2, -2]) {
+            const angle = base + (turn * Math.PI) / 3;
+            const x = target.x + Math.sin(angle) * r;
+            const z = target.z + Math.cos(angle) * r;
+            if (!this.region.fits(x, z, COLLISION_RADIUS) || !this.region.lineOfSight(x, z, target.x, target.z)) {
+                continue;
+            }
+            const fromMe = Math.hypot(x - m.x, z - m.z);
+            // (standing there already is as good as it gets)
+            if (fromMe > 0.4 && !(this.region.lineOfSight(m.x, m.z, x, z) && this.region.clearWalk(m.x, m.z, x, z, COLLISION_RADIUS))) {
+                continue;
+            }
+            // (nor a straight walk that goes through the foe)
+            if (fromMe > 0.4 && this.segmentNear(m.x, m.z, x, z, target.x, target.z) < target.def.radius * 0.8) {
+                continue;
+            }
+            const score = Math.hypot(x - this.px, z - this.pz) - fromMe * 0.5;
+            if (score > bestScore) {
+                bestScore = score;
+                best = [x, z];
+            }
+        }
+        return best;
+    }
+
+    // How near a line from one spot to another passes a third
+    private segmentNear(x1: number, z1: number, x2: number, z2: number, px: number, pz: number): number {
+        const dx = x2 - x1;
+        const dz = z2 - z1;
+        const len2 = dx * dx + dz * dz;
+        const t = len2 < 1e-6 ? 0 : Math.max(0, Math.min(1, ((px - x1) * dx + (pz - z1) * dz) / len2));
+        return Math.hypot(x1 + dx * t - px, z1 + dz * t - pz);
+    }
+
+    // Their post with nothing to do: a pace behind you, out of your way,
+    // and away from whatever's nearest you; further back when they're hurt
+    private mercPost(retreating: boolean): [number, number] {
+        let fx = -Math.sin(this.facing);
+        let fz = -Math.cos(this.facing);
+        let near = ALLY_REACH;
+        for (const e of this.enemies) {
+            if (e.state === "idle" || e.state === "dead" || e.def.passive) {
+                continue;
+            }
+            const d = Math.hypot(e.x - this.px, e.z - this.pz);
+            if (d < near && d > 0.1) {
+                near = d;
+                fx = (this.px - e.x) / d;
+                fz = (this.pz - e.z) / d;
+            }
+        }
+        const back = retreating ? 1.6 : 1;
+        const x = this.px + fx * back;
+        const z = this.pz + fz * back;
+        return this.region.fits(x, z, COLLISION_RADIUS) ? [x, z] : [this.px, this.pz];
+    }
+
+    // Which way out of a ring they're standing in, if they're in one
+    private mercDanger(m: NonNullable<Run["merc"]>): [number, number] | undefined {
+        for (const h of this.hazards) {
+            const d = Math.hypot(m.x - h.x, m.z - h.z);
+            if (d <= h.radius + PLAYER_RADIUS + 0.4) {
+                if (d < 0.05) {
+                    const toYou = Math.hypot(this.px - m.x, this.pz - m.z) || 1;
+                    return [(this.px - m.x) / toYou, (this.pz - m.z) / toYou];
+                }
+                return [(m.x - h.x) / d, (m.z - h.z) / d];
+            }
+        }
+        return undefined;
+    }
+
+    // Which way a bowman or mage backs off: from a swordsman after them
+    // that's this close and that they can outpace (a boss that closes as
+    // fast as they walk they stand and shoot at); from far off you, back
+    // toward you as well
+    private mercKite(m: NonNullable<Run["merc"]>, toYou: number): [number, number] | undefined {
+        let worst: Enemy | undefined;
+        let near = MERC_KITE;
+        for (const e of this.enemies) {
+            if (e.state === "idle" || e.state === "dead" || e.def.shoots || e.def.passive || e.target !== m.hero || (e.burrowed !== undefined && e.burrowed > 0)) {
+                continue;
+            }
+            const d = Math.hypot(e.x - m.x, e.z - m.z) - e.def.radius;
+            if (d < near && this.speedOf(e) < PLAYER_SPEED * 0.9) {
+                near = d;
+                worst = e;
+            }
+        }
+        if (!worst) {
+            return undefined;
+        }
+        const d = Math.hypot(m.x - worst.x, m.z - worst.z) || 1;
+        let ax = (m.x - worst.x) / d;
+        let az = (m.z - worst.z) / d;
+        if (toYou > 5) {
+            ax += (this.px - m.x) / toYou;
+            az += (this.pz - m.z) / toYou;
+            const len = Math.hypot(ax, az) || 1;
+            ax /= len;
+            az /= len;
+        }
+        return [ax, az];
+    }
+
+    // What they won't tread on: an armed spike trap
+    private mercAvoids(): ((x: number, z: number) => boolean) | undefined {
+        const traps = this.props.filter((p) => p.kind === "trap" && !p.gone && p.uses > 0);
+        return traps.length === 0 ? undefined : (x, z) => traps.some((p) => Math.hypot(p.x - x, p.z - z) < SPIKE_STEP + 0.3);
+    }
+
+    // A shout about what's coming at you from behind, once each and not
+    // too often
+    private mercCallOut(m: NonNullable<Run["merc"]>): void {
+        if (this.dead || this.done || this.time - m.calledAt < 5) {
+            return;
+        }
+        for (const e of this.enemies) {
+            if (e.state === "idle" || e.state === "dead" || e.target !== this.self || m.called.has(e)) {
+                continue;
+            }
+            const dx = e.x - this.px;
+            const dz = e.z - this.pz;
+            const d = Math.hypot(dx, dz);
+            if (d > MERC_CALL_RANGE || d < 0.1) {
+                continue;
+            }
+            let diff = Math.abs(Math.atan2(dx, dz) - this.facing) % (Math.PI * 2);
+            diff = diff > Math.PI ? Math.PI * 2 - diff : diff;
+            if (diff < Math.PI * 0.65) {
+                continue;
+            }
+            m.called.add(e);
+            m.calledAt = this.time;
+            this.hooks.onMessage(`${m.name}: "Behind you!"`);
+            return;
+        }
     }
 
     // What the HUD says of the mercenary
@@ -7897,6 +8216,11 @@ export class Run {
         e.flash = 0.12;
         e.barShown = BAR_SECONDS;
         e.lastHurtAt = this.time;
+        // (yours: the mercenary's first choice, version 177)
+        if (by.me && !effects.poisoned) {
+            this.playerFoe = e;
+            this.playerFoeAt = this.time;
+        }
         tint(e.actor, new THREE.Color(1.6, 0.6, 0.6));
         this.splat(e.x, e.z, e.actor.height * (e.def.scale ?? 1) * 0.7, damage, effects.poisoned);
         if (this.coop?.role === "guest") {

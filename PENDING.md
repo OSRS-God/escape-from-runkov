@@ -189,6 +189,32 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 177 (not yet deployed), as the user asked: a far smarter mercenary (run.ts
+`updateMerc` and the `merc*` helpers after it, MERC_* constants by ALLY_*).
+- Who they fight (`mercFoe`): only what's awake (an idle monster is left asleep: a fight you
+  haven't picked stays unpicked) and near you (ALLY_LEASH, 12 tiles; a medic keeps within
+  MERC_MEDIC_RANGE, 5, so the patching keeps landing). Scored by distance, sooner what you
+  last hit (`playerFoe`, set in damageEnemy, 4 s), what's after you, what's after them, and
+  what one hit of theirs would finish; later a boss while its company's about, and what's
+  running for help.
+- Where they stand: a swordsman works round to the foe's side or far side from you
+  (`mercFlank`: a straight walk that doesn't cross the foe), so you aren't both queued up in
+  front. With nothing to do, a pace behind you, away from what's nearest (`mercPost`).
+- Staying alive: out of a boss's ring before anything (`mercDanger`); a bowman or mage backs
+  off a swordsman that's on them and this close (MERC_KITE 2.2) if they can outpace it
+  (`mercKite`), shooting once it's off; below MERC_RETREAT (35%, a sellsword 20%) they fall
+  back behind you till MERC_RALLY (60%), a bowman or mage still shooting from there; they
+  eat below MERC_EAT (50%) or MERC_EAT_BOSS (65%) beside a boss, the bite that fits best;
+  they never tread on an armed spike trap (allyStep's `avoid`, sideways round it).
+- They hurry (1.2x) when they've fallen more than 6 tiles behind, and shout "Behind you!"
+  about a monster coming at your back within MERC_CALL_RANGE (once each, 5 s apart).
+- Tested muted on localhost: an idle cockatrice in plain sight was left alone; roused, the
+  one you hit was chosen over a nearer one and killed from 139° round it; the shout came for
+  one placed behind; at 10% health Hild fell back to a pace behind you, away from it, and
+  rallied; laid a ring under her, she was 3.7 tiles out of it in 1.5 s; a bowman backed off
+  a jelly from 1.8 to 2.6 tiles and landed ten shots untouched; the avoiding step passed a
+  trap at 1.02 tiles and still reached its goal.
+
 Version 176 (not yet deployed), as the user asked: mercenaries heal themselves.
 - With no foe near, a mercenary takes up food or a Saradomin brew lying near that your pack has
   no room for (`roomInPack` is 0: full, or at FOOD_LIMIT), as well as what you drop for them.
