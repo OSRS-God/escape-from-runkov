@@ -77,7 +77,7 @@ import {
 import { TASKS, Task } from "../content/tasks";
 import { isKept, restoreCrownPets } from "../game/kit";
 import { STARTER_COINS, STARTER_KITS, StarterKit, applyStarter, pickClass } from "../game/starter";
-import { MERC_DEFS, MERC_MAX_LEVEL, MercGain, MercKind, mercPrice, mercWears, mercsOffered } from "../game/mercs";
+import { MERC_DEFS, MERC_ELITE_KINDS, MERC_MAX_LEVEL, MercGain, MercKind, mercLockText, mercPrice, mercTierReached, mercUnlocked, mercWears, mercsOffered } from "../game/mercs";
 import { Chat } from "./chat";
 import { FullMap } from "./fullmap";
 import { REGEN_DELAY, hitChance, soak } from "../game/combat";
@@ -5364,13 +5364,17 @@ export class UI {
     showMercs(): void {
         const save = this.save;
         const today = mercsOffered(dailyDay());
-        const offered = save.hired && !today.includes(save.hired) ? [save.hired, ...today] : today;
+        // The everyday three (and the one hired, whatever the day), then the
+        // ten that unlock (version 181), locked till their tier's cleared
+        const everyday = save.hired && !today.includes(save.hired) && !MERC_ELITE_KINDS.includes(save.hired) ? [save.hired, ...today] : today;
+        const offered = [...everyday, ...MERC_ELITE_KINDS];
+        const reached = mercTierReached(save.depths);
         const hire = (kind: MercKind) => {
             const mercs = (save.mercs ??= {});
             const def = MERC_DEFS[kind];
             const record = (mercs[kind] ??= { name: def.names[Math.floor(Math.random() * def.names.length)], level: 1 });
             const price = mercPrice(kind, record.level);
-            if (save.hired || save.coins < price) {
+            if (save.hired || save.coins < price || !mercUnlocked(kind, reached)) {
                 return;
             }
             save.coins -= price;
@@ -5429,24 +5433,27 @@ export class UI {
                 ...(record?.food ?? []).map((s) => h("span", { class: "starter-item given", title: `${s.count} ${getItem(s.id).name} (yours)` }, this.itemIcon(s.id))),
             );
             const hasGiven = given.size > 0 || (record?.food?.length ?? 0) > 0;
+            const locked = !mercUnlocked(kind, reached);
             return h(
                 "div",
-                { class: "item-row map-row" + (hired ? " done" : "") },
+                { class: "item-row map-row" + (hired ? " done" : "") + (locked ? " locked" : "") },
                 h(
                     "div",
                     { class: "name" },
-                    h("div", { class: "map-name" }, def.title, h("span", { class: "beaten" }, ` ${who}`)),
+                    h("div", { class: "map-name" }, def.title, h("span", { class: "beaten" }, locked ? ` tier ${def.tier}` : ` ${who}`)),
                     h("div", { class: "stats" }, def.blurb),
-                    gear,
+                    locked ? h("div", { class: "lock" }, mercLockText(kind)) : gear,
                 ),
                 hasGiven ? h("button", { onclick: () => reclaim(kind) }, "Take back gear") : null,
                 hired
                     ? h("button", { onclick: dismiss }, "Let go")
-                    : h(
-                          "button",
-                          { class: "primary", disabled: !!save.hired || save.coins < price, onclick: () => hire(kind) },
-                          `Hire, ${formatCoins(price)}`,
-                      ),
+                    : locked
+                      ? null
+                      : h(
+                            "button",
+                            { class: "primary", disabled: !!save.hired || save.coins < price, onclick: () => hire(kind) },
+                            `Hire, ${formatCoins(price)}`,
+                        ),
             );
         });
         const hiredKind = save.hired;
@@ -5460,7 +5467,7 @@ export class UI {
                 h(
                     "div",
                     { class: "subtitle" },
-                    `A follower of your own, for a fee once: they come on every solo run till you let them go. They fight at your side, the monsters go for them too, and at the end of every run they take a tenth of the coins you found. Back alive, they're a level better (to ${MERC_MAX_LEVEL}); if they fall, they're patched up for the next run. Let go, they keep their level, but hiring them again costs the fee again. A party's runs go without them.`,
+                    `A follower of your own, for a fee once: they come on every solo run till you let them go. They fight at your side, the monsters go for them too, and at the end of every run they take a tenth of the coins you found. Back alive, they're a level better (to ${MERC_MAX_LEVEL}); if they fall, they're patched up for the next run. Let go, they keep their level, but hiring them again costs the fee again. A party's runs go without them. Three of the everyday hands are here each day; the ten below them come in better gear, each with a knack of their own, once you've cleared the depth they wait on (you've reached tier ${reached}).`,
                 ),
                 h(
                     "div",

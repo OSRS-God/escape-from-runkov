@@ -189,7 +189,32 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 180 (not yet deployed), as the user asked: a mercenary eats as soon as they're down by
+Version 181 (not yet deployed), as the user asked: ten more mercenaries, unlocked by the depth
+you've cleared, in better gear, each with a perk (mercs.ts: `MERC_ELITE_KINDS`, `MercPerk`,
+`tier` and `perk` on MercDef; `mercTierReached` takes the best of save.depths.cleared, 4 for
+the castle, 5 for the abyss; `mercUnlocked`, `mercLockText`). Tier 2: the knight (tough:
+takes a quarter less, 900 coins) and the marksman (crit: one shot in four lands double, 950).
+Tier 3: the warlock (lifesteal: mends by 35% of what they hit, 1,200), the chaplain (prayers:
+6 prayer back every 8s at your side, scaled by their level, 1,100) and the veteran
+(executioner: double on anything under a third of its health, 1,200). Tier 4 (the castle
+counts): the berserker (rage: half again as hard under half health, 1,500), the ranger (haste:
+a third faster, 1,500) and the hexer (venom: poisons for 40% of the hit, 1,600). Tier 5: the
+champion (second wind: once a run, back up at half health, 2,200) and the paladin (guard: you
+take a fifth less within four tiles of them, 2,200). Their gear starts at their tier
+(`mercGear`: the def's tier plus level, capped at 5). run.ts: `perkIn`/`perkUsed` on the merc;
+tough and second wind in hurtMerc; crit, executioner, rage, venom (a poison HitEffect) and
+lifesteal at the swing; haste scales both allyStep hurries; prayers tick beside the medic's
+heal; guard scales the hit in hurtPlayer before applyHit. ui.ts showMercs: the day's three,
+then the ten, locked rows (`.map-row.locked`, the depth to clear instead of gear) with no Hire
+button, and hire() refuses a locked kind. Tested muted on localhost: all ten locked at tier
+1 and all for hire at tier 5 (the champion came in Torva, Bandos and an Armadyl godsword); a
+champion hit for 1,000 got up at 80 of 160, the second time fell; a knight took 75 of 100; a
+paladin's guard turned a fixed 20 into 16 beside you and 20 ten tiles off; a hexer's 45 hit
+poisoned for 18; a warlock on 20 hitpoints mended to 28 off a 24; a berserker's best hit 29
+at full health and 45 under a third; a chaplain took prayer 40 → 59.5 in 9s against a
+bowman's 40 → 52 in 8s.
+
+Version 180 (deployed to the playtest site 10 November 2026 as build 2026.11.10.19), as the user asked: a mercenary eats as soon as they're down by
 what a bite of theirs heals (run.ts updateMerc: `missing >= smallest`, the smallest heal in
 their pack), so none of it's wasted, instead of waiting till under half health; the half (65%
 beside a boss) still makes them eat whatever the bite. Tested muted on localhost with a

@@ -5311,6 +5311,10 @@ export class Run {
         fallingBack: boolean;
         called: WeakSet<Enemy>;
         calledAt: number;
+        // Version 181: their perk's clock (a chaplain's prayers), and
+        // whether its once-a-run is spent (a champion's second wind)
+        perkIn: number;
+        perkUsed: boolean;
     };
     // What you've put down for them to take (dropItem's), and what they've
     // looked at and left
@@ -5371,6 +5375,8 @@ export class Run {
             fallingBack: false,
             called: new WeakSet(),
             calledAt: -10,
+            perkIn: def.perk?.kind === "prayers" ? def.perk.every : 0,
+            perkUsed: false,
         };
         this.mercStats(true);
         await this.dressMerc();
@@ -5485,8 +5491,19 @@ export class Run {
         if (!m || m.hero.dead) {
             return;
         }
+        // (version 181: a knight takes less; a champion gets back up once)
+        const perk = m.def.perk;
+        if (perk?.kind === "tough" && hit > 0) {
+            hit = Math.max(1, Math.round(hit * (1 - perk.share)));
+        }
         m.hero.hp = Math.max(0, m.hero.hp - hit);
         this.splat(m.x, m.z, 1.8, hit);
+        if (m.hero.hp <= 0 && perk?.kind === "secondWind" && !m.perkUsed) {
+            m.perkUsed = true;
+            m.hero.hp = Math.max(1, Math.round(m.hero.maxHp * perk.share));
+            this.hooks.onMessage(`${m.name} goes down, and gets back up again, bloodied but standing.`);
+            return;
+        }
         if (m.hero.hp <= 0) {
             m.hero.dead = true;
             m.bar.group.visible = false;
@@ -5536,6 +5553,18 @@ export class Run {
             const bossNear = this.enemies.some((e) => e.def.boss && e.state !== "idle" && e.state !== "dead" && Math.hypot(e.x - m.x, e.z - m.z) < ALLY_REACH);
             if (missing >= smallest || m.hero.hp < m.hero.maxHp * (bossNear ? MERC_EAT_BOSS : MERC_EAT)) {
                 this.mercEat(this.mercBite(m));
+            }
+        }
+        // A chaplain's prayers (version 181): so much of your prayer bar
+        // back every so often, while they're at your side
+        if (m.def.perk?.kind === "prayers" && !this.dead && !this.done) {
+            m.perkIn -= dt;
+            if (m.perkIn <= 0) {
+                m.perkIn = m.def.perk.every;
+                if (this.prayer < 100 && Math.hypot(m.x - this.px, m.z - this.pz) < ALLY_REACH) {
+                    this.prayer = Math.min(100, this.prayer + m.def.perk.amount * scale);
+                    this.hooks.onChanged();
+                }
             }
         }
         // A medic patches themselves as well as you, each time (version 176)
@@ -5613,8 +5642,10 @@ export class Run {
         // back from what's closing on them (they shoot once it's off them)
         const away = this.mercDanger(m) ?? (reach > 0 ? this.mercKite(m, toYou) : undefined);
         const avoid = this.trapAvoid();
+        // (a ranger's pace: version 181)
+        const pace = m.def.perk?.kind === "haste" ? m.def.perk.speed : 1;
         if (away) {
-            this.allyStep(m, m.x + away[0] * 2, m.z + away[1] * 2, this.self, dt, { avoid, hurry: 1.1 });
+            this.allyStep(m, m.x + away[0] * 2, m.z + away[1] * 2, this.self, dt, { avoid, hurry: 1.1 * pace });
             if (m.busy <= 0) {
                 m.look?.play("run", { speed: RUN_CLIP_SPEED });
             }
@@ -5630,10 +5661,27 @@ export class Run {
             m.busy = 0.9;
             m.look?.play(m.attackClip, { once: true });
             const lands = this.rng() < hitChance(m.stats.weapon?.tier ?? 1, this.world.tier, !!target.def.boss);
-            this.damageEnemy(target, lands ? Math.max(1, Math.round(playerHit(m.stats, this.rng()) * m.def.hit * scale)) : 0, this.self);
+            // Their perk's part in the hit (version 181): a marksman's
+            // lucky shot, a veteran's finishing blow, a berserker's rage,
+            // a hexer's venom, a warlock's mending
+            const perk = m.def.perk;
+            let times = 1;
+            if (perk?.kind === "crit" && this.rng() < perk.chance) {
+                times = perk.times;
+            } else if (perk?.kind === "executioner" && target.hp < target.def.hp * perk.below) {
+                times = perk.times;
+            } else if (perk?.kind === "rage" && m.hero.hp < m.hero.maxHp * perk.below) {
+                times = perk.times;
+            }
+            const hit = lands ? Math.max(1, Math.round(playerHit(m.stats, this.rng()) * m.def.hit * scale * times)) : 0;
+            const effects: HitEffects = perk?.kind === "venom" && hit > 0 ? { poison: Math.max(1, Math.round(hit * perk.share)) } : {};
+            this.damageEnemy(target, hit, this.self, effects);
+            if (perk?.kind === "lifesteal" && hit > 0 && !m.hero.dead) {
+                m.hero.hp = Math.min(m.hero.maxHp, m.hero.hp + Math.max(1, Math.round(hit * perk.share)));
+            }
         } else if (d > stop) {
             // (quicker when they've fallen behind)
-            this.allyStep(m, gx, gz, this.self, dt, { avoid, hurry: !target && !fetch && toYou > 6 ? 1.2 : 1 });
+            this.allyStep(m, gx, gz, this.self, dt, { avoid, hurry: (!target && !fetch && toYou > 6 ? 1.2 : 1) * pace });
             if (m.busy <= 0) {
                 m.look?.play("run", { speed: RUN_CLIP_SPEED });
             }
@@ -10347,7 +10395,14 @@ export class Run {
         if (this.dead) {
             return;
         }
-        this.applyHit(this.rollHit(enemy, Run.defenceAgainst(this.self, style), scale, pierce, fixed), enemy.name, style, pierce, fixed !== undefined);
+        let hit = this.rollHit(enemy, Run.defenceAgainst(this.self, style), scale, pierce, fixed);
+        // A paladin at your side takes the edge off every hit (version 181)
+        const m = this.merc;
+        const guard = m?.def.perk?.kind === "guard" ? m.def.perk : undefined;
+        if (guard && m && !m.hero.dead && hit > 0 && Math.hypot(m.x - this.px, m.z - this.pz) <= guard.range) {
+            hit = Math.max(1, Math.round(hit * (1 - guard.share)));
+        }
+        this.applyHit(hit, enemy.name, style, pierce, fixed !== undefined);
     }
 
     // The hit landing: protection halves it unless it pierces or is set;
