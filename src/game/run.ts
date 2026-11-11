@@ -533,6 +533,11 @@ type Enemy = {
     // heals once it's been left alone a moment)
     flank: number;
     lastHurtAt: number;
+    // Version 178: who last hurt it and when (a grudge), and till when it's
+    // coming to look at a noise
+    lastHurtBy?: Hero;
+    grudgeAt: number;
+    curiousUntil: number;
     // Running for help: once an enemy, for this long, and it won't give
     // up the chase until this time
     fled?: boolean;
@@ -1109,6 +1114,26 @@ const MERC_RETREAT_TOUGH = 0.2;
 const MERC_RALLY = 0.6;
 const MERC_KITE = 2.2;
 const MERC_CALL_RANGE = 4.5;
+// The enemies' heads (version 178, as the user asked for far smarter
+// ones). Who they go for: a hero under this share of their health draws them
+// this much nearer (they smell blood), the one that hit them within this
+// many seconds this much (a grudge), and one a shooter can see this much.
+// What they hear: a hero's hit on something carries this far, a trap's
+// spring this far, a boss's slam this far; what's idle within earshot comes
+// to look for this long, standing off the spot by this. Melee ones round a
+// hero take up the arc from this many degrees off its front, round to the
+// same the other side (NOISE_* beyond ROUSE_SPREAD: nearer rouses outright)
+const BLOOD_SHARE = 0.5;
+const BLOOD_DRAW = 4;
+const GRUDGE_SECONDS = 3;
+const GRUDGE_DRAW = 4;
+const SIGHT_DRAW = 3;
+const NOISE_FIGHT = 11;
+const NOISE_TRAP = 10;
+const NOISE_SLAM = 14;
+const NOISE_SECONDS = 12;
+const NOISE_CLOSE = 2.5;
+const SURROUND_ARC = [90, 60];
 // A lit brazier keeps the weakest third of the map's kinds out of its room
 const LIT_WEAK_SHARE = 1 / 3;
 
@@ -4307,6 +4332,13 @@ export class Run {
     private fungusSight = 0;
     private fungusDim = 0;
     private lure?: { x: number; z: number; until: number; flow: Int16Array };
+    // The last thing heard (version 178, makeNoise), when its field was
+    // laid, whether the run's been told of onlookers, and when it was last
+    // told of something smelling blood
+    private noise?: { x: number; z: number; until: number; flow: Int16Array };
+    private noiseLaidAt = -10;
+    private toldLookers = false;
+    private bloodToldAt = -10;
     private gloomShade = 1;
     private nightStepIn = NIGHT_STEP;
     private vampyresIn = 0;
@@ -4730,6 +4762,7 @@ export class Run {
     private springTrap(p: Prop): void {
         const tier = this.world.tier;
         const spikes: EnemyDef = { ...this.world.enemies[0].def, name: "The spike trap" };
+        this.makeNoise(p.x, p.z, NOISE_TRAP);
         for (const h of this.heroes()) {
             if (Math.hypot(h.x - p.x, h.z - p.z) <= SPIKE_REACH) {
                 this.hurtHero(h, spikes, 0, "melee", true, Math.max(1, Math.round(h.maxHp * SPIKE_HURT)));
@@ -5168,7 +5201,7 @@ export class Run {
         // Out of a ring about to burst before anything; a bowman or mage
         // back from what's closing on them (they shoot once it's off them)
         const away = this.mercDanger(m) ?? (reach > 0 ? this.mercKite(m, toYou) : undefined);
-        const avoid = this.mercAvoids();
+        const avoid = this.trapAvoid();
         if (away) {
             this.allyStep(m, m.x + away[0] * 2, m.z + away[1] * 2, this.self, dt, { avoid, hurry: 1.1 });
             if (m.busy <= 0) {
@@ -5407,8 +5440,9 @@ export class Run {
         return [ax, az];
     }
 
-    // What they won't tread on: an armed spike trap
-    private mercAvoids(): ((x: number, z: number) => boolean) | undefined {
+    // What a mercenary, or a cunning enemy, won't tread on: an armed spike
+    // trap
+    private trapAvoid(): ((x: number, z: number) => boolean) | undefined {
         const traps = this.props.filter((p) => p.kind === "trap" && !p.gone && p.uses > 0);
         return traps.length === 0 ? undefined : (x, z) => traps.some((p) => Math.hypot(p.x - x, p.z - z) < SPIKE_STEP + 0.3);
     }
@@ -5644,6 +5678,8 @@ export class Run {
             // Every other one goes left
             flank: this.enemies.length % 2 === 0 ? 1 : -1,
             lastHurtAt: 0,
+            grudgeAt: -10,
+            curiousUntil: -10,
             fleeLeft: 0,
             noIdleUntil: 0,
             uid,
@@ -6297,6 +6333,8 @@ export class Run {
                 woke++;
             }
         }
+        // (and further off, they come to look: version 178)
+        this.makeNoise(x, z, radius * 1.5);
         return woke;
     }
 
@@ -8216,10 +8254,16 @@ export class Run {
         e.flash = 0.12;
         e.barShown = BAR_SECONDS;
         e.lastHurtAt = this.time;
-        // (yours: the mercenary's first choice, version 177)
+        // (yours: the mercenary's first choice, version 177; and its grudge
+        // and the fight's noise, version 178)
         if (by.me && !effects.poisoned) {
             this.playerFoe = e;
             this.playerFoeAt = this.time;
+        }
+        if (damage > 0 && !effects.poisoned) {
+            e.lastHurtBy = by;
+            e.grudgeAt = this.time;
+            this.makeNoise(e.x, e.z, NOISE_FIGHT);
         }
         tint(e.actor, new THREE.Color(1.6, 0.6, 0.6));
         this.splat(e.x, e.z, e.actor.height * (e.def.scale ?? 1) * 0.7, damage, effects.poisoned);
@@ -8491,20 +8535,98 @@ export class Run {
     }
 
     // Who an enemy goes for: the nearest hero standing, with a little
-    // loyalty to the one it's after already
+    // loyalty to the one it's after already. Version 178: once it's up, a
+    // hero that's bleeding draws it (BLOOD_DRAW), so does the one that just
+    // hit it (GRUDGE_DRAW), and a shooter's drawn to who it can see
     private targetFor(e: Enemy, heroes: Hero[]): Hero | undefined {
         let best: Hero | undefined;
         let bestDist = Infinity;
+        const up = e.state !== "idle";
         for (const h of heroes) {
             // (a sellsword draws them their way: version 173)
             const draw = h === this.merc?.hero ? this.merc.def.draw : 0;
-            const d = Math.hypot(h.x - e.x, h.z - e.z) - (h === e.target ? 2 : 0) - draw;
+            let d = Math.hypot(h.x - e.x, h.z - e.z) - (h === e.target ? 2 : 0) - draw;
+            if (up) {
+                if (h.hp < h.maxHp * BLOOD_SHARE) {
+                    d -= BLOOD_DRAW;
+                }
+                if (e.lastHurtBy === h && this.time - e.grudgeAt < GRUDGE_SECONDS) {
+                    d -= GRUDGE_DRAW;
+                }
+                if (e.def.shoots && this.region.lineOfSight(e.x, e.z, h.x, h.z)) {
+                    d -= SIGHT_DRAW;
+                }
+            }
             if (d < bestDist) {
                 best = h;
                 bestDist = d;
             }
         }
         return best;
+    }
+
+    // Something heard (version 178): what's idle within earshot, beyond
+    // what the noise rouses outright, comes to look, down a field to where
+    // it was, and stands there a while before going back to its business.
+    // One sound at a time: a new one near the last keeps it fresh, and the
+    // field isn't laid again within a moment of the last
+    private makeNoise(x: number, z: number, radius: number): void {
+        if (this.coop?.role === "guest" || this.ended) {
+            return;
+        }
+        const n = this.noise;
+        if (n && this.time < n.until && Math.hypot(n.x - x, n.z - z) < 4) {
+            n.until = this.time + NOISE_SECONDS;
+        } else if (!n || this.time >= n.until || this.time - this.noiseLaidAt > 1.5) {
+            this.noise = { x, z, until: this.time + NOISE_SECONDS, flow: this.region.flowField({ x, z }) };
+            this.noiseLaidAt = this.time;
+        } else {
+            return;
+        }
+        let lookers = 0;
+        for (const e of this.enemies) {
+            if (e.state !== "idle" || e.def.passive || e.def.boss || e.def.ghostly) {
+                continue;
+            }
+            const d = Math.hypot(e.x - x, e.z - z);
+            if (d < radius) {
+                if (d > NOISE_CLOSE && e.curiousUntil <= this.time) {
+                    lookers++;
+                }
+                e.curiousUntil = this.time + NOISE_SECONDS;
+            }
+        }
+        if (lookers > 0 && !this.toldLookers) {
+            this.toldLookers = true;
+            this.announce("Something's heard that, and comes to look.");
+        }
+    }
+
+    // Whether one's wise to the ground (version 178): an elite, a champion
+    // or a superior steps round an armed spike trap; the rest blunder on
+    private cunning(e: Enemy): boolean {
+        return !!e.trait || !!e.def.champion || !!e.def.superior;
+    }
+
+    // Where in a ring round a hero a melee enemy stands (version 178): the
+    // ones on them and near, in a set order, spread over the arc from
+    // SURROUND_ARC degrees off the hero's front round to the same the other
+    // side (the wider arc from four up), one alone to the side it favours
+    private surroundAngle(e: Enemy, t: Hero): number {
+        const ring: Enemy[] = [];
+        for (const o of this.enemies) {
+            if (o.state !== "dead" && o.state !== "idle" && o.target === t && !o.def.shoots && !o.def.boss && Math.hypot(o.x - t.x, o.z - t.z) < FLANK_RANGE) {
+                ring.push(o);
+            }
+        }
+        const n = ring.length;
+        if (n <= 1) {
+            return e.flank > 0 ? Math.PI / 2 : -Math.PI / 2;
+        }
+        ring.sort((a, b) => a.uid - b.uid);
+        const i = Math.max(0, ring.indexOf(e));
+        const from = (SURROUND_ARC[n <= 3 ? 0 : 1] * Math.PI) / 180;
+        return from + (i * (Math.PI * 2 - from * 2)) / (n - 1);
     }
 
     private updateEnemies(dt: number): void {
@@ -8570,6 +8692,11 @@ export class Run {
                 continue;
             }
             const t = this.targetFor(e, heroes);
+            // (turned on you bleeding: said once a while, version 178)
+            if (t && t !== e.target && t.me && e.state !== "idle" && t.hp < t.maxHp * BLOOD_SHARE && this.time - this.bloodToldAt > 10) {
+                this.bloodToldAt = this.time;
+                this.hooks.onMessage(`The ${e.def.name.toLowerCase()} smells blood, and comes for you.`);
+            }
             e.target = t;
             const dist = t ? Math.hypot(e.x - t.x, e.z - t.z) : Infinity;
             e.cooldown -= dt;
@@ -8592,6 +8719,16 @@ export class Run {
                     this.rouse(e);
                 } else if (lure && Math.hypot(e.x - lure.x, e.z - lure.z) > 3) {
                     this.walkFlow(e, lure.flow, dt);
+                } else if (e.curiousUntil > this.time && this.noise && this.time < this.noise.until) {
+                    // Come to look at a noise (version 178): to near it,
+                    // then a stand facing it
+                    const noise = this.noise;
+                    if (Math.hypot(e.x - noise.x, e.z - noise.z) > NOISE_CLOSE) {
+                        this.walkFlow(e, noise.flow, dt);
+                    } else {
+                        e.facing = Math.atan2(noise.x - e.x, noise.z - e.z);
+                        play(e.actor, "idle");
+                    }
                 } else if (e.def.boss && Math.hypot(e.x - e.homeX, e.z - e.homeZ) > 1) {
                     this.walkHome(e, dt);
                 } else if (e.route) {
@@ -8737,12 +8874,28 @@ export class Run {
         return fast * (e.slow > 0 ? 0.5 : 1) * (this.curse === "frenzy" ? CURSE_SPEED : 1);
     }
 
-    // Running for help: away from whoever it's after at full tilt, rousing
-    // what's idle along the way, then back into the chase
+    // Running for help: toward the nearest idle friend that isn't past
+    // whoever it's after (version 178), else straight away from them, at
+    // full tilt, rousing what's idle along the way, then back into the chase
     private flee(e: Enemy, t: Hero | undefined, dt: number): void {
         e.fleeLeft -= dt;
-        const dx = e.x - (t?.x ?? e.x);
-        const dz = e.z - (t?.z ?? e.z);
+        let dx = e.x - (t?.x ?? e.x);
+        let dz = e.z - (t?.z ?? e.z);
+        const awayLen = Math.hypot(dx, dz) || 1;
+        let help = 15;
+        for (const o of this.enemies) {
+            if (o === e || o.state !== "idle" || o.def.passive || o.def.boss) {
+                continue;
+            }
+            const ox = o.x - e.x;
+            const oz = o.z - e.z;
+            const d = Math.hypot(ox, oz);
+            // (not through the hero: the help has to lie at least sideways)
+            if (d < help && d > FLEE_ROUSE * 0.5 && (ox * -dx + oz * -dz) / (d * awayLen) < 0.3) {
+                help = d;
+                [dx, dz] = [ox, oz];
+            }
+        }
         const len = Math.hypot(dx, dz);
         let moved = false;
         if (len > 0.01) {
@@ -9460,6 +9613,7 @@ export class Run {
         e.slamIn -= dt;
         if (e.slamIn <= 0) {
             e.slamIn = e.enraged ? SLAM_ENRAGED : SLAM_SECONDS;
+            this.makeNoise(e.x, e.z, NOISE_SLAM);
             // A boss killed while its ring's up neither slams nor hurts
             // (version 154: it burst all the same, from the body)
             this.hazard(
@@ -9593,10 +9747,11 @@ export class Run {
             region.lineOfSight(e.x, e.z, t.x, t.z) &&
             region.clearWalk(e.x, e.z, t.x - (dx / Math.max(near, 0.001)) * 0.5, t.z - (dz / Math.max(near, 0.001)) * 0.5, COLLISION_RADIUS);
         // Close and in sight, a melee enemy goes for your side instead of
-        // queueing up in front, where your swings land
-        const side = 1.0 * e.flank;
-        const flankX = t.x + Math.cos(t.facing) * side;
-        const flankZ = t.z - Math.sin(t.facing) * side;
+        // queueing up in front, where your swings land. Version 178: a pack
+        // takes up places round you (surroundAngle), not two spots
+        const slot = e.def.shoots || e.def.boss || near >= FLANK_RANGE ? (e.flank > 0 ? Math.PI / 2 : -Math.PI / 2) : this.surroundAngle(e, t);
+        const flankX = t.x + Math.sin(t.facing + slot);
+        const flankZ = t.z + Math.cos(t.facing + slot);
         // Only where it can walk there straight: past a tree's trunk it
         // follows the field round instead (version 94; else it walked into
         // the trunk and stood there, a safe spot)
@@ -9699,7 +9854,27 @@ export class Run {
         const step = this.speedOf(e) * dt;
         // The same narrow footprint as the player, whatever its size, so a
         // big one follows the flow field through a one tile gap too
-        const [nx, nz] = this.moveCircle(e.x, e.z, dx * step, dz * step, COLLISION_RADIUS);
+        let [nx, nz] = this.moveCircle(e.x, e.z, dx * step, dz * step, COLLISION_RADIUS);
+        // A cunning one steps round an armed spike trap (version 178): the
+        // side that's clear, else it waits
+        const avoid = this.cunning(e) ? this.trapAvoid() : undefined;
+        if (avoid?.(nx, nz)) {
+            let found = false;
+            for (const turn of [e.flank, -e.flank]) {
+                const sx = dz * turn;
+                const sz = -dx * turn;
+                const [tx, tz] = this.moveCircle(e.x, e.z, sx * step, sz * step, COLLISION_RADIUS);
+                if (!avoid(tx, tz)) {
+                    [nx, nz, dx, dz] = [tx, tz, sx, sz];
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                play(e.actor, "idle");
+                return;
+            }
+        }
         // A lit room (version 166): the weakest won't step into one
         if (this.litCells.size > 0 && this.cave && this.isWeak(e)) {
             const into = this.cave.cellAt(nx, nz);

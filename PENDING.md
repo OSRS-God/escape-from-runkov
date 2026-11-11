@@ -189,6 +189,37 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 178 (not yet deployed), as the user asked: far smarter enemies (run.ts, the BLOOD_*,
+GRUDGE_*, SIGHT_DRAW, NOISE_* and SURROUND_ARC constants by the MERC_* ones).
+- Who they go for (`targetFor`, once roused): a hero under half health draws them 4 tiles
+  nearer (they smell blood; told once a while: "The X smells blood, and comes for you"), the
+  hero that hit them in the last 3 s draws them 4 (a grudge: Enemy `lastHurtBy`, `grudgeAt`,
+  set in damageEnemy), and a shooter's drawn 3 to a hero it can see. A sellsword's draw and
+  the loyalty to a target still add up to more than blood alone, so they keep their job.
+- Surrounding (`surroundAngle`, in chase): the melee ones on a hero and within FLANK_RANGE
+  take evenly spread places round them, over the arc from 90° off the hero's front round to
+  90° the other side (from 60° with four or more), in uid order; one alone takes the side it
+  favours, as before. They no longer stack on two spots.
+- Noise (`makeNoise`, Enemy `curiousUntil`, Run `noise`): a hero's hit on something carries
+  NOISE_FIGHT (11) tiles, a trap's spring 10, a boss's slam 14, and every `wakeNear` (veins,
+  cracks, carts, the barrel, a collapse, a superior, the way out, the trap room) half again
+  its rousing radius. What's idle within earshot but beyond the rousing (not a lord, a
+  passive one or a ghost) walks the noise's flow field to within 2.5 tiles and stands facing
+  it for 12 s, then goes back to its business; on the way, a hero within its aggro rouses it
+  as ever. One noise at a time (a new one within 4 tiles keeps it fresh; a field at most
+  every 1.5 s). Told once a run: "Something's heard that, and comes to look."
+- Trap-wise (`cunning`): an elite, a champion or a superior steps round an armed spike trap
+  (the same sideways step as the mercenary's; `trapAvoid`, which `mercAvoids` became); the
+  common ones still blunder into them, so the lure still works.
+- Running for help (`flee`): toward the nearest idle friend within 15 tiles that doesn't lie
+  past the hero (and more than 3 off), else straight away as before.
+- Tested muted on localhost: a jogre on the mercenary turned on you at 30% health, with the
+  message; three idle ones put 9.5 tiles off a fight walked 7 tiles toward it and roused on
+  arriving, with the message; four ghouls on you stood at 0°, 82°, 181° and 286° off your
+  front (the one in front hadn't reached its place); a fast elite's chase passed a trap at
+  1.00 tiles and arrived; a fleeing ghoul with an idle friend 10 tiles to the side ran
+  straight for it (stepped by hand: live, the friend was roused by aggro first).
+
 Version 177 (not yet deployed), as the user asked: a far smarter mercenary (run.ts
 `updateMerc` and the `merc*` helpers after it, MERC_* constants by ALLY_*).
 - Who they fight (`mercFoe`): only what's awake (an idle monster is left asleep: a fight you
