@@ -189,6 +189,18 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 191 (not yet deployed), as the user asked: the Giant Mole can't dig off and heal
+itself whole. Its dig (at three quarters, half and a quarter of its health, three seconds
+under) brought it up anywhere within ten tiles of its lair's spot, often far off or where you
+couldn't get to it, and its time under and walking back counted toward a boss's heal (a tenth
+every 10 s unhurt once enraged), so it could heal whole with nothing to be done. run.ts
+`emergeBeside`: it comes up EMERGE_NEAR (3 to 6) tiles from whoever it's fighting (else the
+nearest standing hero), on ground no more than EMERGE_STEPS (10) steps' walk from them, still
+after them; the old spot only if none's found. `emerge` restarts its heal clock as it comes
+up. The tunneller keeps its own way. Tested in a Depths run with the Giant Mole (1,225
+hitpoints at depth 1): at each of its three digs it came up 2 to 7 steps from the player and
+after them, and four seconds later had healed nothing.
+
 Version 190 (deployed to the main site 11 November 2026 as 2026.11.11.5; the user chose not to
 restore ElmoTheGod's save from before Start over): a crown's kept
 pieces survive the account's save. On load the crown's check put them back in the page's save,

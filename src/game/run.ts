@@ -862,6 +862,10 @@ const POISON_SHARE = 0.03;
 const BOSS_ENRAGE = 0.6;
 const BOSS_IDLE_HEAL_SECONDS = 10;
 const BOSS_IDLE_HEAL = 0.1;
+// Where the Giant Mole comes up from its dig (version 191): this many tiles
+// from whoever it's fighting, and no more than EMERGE_STEPS steps' walk
+const EMERGE_NEAR: [number, number] = [3, 6];
+const EMERGE_STEPS = 10;
 // Protection drains this much faster with the boss after you
 const BOSS_PRAYER_DRAIN = 2;
 // Poison, for the record of who killed you
@@ -10165,18 +10169,57 @@ export class Run {
     }
 
     private emerge(e: Enemy): void {
-        const cell = this.cave?.cellAt(e.homeX, e.homeZ);
-        for (let tries = 0; tries < 30; tries++) {
-            const x = e.homeX + (this.rng() - 0.5) * 20;
-            const z = e.homeZ + (this.rng() - 0.5) * 20;
-            if (this.region.fits(x, z, e.def.radius) && (cell === undefined || this.cave?.cellAt(x, z) === cell) && Math.hypot(x - this.px, z - this.pz) > 4) {
-                e.x = x;
-                e.z = z;
-                break;
+        // The Giant Mole comes up beside whoever it's fighting (version 191,
+        // as the user asked): it came up anywhere within ten tiles of its
+        // lair's spot, often far off or out of reach, and its time down and
+        // walking back counted toward a boss's heal, so it could heal whole
+        // with nothing to be done. The tunneller has its spot already.
+        const beside = e.def.tunneller ? undefined : this.emergeBeside(e);
+        if (beside) {
+            e.x = beside.x;
+            e.z = beside.z;
+        } else {
+            const cell = this.cave?.cellAt(e.homeX, e.homeZ);
+            for (let tries = 0; tries < 30; tries++) {
+                const x = e.homeX + (this.rng() - 0.5) * 20;
+                const z = e.homeZ + (this.rng() - 0.5) * 20;
+                if (this.region.fits(x, z, e.def.radius) && (cell === undefined || this.cave?.cellAt(x, z) === cell) && Math.hypot(x - this.px, z - this.pz) > 4) {
+                    e.x = x;
+                    e.z = z;
+                    break;
+                }
             }
         }
+        // Its heal clock starts again once it's up (BOSS_IDLE_HEAL_SECONDS)
+        e.lastHurtAt = this.time;
         e.actor.root.visible = true;
         this.announce(`${e.def.name} bursts up out of the ground!`);
+    }
+
+    // Open ground EMERGE_NEAR tiles from the hero it's after (else the
+    // nearest standing), no more than EMERGE_STEPS walking steps from them
+    private emergeBeside(e: Enemy): { x: number; z: number } | undefined {
+        const heroes = this.heroes().filter((h) => !h.dead);
+        if (heroes.length === 0) {
+            return undefined;
+        }
+        const t =
+            e.target && heroes.includes(e.target)
+                ? e.target
+                : heroes.reduce((a, b) => (Math.hypot(a.x - e.x, a.z - e.z) <= Math.hypot(b.x - e.x, b.z - e.z) ? a : b));
+        const flow = this.region.flowField({ x: t.x, z: t.z });
+        for (let tries = 0; tries < 40; tries++) {
+            const angle = this.rng() * Math.PI * 2;
+            const d = EMERGE_NEAR[0] + this.rng() * (EMERGE_NEAR[1] - EMERGE_NEAR[0]);
+            const x = t.x + Math.cos(angle) * d;
+            const z = t.z + Math.sin(angle) * d;
+            const steps = this.region.flowAt(flow, x, z);
+            if (steps >= 0 && steps <= EMERGE_STEPS && this.region.fits(x, z, e.def.radius)) {
+                e.target = t;
+                return { x, z };
+            }
+        }
+        return undefined;
     }
 
     // Half way down, a boss is enraged: quicker, redder, with company. In a
