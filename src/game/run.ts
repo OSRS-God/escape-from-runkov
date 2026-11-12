@@ -143,7 +143,7 @@ import { isKept } from "./kit";
 import { starterKit } from "./starter";
 import { MERC_CUT, MERC_DEFS, MercDef, MercKind, STYLE_OWNER, mercBetter, mercFits, mercScale, mercWears } from "./mercs";
 import { Region, Tile, TileSet, loadRegion } from "./region";
-import { CASTLE_ROOMS, CAVE_ROOMS, CaveLayout, DOOR_BITS, DOOR_EAST, DOOR_NORTH, DOOR_SOUTH, DOOR_WEST, layoutCave } from "./caves";
+import { CASTLE_ROOMS, CAVE_ROOMS, CaveLayout, DOOR_BITS, DOOR_EAST, DOOR_NORTH, DOOR_SOUTH, DOOR_WEST, ISLAND_ROOMS, layoutCave } from "./caves";
 import {
     ARMOUR_LOC,
     BANQUET_LOC,
@@ -172,6 +172,7 @@ import {
     PROP_PLANS,
     Prop,
     PropKind,
+    PropMap,
     SEARCH_LOCS,
     SEARCH_NAMES,
     SHRINE_DAMAGE,
@@ -1016,6 +1017,12 @@ const NIGHT_FOG: [number, number] = [12, 34];
 // placeCaveDark)
 const CAVE_DARK = 0x000000;
 const CAVE_FOG: [number, number] = [22, 48];
+// The island's open sea (version 192: addSea), as wide as the fog needs, a
+// little under the shore's own water, in its colour as the screen shows it
+// (unfogged and untoned, as the map's own floors are)
+const SEA_SIZE = 2000;
+const SEA_BELOW = 0.06;
+const SEA_COLOR = 0x67768a;
 const CAVE_SIGHT = 7;
 // A lit bullseye lantern sees this many tiles further, and a can of oil
 // keeps it lit this long (version 161); the Hardiness upgrade's hitpoints
@@ -2006,14 +2013,15 @@ export class Run {
         // alone, ?night in the address makes every run a night (a way to
         // try the torchlight)
         this.night = this.rng() < NIGHT_CHANCE || (!coop && FORCE_NIGHT);
-        // (a cave has no night: the draw is still made, so the rest stay put)
-        if (world.caves) {
+        // (a cave has no night: the draw is still made, so the rest stay put;
+        // the island's under the sky, and has its nights: version 192)
+        if (world.caves && !world.outdoors) {
             this.night = false;
         }
         // The gloom (version 165): what light there is without a torch. The
         // night's on a night run; underground and in the castle their own,
         // always, with a lantern's and the rooms' fires warm in it
-        this.gloom = this.night ? NIGHT_LIGHT : world.rooms === "castles" ? CASTLE_GLOOM : world.caves ? CAVE_GLOOM : undefined;
+        this.gloom = this.night ? NIGHT_LIGHT : world.rooms === "castles" ? CASTLE_GLOOM : world.caves && !world.outdoors ? CAVE_GLOOM : undefined;
         this.inventory = carry.inventory.map((s) => ({ ...s }));
         this.equipment = { ...carry.equipment };
         this.coins = carry.coins;
@@ -2057,7 +2065,7 @@ export class Run {
         this.scene.background = new THREE.Color(0x7d96b8);
         this.scene.fog = new THREE.Fog(0x7d96b8, 28, 70);
         // Underground, the distance goes to black
-        if (world.caves) {
+        if (world.caves && !world.outdoors) {
             this.scene.background = new THREE.Color(CAVE_DARK);
             this.scene.fog = new THREE.Fog(CAVE_DARK, CAVE_FOG[0], CAVE_FOG[1]);
         }
@@ -2073,7 +2081,9 @@ export class Run {
         coop?: CoopSetup,
     ): Promise<Run> {
         // The Depths' caves are laid out from the run's seed, the same for a whole party
-        const cave = world.caves ? await layoutCave(world.id, world.name, seed, world.rooms === "castles" ? CASTLE_ROOMS : CAVE_ROOMS) : undefined;
+        const cave = world.caves
+            ? await layoutCave(world.id, world.name, seed, world.rooms === "castles" ? CASTLE_ROOMS : world.rooms === "islands" ? ISLAND_ROOMS : CAVE_ROOMS)
+            : undefined;
         const region = cave ? cave.region : await loadRegion(world.id);
         // The host's enemies have more in them for a bigger party
         if (coop?.role === "host" && coop.heroes.length > 1) {
@@ -2109,6 +2119,9 @@ export class Run {
             run.applyNightTo(part);
         };
         run.cave = cave;
+        if (world.outdoors) {
+            run.addSea();
+        }
         run.mapLoad = cave ? cave.load(onPart) : loadMap(region, region.spawn.x, region.spawn.z, onPart);
         await run.mapLoad.near;
         // The minimap is drawn by day either way, so it can be read; and
@@ -2122,6 +2135,20 @@ export class Run {
         });
         await run.loadActors();
         return run;
+    }
+
+    // The island's sea (version 192): its rooms' own water reaches only so
+    // far off the shore, so a sheet of the sea's colour lies just under it
+    // out to the fog, in the map (the night's colour comes on it too)
+    private addSea(): void {
+        const g = this.region;
+        const sea = new THREE.Mesh(
+            new THREE.PlaneGeometry(SEA_SIZE, SEA_SIZE),
+            new THREE.MeshBasicMaterial({ color: SEA_COLOR, fog: false, toneMapped: false }),
+        );
+        sea.rotation.x = -Math.PI / 2;
+        sea.position.set(g.baseX + g.sizeX / 2, this.groundY(g.spawn.x, g.spawn.z) - SEA_BELOW, -(g.baseY + g.sizeY / 2));
+        this.map?.add(sea);
     }
 
     // Night: the sky and fog close in, the map's colours go down to the
@@ -2236,7 +2263,8 @@ export class Run {
         // have it: from above its top is the floor's own brown, so the map
         // showed rooms far bigger than they are and ways through that
         // aren't there, as the user found
-        if (this.world.caves) {
+        // (not the island's: what isn't ground there is the sea)
+        if (this.world.caves && !this.world.outdoors) {
             const ppt = side / tiles;
             imageCtx.fillStyle = CAVE_ROCK_MAP;
             for (let y = 0; y < g.sizeY; y++) {
@@ -2708,7 +2736,7 @@ export class Run {
         // ENDLESS_BOSSES of their own bosses, a different few each run,
         // each as far from the others and from where you arrive as can be
         // found
-        const bossDefs = this.world.bosses ? pickSome(this.rng, this.world.bosses, ENDLESS_BOSSES) : [this.world.boss];
+        const bossDefs = this.world.bosses ? pickSome(this.rng, this.world.bosses, this.world.bossCount ?? ENDLESS_BOSSES) : [this.world.boss];
         const bossTiles: Tile[] = [];
         const first = this.bossTile(reach, taken);
         if (first) {
@@ -3014,9 +3042,15 @@ export class Run {
     // Each kind's share of the map: in rooms of its own kind first, then any.
     // The lit, the rare and the big stay out of where you arrive and the
     // lairs; barrels, search spots, the dead, veins and armour go anywhere.
+    // Which map's plans a run's props follow (props.ts PROP_PLANS)
+    private propMap(): PropMap {
+        return this.world.id === CASTLE_ID ? "castle" : this.world.rooms === "islands" ? "island" : "caves";
+    }
+
     private placeProps(tileIn: (cell: number | undefined, radius?: number) => Tile | undefined, busy: Set<number>, jobs: Promise<void>[]): void {
         const cave = this.cave!;
         const castle = this.world.id === CASTLE_ID;
+        const map = this.propMap();
         const kindOf = (cell: number) => cave.cells[cell].split("_").pop() ?? "";
         const rooms = cave.cells.map((_, c) => c).filter((c) => cave.cells[c] !== cave.empty);
         const pick = <T>(list: T[]): T | undefined => list[Math.floor(this.rng() * list.length)];
@@ -3035,7 +3069,7 @@ export class Run {
         };
         const lit = new Set<number>();
         for (const plan of PROP_PLANS) {
-            const count = castle ? plan.castle : plan.caves;
+            const count = plan[map];
             // (a passage's and a mine cart's two ends go below, and so do
             // the dead ends' strongboxes, webs and gates)
             if (plan.kind === "passage" || plan.kind === "cart" || plan.kind === "strongbox" || plan.kind === "web" || plan.kind === "gate") {
@@ -3099,20 +3133,17 @@ export class Run {
             return true;
         };
         // (no passage, no lever for it)
-        if ((castle ? PROP_PLANS.find((p) => p.kind === "passage")!.castle : 1) > 0 && !pairUp("passage")) {
+        const planned = (kind: PropKind) => PROP_PLANS.find((p) => p.kind === kind)![map];
+        if (planned("passage") > 0 && !pairUp("passage")) {
             this.props = this.props.filter((p) => p.kind !== "lever");
         }
-        const carts = PROP_PLANS.find((p) => p.kind === "cart")!;
-        for (let i = 0; i < (castle ? carts.castle : carts.caves) / 2; i++) {
+        for (let i = 0; i < planned("cart") / 2; i++) {
             pairUp("cart");
         }
         // Version 179: a strongbox at the end of the dead ends, each behind a
-        // web (the Depths) or a gate (the castle) across its one doorway;
-        // the castle's gates left over on the doorways of rooms deeper in
-        const planned = (kind: PropKind) => {
-            const plan = PROP_PLANS.find((p) => p.kind === kind)!;
-            return castle ? plan.castle : plan.caves;
-        };
+        // web (the Depths) or a gate (the castle) across its one doorway
+        // (the island's open: version 192); the castle's gates left over on
+        // the doorways of rooms deeper in
         const shuffled = (list: number[]) => list.map((cell) => ({ cell, roll: this.rng() })).sort((a, b) => a.roll - b.roll).map((c) => c.cell);
         const beyond = (cell: number, door: number) => {
             const dx = door === DOOR_EAST ? 1 : door === DOOR_WEST ? -1 : 0;
@@ -3133,6 +3164,7 @@ export class Run {
         };
         let boxes = planned("strongbox");
         let doors = planned(castle ? "gate" : "web");
+        const barrier: PropKind = castle ? "gate" : "web";
         for (const cell of shuffled(free.filter((c) => DOOR_BITS.includes(cave.doors[c])))) {
             if (boxes <= 0 && doors <= 0) {
                 break;
@@ -3142,7 +3174,7 @@ export class Run {
                 boxes--;
                 this.props.push(this.makeProp("strongbox", tile, 0));
             }
-            if (doors > 0 && across(castle ? "gate" : "web", cell, cave.doors[cell])) {
+            if (doors > 0 && across(barrier, cell, cave.doors[cell])) {
                 doors--;
             }
         }
@@ -6114,7 +6146,14 @@ export class Run {
     private depthsRules(): string {
         return this.world.id === CASTLE_ID
             ? "The ways out are barred until a lord falls, or six minutes have gone, and there's no genie here. The castle wakes fast, and its ceilings keep coming down."
-            : DEPTHS_RULES;
+            : this.onIsland()
+              ? "No boat will put out for you until a tyrant falls, or six minutes have gone, and there's no genie here. The island wakes fast, and its cliffs keep coming down."
+              : DEPTHS_RULES;
+    }
+
+    // The island's (version 192), for what's said in its own words
+    private onIsland(): boolean {
+        return this.world.rooms === "islands";
     }
 
     // The ways out are there to use: always, but in the Depths only once a
@@ -6901,9 +6940,13 @@ export class Run {
         }
         const castle = this.world.id === CASTLE_ID;
         this.announce(
-            this.collapses === 1
-                ? `The ${castle ? "castle" : "cave"} shudders and the ${castle ? "ceiling" : "roof"} starts to come down. Get clear of the rings!`
-                : `The ${castle ? "ceiling" : "roof"} comes down again, harder.`,
+            this.onIsland()
+                ? this.collapses === 1
+                    ? "The island quakes and rocks start raining down from the cliffs. Get clear of the rings!"
+                    : "The island quakes again, harder."
+                : this.collapses === 1
+                  ? `The ${castle ? "castle" : "cave"} shudders and the ${castle ? "ceiling" : "roof"} starts to come down. Get clear of the rings!`
+                  : `The ${castle ? "ceiling" : "roof"} comes down again, harder.`,
         );
     }
 
@@ -7695,7 +7738,7 @@ export class Run {
         // Underground and in the castle (version 165) a hero's light is
         // their lantern's: as far as it lets them see, and little of it
         // unlit (a mate's is taken as lit: nobody says)
-        const caves = this.world.caves === true;
+        const caves = this.world.caves === true && !this.world.outdoors;
         const reach = caves ? this.sightShown + 2 : TORCH_RADIUS;
         const heroes: { x: number; z: number; out: boolean; on: number }[] = [
             { x: this.px, z: this.pz, out: this.dead, on: caves && !this.lanternLit ? UNLIT_TORCH : 1 },
@@ -7961,7 +8004,8 @@ export class Run {
     // A bullseye lantern in the pack burns a can of oil every OIL_SECONDS:
     // lit as soon as there's oil to burn, out when there's none left
     private updateLantern(dt: number): void {
-        if (!this.world.caves || this.dead) {
+        // (the island's under the sky: no lantern burns there, version 192)
+        if (!this.world.caves || this.world.outdoors || this.dead) {
             return;
         }
         const has = (key: "lantern" | "oil") => this.inventory.some((s) => getItem(s.id)[key]);
@@ -7996,7 +8040,7 @@ export class Run {
     // of the rooms, the ways out and the chests, so a torch down a hall
     // shows from across it; then each light's own colour washed over it.
     private placeCaveDark(x: number, y: number, z: number): void {
-        if (!this.world.caves) {
+        if (!this.world.caves || this.world.outdoors) {
             return;
         }
         const canvas = this.renderer.domElement;
@@ -9627,8 +9671,9 @@ export class Run {
         }
         // (the castle's in its own words: version 172)
         const castle = this.world.id === CASTLE_ID;
-        const others = left.length > 1 ? `the ${left.length} ${castle ? "lords" : "bosses"} left grow stronger` : `${hunter.def.name} grows stronger`;
-        this.announce(`${castle ? "The castle stirs" : "The Depths stir"}: ${others}, and ${hunter.def.name} is hunting you!`);
+        const island = this.onIsland();
+        const others = left.length > 1 ? `the ${left.length} ${castle ? "lords" : island ? "tyrants" : "bosses"} left grow stronger` : `${hunter.def.name} grows stronger`;
+        this.announce(`${castle ? "The castle stirs" : island ? "The island stirs" : "The Depths stir"}: ${others}, and ${hunter.def.name} is hunting you!`);
     }
 
     // The Depths' lairs (LAIR_THEMES): each boss by the cell it stands
@@ -9791,7 +9836,7 @@ export class Run {
             }
             this.announce(
                 woke > 0
-                    ? `The ${this.world.id === CASTLE_ID ? "castle" : "cave"}'s vermin swarm: ${woke} of them come skittering out of the dark!`
+                    ? `The ${this.world.id === CASTLE_ID ? "castle" : this.onIsland() ? "island" : "cave"}'s vermin swarm: ${woke} of them come skittering out of the ${this.onIsland() ? "undergrowth" : "dark"}!`
                     : "Something skitters in the walls, then goes quiet.",
             );
         }
@@ -9815,7 +9860,9 @@ export class Run {
         this.announce(
             this.world.id === CASTLE_ID
                 ? `Water floods through the halls: a wing to the ${this.compassTo(mid.x, mid.z)} is flooded shut for a minute.`
-                : `Water roars through the tunnels: a cave to the ${this.compassTo(mid.x, mid.z)} is flooded shut for a minute.`,
+                : this.onIsland()
+                  ? `A wave crashes over the island: the ground to the ${this.compassTo(mid.x, mid.z)} is flooded shut for a minute.`
+                  : `Water roars through the tunnels: a cave to the ${this.compassTo(mid.x, mid.z)} is flooded shut for a minute.`,
         );
     }
 
@@ -12002,7 +12049,7 @@ export class Run {
         const names = this.enemies.filter((e) => e.def.boss).map((e) => e.def.name);
         return names.length > 0
             ? `${names.length} bosses each guard a golden one, far apart: ${names.join(", ")}`
-            : `${ENDLESS_BOSSES} bosses each guard a golden one, far apart`;
+            : `${this.world.bossCount ?? ENDLESS_BOSSES} bosses each guard a golden one, far apart`;
     }
 
     private applySnapshot(s: Extract<DownMessage, { k: "s" }>): void {

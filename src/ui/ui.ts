@@ -8,6 +8,7 @@ import {
     ENDLESS_DEPTHS,
     ENDLESS_ID,
     CASTLE_ID,
+    ISLAND_ID,
     depthName,
     isModeWorld,
     WORLDS,
@@ -164,6 +165,8 @@ const ELEMENTAL_RUNES = [AIR_RUNE, WATER, EARTH, FIRE];
 const DEPTHS_SHOP = [4550, 277];
 // The Forgotten Castle's room's icon, a knight's helm (version 163)
 const CASTLE_ICON = 1163;
+// And the island's, a lobster (version 192)
+const ISLAND_ICON = 379;
 
 type HotSlot = {
     kind: "food" | Potion;
@@ -1392,6 +1395,13 @@ export class UI {
             this.hooks.startRun(CASTLE_ID),
         );
     }
+
+    // The island's, under the castle's (version 192)
+    private islandRoom(withSub: boolean): HTMLElement {
+        return this.roomButton("The Lost Isle", withSub ? "Three stars: an island under the sky, its tyrants far apart" : undefined, this.itemIcon(ISLAND_ICON), () =>
+            this.hooks.startRun(ISLAND_ID),
+        );
+    }
     // Its icon: a lit bullseye lantern (OSRS item 4550, which the game
     // doesn't otherwise have), from the cache with the icon sheet's lift
     // (public/ui/depths-lantern.png)
@@ -1603,6 +1613,7 @@ export class UI {
                 this.coopEnabled ? this.roomButton("Co-op", f.coop.sub, this.itemIcon(1019), () => this.showCoop(), false, f.coop.end) : null,
                 this.depthsRoom(true),
                 this.castleRoom(true),
+                this.islandRoom(true),
                 this.roomButton("Bank & gear", f.stash, this.itemIcon(1127), () => this.showStash()),
                 this.roomButton("Shop", f.shop, this.itemIcon(995), () => this.showShop()),
                 this.roomButton("Tasks & pets", f.tasks, this.itemIcon(989), () => this.showTasks()),
@@ -1677,6 +1688,7 @@ export class UI {
                 { class: "card-tiles" },
                 this.depthsRoom(false),
                 this.castleRoom(false),
+                this.islandRoom(false),
                 this.roomButton("Bank & gear", undefined, this.itemIcon(1127), () => this.showStash()),
                 this.roomButton("Shop", undefined, this.itemIcon(995), () => this.showShop()),
                 this.roomButton("Tasks", undefined, this.itemIcon(989), () => this.showTasks()),
@@ -1808,6 +1820,7 @@ export class UI {
             this.coopEnabled ? this.roomButton("Co-op", coop.sub, this.itemIcon(1019), () => this.showCoop(), false, coop.end) : null,
             this.depthsRoom(true),
             this.castleRoom(true),
+            this.islandRoom(true),
             this.roomButton("Bank & gear", f.stash, this.itemIcon(1127), () => this.showStash()),
             this.roomButton("Shop", f.shop, this.itemIcon(995), () => this.showShop()),
             this.roomButton("Tasks & pets", f.tasks, this.itemIcon(989), () => this.showTasks()),
@@ -3075,7 +3088,7 @@ export class UI {
                         "div",
                         { class: "stats" },
                         world.bosses
-                            ? `${world.enemies.map((e) => e.def.name).join(", ")}. Bosses: ${ENDLESS_BOSSES} of ${world.bosses.map((b) => b.name).join(", ")}, a different few each run.`
+                            ? `${world.enemies.map((e) => e.def.name).join(", ")}. Bosses: ${world.bossCount ?? ENDLESS_BOSSES} of ${world.bosses.map((b) => b.name).join(", ")}, a different few each run.`
                             : `${world.enemies.map((e) => e.def.name).join(", ")}. Boss: ${world.boss.name}.`,
                     ),
                     grave
@@ -3164,7 +3177,7 @@ export class UI {
                 h(
                     "div",
                     { class: "subtitle" },
-                    `Both maps are open, on the one stash. In the Depths, slay a boss and escape to go a depth deeper, and to clear that depth: ${DEPTH_TITLES.map((t, i) => `${i + 1} ${t}${depthsOf(this.save).cleared.includes(i + 1) ? " ✓" : ""}`).join(", ")}; the fifth also gives the Slayer cape. Slay a lord of the Forgotten Castle and escape to be ${CASTLE_TITLES[CASTLE_TITLES.length - 1]}${depthsOf(this.save).castleCleared ? " ✓" : ""}.`,
+                    `Every map is open, on the one stash. In the Depths, slay a boss and escape to go a depth deeper, and to clear that depth: ${DEPTH_TITLES.map((t, i) => `${i + 1} ${t}${depthsOf(this.save).cleared.includes(i + 1) ? " ✓" : ""}`).join(", ")}; the fifth also gives the Slayer cape. Slay a lord of the Forgotten Castle and escape to be ${CASTLE_TITLES[CASTLE_TITLES.length - 1]}${depthsOf(this.save).castleCleared ? " ✓" : ""}.`,
                 ),
                 h("div", { class: "panel maps" }, h("div", { class: "item-list" }, ...rows)),
                 h("button", { onclick: () => this.back() }, "Back"),

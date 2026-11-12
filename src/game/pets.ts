@@ -7,7 +7,7 @@ import * as THREE from "three";
 
 import { CROWN_PETS } from "../content/crownpets";
 import { EnemyDef } from "../content/enemies";
-import { CASTLE_ID, ENDLESS_ID, castleWorld, endlessWorld, getWorld } from "../content/worlds";
+import { CASTLE_ID, ENDLESS_ID, ISLAND_ID, castleWorld, endlessWorld, getWorld, islandWorld } from "../content/worlds";
 import { Actor, createActor, play, tint } from "./assets";
 import { GearStats } from "./inventory";
 import { addShadow } from "./shadows";
@@ -24,10 +24,15 @@ export { isBossPet } from "../content/crownpets";
 // Forgotten Castle boss's the same way ("castle:...", version 163)
 const DEPTHS_PET_PREFIX = `${ENDLESS_ID}:`;
 const CASTLE_PET_PREFIX = `${CASTLE_ID}:`;
+// And the island's tyrants' ("island:tztok_jad", version 192)
+const ISLAND_PET_PREFIX = `${ISLAND_ID}:`;
 
 function depthsBoss(id: string): EnemyDef | undefined {
     if (id.startsWith(DEPTHS_PET_PREFIX)) {
         return endlessWorld(1).bosses?.find((b) => b.id === id);
+    }
+    if (id.startsWith(ISLAND_PET_PREFIX)) {
+        return islandWorld().bosses?.find((b) => b.id === id);
     }
     return id.startsWith(CASTLE_PET_PREFIX) ? castleWorld().bosses?.find((b) => b.id === id) : undefined;
 }
@@ -39,8 +44,23 @@ export function petName(worldId: string): string {
 
 // Where a pet's from, for the Tasks screen
 export function petFrom(id: string): string {
-    return CROWN_PETS[id] ? CROWN_PETS[id].from : depthsBoss(id) ? (id.startsWith(CASTLE_PET_PREFIX) ? "from the Forgotten Castle" : "from the Depths") : `from ${getWorld(id).name}`;
+    if (CROWN_PETS[id]) {
+        return CROWN_PETS[id].from;
+    }
+    if (!depthsBoss(id)) {
+        return `from ${getWorld(id).name}`;
+    }
+    return id.startsWith(CASTLE_PET_PREFIX) ? "from the Forgotten Castle" : id.startsWith(ISLAND_PET_PREFIX) ? "from the Lost Isle" : "from the Depths";
 }
+
+// An island tyrant's pet gives what its old map's boss's did (PET_BUFFS),
+// by the map it came from
+const ISLAND_PET_MAPS: Record<string, string> = {
+    dagannoth_prime: "fremennik",
+    tztok_jad: "karamja",
+    chaos_fanatic: "wilderness",
+    kalphite_queen: "desert",
+};
 
 // What a pet does for you while it follows, one small thing each, after
 // its boss: the Tasks screen says it in `text`
@@ -121,6 +141,9 @@ const DEPTHS_PET_BUFFS: Record<string, PetBuff> = {
 export function petBuff(worldId: string | undefined): PetBuff | undefined {
     if (worldId?.startsWith(DEPTHS_PET_PREFIX)) {
         return DEPTHS_PET_BUFFS[worldId.slice(DEPTHS_PET_PREFIX.length)];
+    }
+    if (worldId?.startsWith(ISLAND_PET_PREFIX)) {
+        return PET_BUFFS[ISLAND_PET_MAPS[worldId.slice(ISLAND_PET_PREFIX.length)] ?? ""];
     }
     // A castle lord's: its court's strength
     if (worldId?.startsWith(CASTLE_PET_PREFIX)) {

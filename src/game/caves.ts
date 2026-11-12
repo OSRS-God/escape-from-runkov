@@ -25,9 +25,14 @@ const WEST = 8;
 // room for a cell growing missed. The Depths' caves, a grid of six by five;
 // the Forgotten Castle's rooms (Run-Escape's castle-rooms.ts), five by five,
 // 40 OSRS chunks a side as the user asked, whose empty room draws nothing.
-export type RoomSet = { dir: string; cellsX: number; cellsY: number; empty: string };
+// `coast` (the island's, version 192): every room on the grid's edge has the
+// sea on its outer sides, so each cell takes a room with its coast as well
+// as its doors (Run-Escape's island-rooms.ts makes one for each), five by
+// four, a little smaller than the castle
+export type RoomSet = { dir: string; cellsX: number; cellsY: number; empty: string; coast?: boolean };
 export const CAVE_ROOMS: RoomSet = { dir: "caves", cellsX: 6, cellsY: 5, empty: "cave_0_rock" };
 export const CASTLE_ROOMS: RoomSet = { dir: "castles", cellsX: 5, cellsY: 5, empty: "castle_0_void" };
+export const ISLAND_ROOMS: RoomSet = { dir: "islands", cellsX: 5, cellsY: 4, empty: "island_0_void", coast: true };
 // Of the cells next to each other that both have rooms but aren't joined,
 // this share are joined too, so the cave has loops and not only dead ends
 const LOOP_SHARE = 0.25;
@@ -44,6 +49,8 @@ const AT_ONCE = 3;
 type CaveRoomJson = {
     name: string;
     doors: number;
+    // The sides the sea's on (an island room's)
+    coast?: number;
     kind: string;
     tiles: number[];
     heights: number[];
@@ -71,6 +78,9 @@ const LIGHT_APART = 6;
 const ROOM_ZONES: Record<string, { near: string[]; mid: string[]; deep: string[] }> = {
     caves: { near: ["plain", "pillars"], mid: ["plain", "pillars", "camp"], deep: ["lair", "camp"] },
     castles: { near: ["hall", "court"], mid: ["quarters", "library", "chapel", "hall"], deep: ["dungeon", "chapel"] },
+    // The island's: a village where you land, woods and villages inland,
+    // ruins at the far end and the dead ends
+    islands: { near: ["village", "woods"], mid: ["woods", "village"], deep: ["ruins", "woods"] },
 };
 const ZONE_NEAR = 1;
 const ZONE_DEEP_SHARE = 0.6;
@@ -248,11 +258,21 @@ export async function layoutCave(id: string, name: string, seed: number, set: Ro
     const maxDepth = Math.max(0, ...depth);
     const zones = ROOM_ZONES[set.dir];
     const deadEnd = (d: number) => d === NORTH || d === EAST || d === SOUTH || d === WEST;
+    // A cell's coast: the grid's edges it's on
+    const coastOf = (c: number) => {
+        const x = c % CELLS_X;
+        const y = Math.floor(c / CELLS_X);
+        return (y === CELLS_Y - 1 ? NORTH : 0) | (x === CELLS_X - 1 ? EAST : 0) | (y === 0 ? SOUTH : 0) | (x === 0 ? WEST : 0);
+    };
     const cells = doors.map((d, c) => {
         if (d <= 0) {
             return rock;
         }
         let choices = byDoors.get(d)!;
+        if (set.coast) {
+            const coast = coastOf(c);
+            choices = choices.filter((room) => (room.coast ?? 0) === coast);
+        }
         if (zones && rng() >= ZONE_ANY) {
             const wanted = depth[c] <= ZONE_NEAR ? zones.near : deadEnd(d) || depth[c] >= maxDepth * ZONE_DEEP_SHARE ? zones.deep : zones.mid;
             const zoned = choices.filter((room) => wanted.includes(room.kind));

@@ -189,6 +189,40 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 192 (not yet deployed; a first version, as the user asked to start on it): a third
+map, the Lost Isle, an island with the sea all round, buildings and trees, a little smaller
+than the Forgotten Castle (five rooms by four to its five by five: 55,000 to 57,000 tiles open
+in test runs). Laid out new every run like the castle: Run-Escape's scripts/cache/island-rooms.ts
+makes 165 rooms (export-assets.ts `islands`; copy-assets.mjs copies them, about 139 MB packed),
+each with its doors and its coast, the sides the sea's on (sea 9 tiles in, then 5 of sand, the
+shore wandering a little and rounded at a corner), and caves.ts ISLAND_ROOMS puts each room
+where its coast faces out (`coast` on a RoomSet: a cell takes a room with its coast as well as
+its doors). Between rooms a three-tile thicket of jungle trees, bushes and ferns, rocks on the
+beach, blocks all but the doors; only things that don't block of themselves dress it, so the
+band stays one stretch of blocked ground (a tree's own block cut it into small pockets, which
+region.ts opens as hillside: 157 tiles in the first try). Three kinds of room: villages (two
+to four houses of stone walls with a doorway, floorboards and a bed, crates, stools; campfires,
+tents, log piles), woods (palms and trees close together) and ruins (broken walls on old
+paving, pillars, rubble, dead trees, bones), with dirt paths in from the doors, grass tufts,
+palms on the beaches and now and then a wrecked rowboat. Ruins lie at the far end and the dead
+ends, villages where you land (the start's on the south shore). worlds.ts: ISLAND_ID
+"island", its creatures the old maps' shore and jungle ones (rock crab, monkey, snake, jungle
+spider, bandit, tribesman, dagannoth, jogre, mountain troll) at tier 3, three of four tyrants
+a run at tier 4 with half again a boss's hitpoints (Dagannoth Prime, TzTok-Jad, the Chaos
+Fanatic, the Kalphite Queen: `bossCount` on a map), loot of every tier, Rellekka's and
+Karamja's sounds. It's `outdoors`: daylight, nights as the old maps had them, no cave dark or
+lantern, and a sheet of sea (run.ts addSea) past the rooms' own water out to the fog, in the
+water's colour on screen. Its props (props.ts `island` counts): barrels, search spots,
+braziers, a lever and passage, a shrine in the ruins, corpses, ore veins, pools and herbs in
+the woods, stocks, a banquet, an alchemy table, weapon racks, a bell, anvils and wells in the
+villages, a coffin in the ruins, traps, strongboxes in the dead ends (no web or gate). Its own
+words for the run's rules, the quakes, the floods, the vermin and the bosses stirring; its
+tyrants' pets give their old maps' bosses' gifts (pets.ts). A room on the title screen (a
+lobster) under the castle's. Tested in local runs: every open tile walks to from the landing
+(every boss, way out and chest too), all eleven seams between rooms with no door between them
+blocked, no creature off open ground, no hillside opened. Not done yet: titles or tasks of its
+own, a boat to arrive by, a look at it on a phone, a co-op run there.
+
 Version 191 (deployed to the main site 11 November 2026 as 2026.11.11.6), as the user asked: the Giant Mole can't dig off and heal
 itself whole. Its dig (at three quarters, half and a quarter of its health, three seconds
 under) brought it up anywhere within ten tiles of its lair's spot, often far off or where you

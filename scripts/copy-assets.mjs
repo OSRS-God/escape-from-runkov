@@ -12,6 +12,7 @@
 //                                   (or maps/<id>.glb whole), and its collision
 //   caves/<room>.glb, caves/caves.json      the Depths' cave rooms
 //   castles/<room>.glb, castles/castles.json  the Forgotten Castle's rooms
+//   islands/<room>.glb, islands/islands.json  the island's rooms
 //   player/kits/<id>.glb, player/items/<id>.glb, player/items.json (every
 //   worn piece's info in one file), player/kits.json, player/colors.json
 //   sounds.pack, sounds.json        every sound, and where each is in the pack
@@ -206,6 +207,18 @@ if (fs.existsSync(castles)) {
     copy(path.join(castles, "castles.json"), path.join(target, "castles", "castles.json"));
 } else {
     missing.push("castles (run export-assets.ts castles)");
+}
+// And the island's rooms (version 192; export-assets.ts islands)
+const islands = path.join(source, "islands");
+if (fs.existsSync(islands)) {
+    for (const file of fs.readdirSync(islands)) {
+        if (file.startsWith("island_") && file.endsWith(".glb")) {
+            copyModel(path.join(islands, file), path.join(target, "islands", file));
+        }
+    }
+    copy(path.join(islands, "islands.json"), path.join(target, "islands", "islands.json"));
+} else {
+    missing.push("islands (run export-assets.ts islands)");
 }
 for (const id of manifest.sounds) {
     const from = path.join(source, "sounds", `${id}.wav`);

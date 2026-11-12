@@ -51,7 +51,12 @@ export type WorldDef = {
     // real region; and which set of rooms (the Forgotten Castle's, version
     // 163, else the Depths' caves)
     caves?: boolean;
-    rooms?: "castles";
+    rooms?: "castles" | "islands";
+    // Laid out from rooms but under the sky (the island, version 192): no
+    // cave's dark or lantern, daylight unless the run's a night
+    outdoors?: boolean;
+    // How many of `bosses` a run has (ENDLESS_BOSSES unless it says)
+    bossCount?: number;
     // The Depths: the bosses a run picks from (ENDLESS_BOSSES of them), each
     // made at this map's tier
     bosses?: EnemyDef[];
@@ -80,6 +85,7 @@ const DESCRIPTIONS: Record<string, string> = {
     inferno: "Inside the volcano under Mor Ul Rek: TzHaar and Jal creatures on the rock, and a Jad among them.",
     endless: "Caves that are never the same twice: thirty chambers dug anew every run. Five of fourteen lair bosses lurk far apart, slayer monsters crawl everywhere, and now and then a superior one rises where its kind falls. The loot comes from every tier. Lairs seal behind you, the roof keeps coming down, each boss slain makes the rest stronger, and only one golden chest opens a run.",
     castle: "A castle nobody remembers, its halls rebuilt in a new order every run: twenty-five rooms of great halls, overgrown courtyards, quarters, libraries, chapels and dungeons, 40 chunks a side. Its dead lords hold court far apart, and what served them still walks its halls. Four stars, every lord's chest with loot of every tier.",
+    island: "An island out past the charts, its shore and woods laid out anew every run: twenty stretches of beach, jungle, abandoned villages and old ruins, with the sea all round. Three of its four tyrants hold out far apart, and the island's wildlife and castaways want you gone. Three stars, its tyrants a tier above, every chest with loot of every tier.",
 };
 
 // What a map tier asks of you (see scripts/balance.ts): the average enemy
@@ -228,6 +234,8 @@ export const AMBIENT: Record<string, number[]> = {
     god_wars: [3087],
     prifddinas: [3124, 3124, 3124, 3124, 3124, 3124, 3124, 3124, 4157, 4157, 4157, 4157, 4157, 2199, 2209],
     inferno: [2066, 2066, 2066, 2066, 2066, 2066, 2208, 2208],
+    // The island (version 192): Rellekka's shore and Karamja's jungle
+    island: [2065, 2065, 2065, 2065, 2066, 2220, 3137, 3141, 3141],
 };
 
 // Enemies that only fight back (EnemyDef's passive), by name
@@ -442,14 +450,74 @@ function castleJson(): WorldJson {
     };
 }
 
+// The island (version 192, as the user asked): a map of its own like the
+// castle, a little smaller (five rooms by four, ISLAND_ROOMS), an island laid
+// out new every run with the sea all round, under the sky. Its creatures are
+// the old regular maps' from the shore and the jungle (worlds.json, their
+// models still in the pack for the Depths' sake), and its bosses four of
+// theirs, three a run: Dagannoth Prime from the sea, TzTok-Jad from
+// Karamja's volcano, the Chaos Fanatic and the Kalphite Queen. Three stars:
+// its creatures at tier 3 and its bosses at 4, as the castle's lords are,
+// with half again a boss's hitpoints.
+export const ISLAND_ID = "island";
+const ISLAND_ENEMIES = [
+    "fremennik:rock_crab",
+    "karamja:monkey",
+    "karamja:snake",
+    "karamja:jungle_spider",
+    "wilderness:bandit",
+    "karamja:tribesman",
+    "fremennik:dagannoth",
+    "karamja:jogre",
+    "fremennik:mountain_troll",
+];
+const ISLAND_BOSSES = ["fremennik", "karamja", "wilderness", "desert"];
+const ISLAND_BOSS_COUNT = 3;
+const ISLAND_ENEMY_TIERS_UP = 2;
+const ISLAND_BOSS_TIERS_UP = 3;
+
+function islandEnemy(key: string): WorldEnemyJson {
+    const [map, id] = key.split(":");
+    const e = REGULAR_JSONS.find((x) => x.id === map)?.enemies.find((x) => x.id === id);
+    if (!e) {
+        throw new Error(`The island: no ${key} in worlds.json`);
+    }
+    return e;
+}
+
+function islandBosses(): WorldEnemyJson[] {
+    return ISLAND_BOSSES.map((map) => REGULAR_JSONS.find((x) => x.id === map)!.boss!);
+}
+
+function islandJson(): WorldJson {
+    return {
+        id: ISLAND_ID,
+        name: "The Lost Isle",
+        description: "",
+        tier: 3,
+        difficulty: { hp: 1, damage: 1 },
+        enemies: ISLAND_ENEMIES.map(islandEnemy).sort((a, b) => a.hp - b.hp),
+        boss: islandBosses()[0],
+    };
+}
+
 function makeWorld(w: WorldJson): WorldDef {
     const scale = tierScale(w);
     const endless = w.id === ENDLESS_ID;
     const castle = w.id === CASTLE_ID;
-    const ownBosses = endless ? (endlessBossesJson as WorldEnemyJson[]) : castle ? (castleBossesJson as WorldEnemyJson[]) : undefined;
+    const island = w.id === ISLAND_ID;
+    const ownBosses = endless
+        ? (endlessBossesJson as WorldEnemyJson[])
+        : castle
+          ? (castleBossesJson as WorldEnemyJson[])
+          : island
+            ? islandBosses()
+            : undefined;
     return {
-        caves: endless || castle || undefined,
-        rooms: castle ? "castles" : undefined,
+        caves: endless || castle || island || undefined,
+        rooms: castle ? "castles" : island ? "islands" : undefined,
+        outdoors: island || undefined,
+        bossCount: island ? ISLAND_BOSS_COUNT : undefined,
         superiors: endless ? superiorsOf(w, scale) : undefined,
         // Its own bosses, at its depth's tier
         bosses: ownBosses?.map((b) => convertEnemy(b, w, scale)),
@@ -470,7 +538,7 @@ function makeWorld(w: WorldJson): WorldDef {
         // piece or two
         chests: 16 + w.tier * 2,
         chestItems: w.tier >= 4 ? [1, 2] : [1, 1],
-        lootTiers: endless || castle ? ENDLESS_LOOT : lootTiersFor(w.tier),
+        lootTiers: endless || castle || island ? ENDLESS_LOOT : lootTiersFor(w.tier),
     };
 }
 
@@ -559,11 +627,14 @@ const ENDLESS_WORLDS: WorldDef[] = Array.from({ length: ENDLESS_DEPTHS }, (_, i)
 // user asked): no depths, its enemies and lords at tier 4 (the lords with
 // the Depths' half again of a boss's hitpoints)
 const CASTLE_WORLD: WorldDef = { ...depthsWorld(1, castleJson(), CASTLE_ENEMY_TIERS_UP, CASTLE_BOSS_TIERS_UP, false), depth: undefined };
+// The island the same way, a star under the castle (version 192)
+const ISLAND_WORLD: WorldDef = { ...depthsWorld(1, islandJson(), ISLAND_ENEMY_TIERS_UP, ISLAND_BOSS_TIERS_UP, false), depth: undefined };
 
 // The game's maps (version 164, as the user asked: the twelve regular maps
-// are gone, and these two, open from the start, share the one stash). The
-// regular maps' worlds.json is kept for the Depths' enemies from them.
-export const WORLDS: WorldDef[] = [ENDLESS_WORLDS[0], CASTLE_WORLD];
+// are gone, and these two, open from the start, share the one stash; the
+// island, version 192, the third on it). The regular maps' worlds.json is
+// kept for the Depths' enemies from them, and the island's.
+export const WORLDS: WorldDef[] = [ENDLESS_WORLDS[0], CASTLE_WORLD, ISLAND_WORLD];
 
 export const WORLD_BY_ID: Map<string, WorldDef> = new Map(WORLDS.map((w) => [w.id, w]));
 
@@ -572,9 +643,9 @@ export const WORLD_BY_ID: Map<string, WorldDef> = new Map(WORLDS.map((w) => [w.i
 export type ModeId = "regular" | "endless" | "castle";
 export const MODE_WORLD: Record<Exclude<ModeId, "regular">, string> = { endless: ENDLESS_ID, castle: CASTLE_ID };
 
-// Whether a map is a mode's own (the Depths, the castle)
+// Whether a map is a mode's own (the Depths, the castle, the island)
 export function isModeWorld(id: string): boolean {
-    return id === ENDLESS_ID || id === CASTLE_ID;
+    return id === ENDLESS_ID || id === CASTLE_ID || id === ISLAND_ID;
 }
 
 // Which profile is out (save.ts's modes), and its depth: main.ts gives the
@@ -630,9 +701,15 @@ export function castleWorld(): WorldDef {
     return CASTLE_WORLD;
 }
 
-// A mode's map at a depth, by the map's id (the castle's always the same)
+// The island (it has no depths either)
+export function islandWorld(): WorldDef {
+    return ISLAND_WORLD;
+}
+
+// A mode's map at a depth, by the map's id (the castle's and the island's
+// always the same)
 export function modeWorld(id: string, depth = endlessDepth()): WorldDef {
-    return id === CASTLE_ID ? CASTLE_WORLD : endlessWorld(depth);
+    return id === CASTLE_ID ? CASTLE_WORLD : id === ISLAND_ID ? ISLAND_WORLD : endlessWorld(depth);
 }
 
 // A map by id (the Depths at the save's depth)
@@ -647,8 +724,8 @@ export function getWorld(id: string): WorldDef {
 // Every enemy in every world, for the enemy table
 export const WORLD_ENEMIES: EnemyDef[] = WORLDS.flatMap((w) => [...w.enemies.map((e) => e.def), ...(w.bosses ?? [w.boss])]);
 
-// Whether a run may go to a map: either of the two, whenever (version 164,
-// as the user asked: no map waits on another)
+// Whether a run may go to a map: any of them, whenever (version 164, as the
+// user asked: no map waits on another)
 export function mapUnlocked(_mapsBeaten: string[], id: string): boolean {
     return WORLD_BY_ID.has(id);
 }

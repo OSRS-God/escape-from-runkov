@@ -120,44 +120,48 @@ export type Prop = {
 
 // Where a kind goes: on which map, how many, in which rooms first (by their
 // kind, caves.ts's), and how much open ground it wants round it
-type PropPlan = { kind: PropKind; caves: number; castle: number; rooms?: string[]; room?: number };
+// (the island's too, version 192: its rooms are villages, woods and ruins,
+// kinds the other two don't have, so a kind's rooms list all three maps')
+type PropPlan = { kind: PropKind; caves: number; castle: number; island: number; rooms?: string[]; room?: number };
+export type PropMap = "caves" | "castle" | "island";
 
 export const PROP_PLANS: PropPlan[] = [
-    { kind: "barrel", caves: 6, castle: 6 },
-    { kind: "search", caves: 16, castle: 16 },
-    { kind: "brazier", caves: 8, castle: 8 },
-    { kind: "lever", caves: 1, castle: 1 },
-    { kind: "passage", caves: 2, castle: 2, room: 1 },
-    { kind: "shrine", caves: 1, castle: 1, room: 0.9 },
-    { kind: "corpse", caves: 8, castle: 8, room: 0.9 },
-    { kind: "vein", caves: 10, castle: 0 },
-    { kind: "pool", caves: 4, castle: 0, room: 1.4 },
-    { kind: "crack", caves: 3, castle: 0, room: 1 },
-    { kind: "ladder", caves: 3, castle: 0 },
-    { kind: "portrait", caves: 0, castle: 3, rooms: ["hall", "quarters"] },
-    { kind: "bookcase", caves: 0, castle: 3, rooms: ["library"] },
-    { kind: "lectern", caves: 0, castle: 1, rooms: ["chapel"] },
-    { kind: "armour", caves: 0, castle: 10, rooms: ["hall", "court"] },
-    { kind: "font", caves: 0, castle: 2, rooms: ["chapel"] },
-    { kind: "cell", caves: 0, castle: 3, rooms: ["dungeon"], room: 1 },
-    { kind: "banquet", caves: 0, castle: 2, rooms: ["hall"], room: 1.6 },
-    { kind: "trap", caves: 10, castle: 10 },
-    { kind: "fungus", caves: 8, castle: 0 },
-    { kind: "cart", caves: 2, castle: 0, room: 0.8 },
-    { kind: "herbs", caves: 0, castle: 6, rooms: ["court"] },
-    { kind: "alchemy", caves: 0, castle: 2, rooms: ["library", "quarters"], room: 1 },
-    { kind: "rack", caves: 0, castle: 3, rooms: ["hall", "dungeon"], room: 0.9 },
-    { kind: "bell", caves: 0, castle: 1, rooms: ["court"], room: 1 },
-    { kind: "throne", caves: 0, castle: 1, rooms: ["hall"], room: 1.6 },
+    { kind: "barrel", caves: 6, castle: 6, island: 5 },
+    { kind: "search", caves: 16, castle: 16, island: 14 },
+    { kind: "brazier", caves: 8, castle: 8, island: 4 },
+    { kind: "lever", caves: 1, castle: 1, island: 1 },
+    { kind: "passage", caves: 2, castle: 2, island: 2, room: 1 },
+    { kind: "shrine", caves: 1, castle: 1, island: 1, room: 0.9, rooms: ["ruins"] },
+    { kind: "corpse", caves: 8, castle: 8, island: 6, room: 0.9 },
+    { kind: "vein", caves: 10, castle: 0, island: 5, rooms: ["ruins", "woods"] },
+    { kind: "pool", caves: 4, castle: 0, island: 3, room: 1.4, rooms: ["woods"] },
+    { kind: "crack", caves: 3, castle: 0, island: 0, room: 1 },
+    { kind: "ladder", caves: 3, castle: 0, island: 0 },
+    { kind: "portrait", caves: 0, castle: 3, island: 0, rooms: ["hall", "quarters"] },
+    { kind: "bookcase", caves: 0, castle: 3, island: 0, rooms: ["library"] },
+    { kind: "lectern", caves: 0, castle: 1, island: 0, rooms: ["chapel"] },
+    { kind: "armour", caves: 0, castle: 10, island: 0, rooms: ["hall", "court"] },
+    { kind: "font", caves: 0, castle: 2, island: 0, rooms: ["chapel"] },
+    { kind: "cell", caves: 0, castle: 3, island: 2, rooms: ["dungeon", "village"], room: 1 },
+    { kind: "banquet", caves: 0, castle: 2, island: 1, rooms: ["hall", "village"], room: 1.6 },
+    { kind: "trap", caves: 10, castle: 10, island: 8 },
+    { kind: "fungus", caves: 8, castle: 0, island: 0 },
+    { kind: "cart", caves: 2, castle: 0, island: 0, room: 0.8 },
+    { kind: "herbs", caves: 0, castle: 6, island: 6, rooms: ["court", "woods"] },
+    { kind: "alchemy", caves: 0, castle: 2, island: 1, rooms: ["library", "quarters", "village"], room: 1 },
+    { kind: "rack", caves: 0, castle: 3, island: 2, rooms: ["hall", "dungeon", "village"], room: 0.9 },
+    { kind: "bell", caves: 0, castle: 1, island: 1, rooms: ["court", "village"], room: 1 },
+    { kind: "throne", caves: 0, castle: 1, island: 0, rooms: ["hall"], room: 1.6 },
     // Version 179's (the strongboxes go to dead ends, the webs and gates
-    // across doorways: run.ts placeProps)
-    { kind: "strongbox", caves: 3, castle: 3, room: 0.8 },
-    { kind: "web", caves: 4, castle: 0 },
-    { kind: "gate", caves: 0, castle: 4 },
-    { kind: "anvil", caves: 2, castle: 2, rooms: ["dungeon", "hall"], room: 0.8 },
-    { kind: "vent", caves: 3, castle: 0, room: 1.6 },
-    { kind: "well", caves: 0, castle: 2, rooms: ["court"], room: 1 },
-    { kind: "coffin", caves: 0, castle: 4, rooms: ["chapel", "dungeon"], room: 1 },
+    // across doorways: run.ts placeProps; the island's dead ends have only
+    // their strongboxes)
+    { kind: "strongbox", caves: 3, castle: 3, island: 3, room: 0.8 },
+    { kind: "web", caves: 4, castle: 0, island: 0 },
+    { kind: "gate", caves: 0, castle: 4, island: 0 },
+    { kind: "anvil", caves: 2, castle: 2, island: 2, rooms: ["dungeon", "hall", "village"], room: 0.8 },
+    { kind: "vent", caves: 3, castle: 0, island: 0, room: 1.6 },
+    { kind: "well", caves: 0, castle: 2, island: 2, rooms: ["court", "village"], room: 1 },
+    { kind: "coffin", caves: 0, castle: 4, island: 1, rooms: ["chapel", "dungeon", "ruins"], room: 1 },
 ];
 
 // Their models (cache loc ids; the pool's is drawn: water)

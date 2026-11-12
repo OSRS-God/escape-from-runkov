@@ -6,7 +6,7 @@ import { RunResult } from "../game/run";
 import { SaveData, UPGRADES, packSize } from "../game/save";
 import { SLOTS, getItem, isPrize } from "./items";
 import { isBossPet } from "./crownpets";
-import { CASTLE_ID, ENDLESS_ID, WORLDS, castleWorld, endlessWorld } from "./worlds";
+import { CASTLE_ID, ENDLESS_ID, WORLDS, castleWorld, endlessWorld, islandWorld } from "./worlds";
 
 export type Task = {
     id: string;
@@ -19,8 +19,9 @@ export type Task = {
 // escaping a run whose map was that many stars or more: the Depths' go up a
 // star a depth, the castle is four)
 const escapedTier = (r: RunResult, tier: number) => r.kind === "extracted" && r.world.tier >= tier;
-// Every boss there is to have a pet of: the Depths' and the castle's lords
-const BOSS_PETS = (endlessWorld(1).bosses?.length ?? 0) + (castleWorld().bosses?.length ?? 0);
+// Every boss there is to have a pet of: the Depths', the castle's lords and
+// the island's tyrants (version 192)
+const BOSS_PETS = (endlessWorld(1).bosses?.length ?? 0) + (castleWorld().bosses?.length ?? 0) + (islandWorld().bosses?.length ?? 0);
 
 // Everything worn and packed as a run ended
 const carried = (r: RunResult): number[] => [
