@@ -189,7 +189,13 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
-Version 193 (not yet deployed), as the user asked: mercenaries pick up dropped food, keep all
+Main site release 2026.11.13 (13 November 2026, `GAME_BUILD` "2026.11.13"), as the user asked
+("Push all to main", both the site and GitHub): versions 192 and 193 on the main site, the
+island's 166 room files (139 MB) among the 168 uploaded. Checked live: the bundle carries the
+build, the Lost Isle and 193's words, islands.json is served, the account API answers. Not on
+the playtest site, which is still at 2026.11.11.22 without versions 185 to 193.
+
+Version 193 (deployed to the main site 13 November 2026 as 2026.11.13), as the user asked: mercenaries pick up dropped food, keep all
 of it, and eat it when a fight needs it. Before, they went for food only with nothing to fight
 and not falling back, waited MERC_FETCH_WAIT (3s) for food nobody gave them, and stopped at
 MERC_FOOD_MAX (8 bites); in a fight they ate only once a bite wouldn't be wasted or below half
@@ -211,7 +217,7 @@ then back on the banshee; 4 lobsters dropped for them 5 tiles off mid-fight, one
 off once it had lain 1.5s, ate (12 to 82) and rallied; trout at your feet was yours; the last
 shrimps eaten gave the message.
 
-Version 192 (not yet deployed; a first version, as the user asked to start on it): a third
+Version 192 (deployed to the main site 13 November 2026 as 2026.11.13; a first version, as the user asked to start on it): a third
 map, the Lost Isle, an island with the sea all round, buildings and trees, a little smaller
 than the Forgotten Castle (five rooms by four to its five by five: 55,000 to 57,000 tiles open
 in test runs). Laid out new every run like the castle: Run-Escape's scripts/cache/island-rooms.ts
