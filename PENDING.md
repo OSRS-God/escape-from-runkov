@@ -189,6 +189,28 @@ them, `findScrolling` finds each in a loaded model by its material's name (textu
 with those textures flows too. Tested: three frames 0.32s apart show both capes' patterns
 moving, the infernal cape's at half the fire cape's pace.
 
+Version 193 (not yet deployed), as the user asked: mercenaries pick up dropped food, keep all
+of it, and eat it when a fight needs it. Before, they went for food only with nothing to fight
+and not falling back, waited MERC_FETCH_WAIT (3s) for food nobody gave them, and stopped at
+MERC_FOOD_MAX (8 bites); in a fight they ate only once a bite wouldn't be wasted or below half
+health, and a bite outheals a mercenary's bar (a shark's 100 on a level 1 sellsword's 88), so
+they fought at half health with a pack full. run.ts now: food and brews have no limit
+(`mercUses`), and food lying free is taken after MERC_FOOD_WAIT (1.5s) from up to
+MERC_FETCH_RANGE away, at once if your pack has no room for it, never from under you
+(`mercFoodFree`); in a fight or falling back they still step over to food (only food) within
+MERC_FOOD_GRAB (8 tiles), given or free (`grab`, which takes them off the foe till it's in the
+pack), and keep swinging at what's in reach on the way; with anything awake close by they eat
+below MERC_EAT_FIGHT (60%), as well as whenever a bite isn't wasted (MERC_EAT 50% out of a
+fight, MERC_EAT_BOSS 65% beside a boss as before); and "<name> has eaten the last of their
+food." when the pack's empty. Food stays theirs between runs as since version 175. Tested in a
+Depths run with a level 1 sellsword (stepped by script, the pane hidden): 6 sharks, 5 lobsters
+and 4 shrimps dropped round them all packed (15 bites) from 1.8s; in a fight at 55% health 3
+sharks dropped 3 tiles off were fetched in 2.4s and one eaten at once (46 to 88), two kept,
+then back on the banshee; 4 lobsters dropped for them 5 tiles off mid-fight, one eaten (25 to
+80), three kept; falling back at 15 health they went behind you, then for the swordfish 8 tiles
+off once it had lain 1.5s, ate (12 to 82) and rallied; trout at your feet was yours; the last
+shrimps eaten gave the message.
+
 Version 192 (not yet deployed; a first version, as the user asked to start on it): a third
 map, the Lost Isle, an island with the sea all round, buildings and trees, a little smaller
 than the Forgotten Castle (five rooms by four to its five by five: 55,000 to 57,000 tiles open

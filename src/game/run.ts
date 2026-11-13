@@ -1163,6 +1163,7 @@ const ALLY_STUCK = 1.5;
 const ALLY_LEASH = ALLY_REACH * 1.5;
 const MERC_MEDIC_RANGE = 5;
 const MERC_EAT = 0.5;
+const MERC_EAT_FIGHT = 0.6;
 const MERC_EAT_BOSS = 0.65;
 const MERC_RETREAT = 0.35;
 const MERC_RETREAT_TOUGH = 0.2;
@@ -1171,14 +1172,17 @@ const MERC_KITE = 2.2;
 const MERC_CALL_RANGE = 4.5;
 // Version 182 (as the user asked): what's lain untaken this long within this
 // many tiles of them, that they can use, they go and get (not from under
-// you: nothing within MERC_FETCH_YOURS of you), carrying at most this many
-// bites; and their stride: they turn this many radians a second, walk up
-// to you when you've stood still this long and they're within this of
-// their post, and once set off come to this share of their follow distance
+// you: nothing within MERC_FETCH_YOURS of you); food and brews (version 193,
+// as the user asked, with no limit to how much) once they've lain this long,
+// and in a fight or falling back, food this close; and their stride: they
+// turn this many radians a second, walk up to you when you've stood still
+// this long and they're within this of their post, and once set off come
+// to this share of their follow distance
 const MERC_FETCH_WAIT = 3;
 const MERC_FETCH_RANGE = 30;
 const MERC_FETCH_YOURS = 1.5;
-const MERC_FOOD_MAX = 8;
+const MERC_FOOD_WAIT = 1.5;
+const MERC_FOOD_GRAB = 8;
 const MERC_TURN = 11;
 const MERC_WALK_STILL = 0.5;
 const MERC_WALK_NEAR = 2.5;
@@ -5583,6 +5587,10 @@ export class Run {
         bite.count--;
         if (bite.count <= 0) {
             m.food.splice(m.food.indexOf(bite), 1);
+            // (version 193: so you know to drop them more)
+            if (m.food.length === 0) {
+                this.hooks.onMessage(`${m.name} has eaten the last of their food.`);
+            }
         }
         m.eatIn = EAT_DELAY;
     }
@@ -5648,13 +5656,25 @@ export class Run {
         // gap best, as F does for you. Since version 180 (as the user asked)
         // as soon as they're down by what a bite of theirs heals, so none of
         // it's wasted; and below MERC_EAT (MERC_EAT_BOSS beside a boss)
-        // whatever the bite
+        // whatever the bite. Since version 193 (as the user asked, food
+        // used when it's needed in a fight) below MERC_EAT_FIGHT with
+        // anything awake close by: a bite outheals a mercenary's whole bar
+        // (a shark's 100 on a sellsword's 88), so waiting for one not to be
+        // wasted left them fighting at half health with a pack full
         m.eatIn -= dt;
         if (m.eatIn <= 0 && m.food.length > 0) {
             const missing = m.hero.maxHp - m.hero.hp;
             const smallest = Math.min(...m.food.map((s) => healOf(getItem(s.id))));
-            const bossNear = this.enemies.some((e) => e.def.boss && e.state !== "idle" && e.state !== "dead" && Math.hypot(e.x - m.x, e.z - m.z) < ALLY_REACH);
-            if (missing >= smallest || m.hero.hp < m.hero.maxHp * (bossNear ? MERC_EAT_BOSS : MERC_EAT)) {
+            let bossNear = false;
+            let fightNear = false;
+            for (const e of this.enemies) {
+                if (e.state !== "idle" && e.state !== "dead" && Math.hypot(e.x - m.x, e.z - m.z) < ALLY_REACH) {
+                    fightNear = true;
+                    bossNear ||= !!e.def.boss;
+                }
+            }
+            const below = bossNear ? MERC_EAT_BOSS : fightNear ? MERC_EAT_FIGHT : MERC_EAT;
+            if (missing >= smallest || m.hero.hp < m.hero.maxHp * below) {
                 this.mercEat(this.mercBite(m));
             }
         }
@@ -5704,17 +5724,29 @@ export class Run {
         // Nothing to fight: what you've put down for them, if it's near, or
         // food or a brew you've no room for (version 176); and since version
         // 182 (as the user asked) anything they can use that's lain
-        // MERC_FETCH_WAIT untaken within MERC_FETCH_RANGE, you not on it
+        // MERC_FETCH_WAIT untaken within MERC_FETCH_RANGE, you not on it.
+        // Since version 193 (as the user asked) food and brews have no limit
+        // and wait only MERC_FOOD_WAIT, and in a fight or falling back hurt
+        // they still step over to food within MERC_FOOD_GRAB (`grab`), as
+        // that's when it's wanted
         let fetch: Pickup | undefined;
-        if (!target && !m.fallingBack) {
+        let grab = false;
+        const engaged = !!target || m.fallingBack;
+        {
             let best = Infinity;
             for (const p of this.pickups) {
                 if (this.mercLeft.has(p.uid)) {
                     continue;
                 }
                 const d = Math.hypot(p.x - m.x, p.z - m.z);
+                const food = healOf(getItem(p.id)) > 0;
+                if (engaged && (!food || d > MERC_FOOD_GRAB)) {
+                    continue;
+                }
                 let wanted: boolean;
-                if (this.givenUids.has(p.uid)) {
+                if (engaged) {
+                    wanted = this.givenUids.has(p.uid) || this.mercFoodFree(p);
+                } else if (this.givenUids.has(p.uid)) {
                     wanted = d < ALLY_REACH;
                     // Gear they'd only leave there is left at once (version
                     // 188), not walked over to first
@@ -5724,10 +5756,10 @@ export class Run {
                         this.hooks.onMessage(refusal);
                         continue;
                     }
+                } else if (food) {
+                    wanted = d < MERC_FETCH_RANGE && this.mercFoodFree(p);
                 } else if (p.age < 0.4) {
                     wanted = false;
-                } else if (healOf(getItem(p.id)) > 0 && this.roomInPack(p.id, p.count) === 0) {
-                    wanted = d < ALLY_REACH;
                 } else {
                     wanted = p.age >= MERC_FETCH_WAIT && d < MERC_FETCH_RANGE && Math.hypot(p.x - this.px, p.z - this.pz) > MERC_FETCH_YOURS && this.mercUses(m, getItem(p.id));
                 }
@@ -5738,6 +5770,7 @@ export class Run {
                     fetch = p;
                 }
             }
+            grab = engaged && fetch !== undefined;
         }
         if (fetch && m.fetching?.uid !== fetch.uid) {
             // The way there, a flow of its own (allyStep's is to you); what
@@ -5764,7 +5797,7 @@ export class Run {
         let gx: number;
         let gz: number;
         let stop: number;
-        if (target && !m.fallingBack) {
+        if (target && !m.fallingBack && !grab) {
             [gx, gz] = [target.x, target.z];
             stop = reach > 0 ? reach : target.def.radius + 0.8;
             // A swordsman works round to its far side from you, so the two
@@ -5878,14 +5911,27 @@ export class Run {
         }
     }
 
-    // What they'd go and get (version 182): food or a brew while they carry
-    // under MERC_FOOD_MAX bites, and gear of their own kind better than
-    // what's in its slot (mercs.ts mercBetter)
+    // What they'd go and get (version 182): food or a brew, as much as there
+    // is (version 193: it was no more than eight bites), and gear of their
+    // own kind better than what's in its slot (mercs.ts mercBetter)
     private mercUses(m: NonNullable<Run["merc"]>, item: ItemDef): boolean {
         if (healOf(item) > 0) {
-            return m.food.reduce((n, s) => n + s.count, 0) < MERC_FOOD_MAX;
+            return true;
         }
         return mercBetter(m.kind, item, { level: m.level, gear: m.gear });
+    }
+
+    // Food or a brew lying free for them to take (version 193): at once if
+    // your pack has no room for it, else once it's lain MERC_FOOD_WAIT and
+    // you're not standing on it (that's yours to take)
+    private mercFoodFree(p: Pickup): boolean {
+        if (p.age < 0.4) {
+            return false;
+        }
+        if (this.roomInPack(p.id, p.count) === 0) {
+            return true;
+        }
+        return p.age >= MERC_FOOD_WAIT && Math.hypot(p.x - this.px, p.z - this.pz) > MERC_FETCH_YOURS;
     }
 
     // The bite that fills the gap best: the biggest heal that isn't wasted,
